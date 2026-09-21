@@ -17,9 +17,13 @@ use super::{default_ledger_dir, known_flows, nothing_found};
 /// `unfinished_runs` misses it, and the flow it came from reads as «ran
 /// recently», so `due` calls it not due. It vanishes twice.
 pub(super) fn waiting_report() -> String {
-    match default_ledger_dir() {
+    waiting_report_at(default_ledger_dir())
+}
+
+fn waiting_report_at(dir: Result<std::path::PathBuf, String>) -> String {
+    match dir {
         Ok(dir) => waiting_report_in(&dir),
-        Err(_) => catalogue::say("cli.flow.no_run_is_waiting", &[]),
+        Err(error) => catalogue::say("cli.flow.waiting_unknown", &[("error", &error)]),
     }
 }
 
@@ -765,5 +769,7 @@ mod tests {
             )),
             "{said}"
         );
+        let homeless = waiting_report_at(Err("no home to find a ledger in".to_owned()));
+        assert!(homeless.ends_with("no home to find a ledger in"), "{homeless}");
     }
 }

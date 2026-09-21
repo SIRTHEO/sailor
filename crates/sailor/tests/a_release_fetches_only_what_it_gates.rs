@@ -219,9 +219,10 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
     assert_eq!(remote_named_in("git fetch --quiet origin"), Some("origin"));
 }
 
-/// No step reads a tag it fetches whole, and a tag the remote rewrote makes a
-/// plain fetch fail with the reason hidden by `--quiet`: every whole fetch says
-/// it leaves the tags where they are.
+/// No step reads a tag it fetches whole, yet whether such a fetch takes the
+/// tags is the machine's git configuration to say: under `tagOpt = --tags` a
+/// tag the remote rewrote fails it with nothing on stderr. Every whole fetch
+/// says it leaves the tags where they are.
 #[test]
 fn no_shipped_fetch_follows_the_remote_tags() {
     let system = workspace_root().join("crates/flow/system");
