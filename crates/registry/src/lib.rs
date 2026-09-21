@@ -185,6 +185,9 @@ pub fn registry_in(
         actions::handoff::HANDED_TO_AGENT_ACTION,
         actions::handoff::HandoffAction::new().watched_by(watcher.clone()),
     );
+    // A choice among declared options, resolved by a command of this machine
+    // (ADR-017): the table and the node are data, the product holds the rule.
+    actions::local_choice::register_local_choice(&mut registry, watcher.clone());
     actions::history::register_history(&mut registry, ledger.clone());
     actions::price_every_call::register_price_every_call(&mut registry, ledger.clone());
     actions::bench::runs::register_runs(&mut registry, ledger.clone());
