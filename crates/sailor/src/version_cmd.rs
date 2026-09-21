@@ -9,8 +9,18 @@ pub const USAGE: &[crate::Form] = &[crate::Form {
 }];
 
 pub fn run(_args: &[String]) -> i32 {
-    println!("sailor {}", env!("CARGO_PKG_VERSION"));
+    println!(
+        "{}",
+        said(env!("CARGO_PKG_VERSION"), env!("SAILOR_BUILD_COMMIT"))
+    );
     0
+}
+
+fn said(version: &str, commit: &str) -> String {
+    if commit.is_empty() {
+        return format!("sailor {version} (built outside a repository: commit unknown)");
+    }
+    format!("sailor {version} ({commit})")
 }
 
 #[cfg(test)]
@@ -20,5 +30,12 @@ mod tests {
     #[test]
     fn it_exits_clean() {
         assert_eq!(run(&[]), 0);
+    }
+
+    #[test]
+    fn the_version_names_the_commit_it_was_built_from() {
+        assert_eq!(said("0.1.0", "760deb69"), "sailor 0.1.0 (760deb69)");
+        assert!(said("0.1.0", "").contains("commit unknown"));
+        assert!(!env!("SAILOR_BUILD_COMMIT").is_empty(), "a build inside this repository knows its commit");
     }
 }
