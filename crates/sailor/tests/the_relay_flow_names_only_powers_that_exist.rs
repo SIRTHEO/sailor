@@ -99,14 +99,14 @@ fn nothing_is_emptied_that_did_not_hand_a_mandate_on_first() {
     );
 }
 
-/// The threshold is a decision about a budget. Inside the node it could not be
-/// argued with; in the flow it is one condition anybody can read.
+/// **AN ASK WRITTEN ONLY WHEN FULL IS NEVER TAKEN DOWN.** A reset empties the
+/// context and keeps the session, so a request kept from before it repeated a
+/// count the session no longer held. Every turn writes what it measured.
 #[test]
-fn the_ask_stands_on_one_condition_anybody_can_read() {
+fn every_turn_writes_the_standing_it_measured() {
     let ask = step("ask-for-a-mandate", "ask");
-    assert_eq!(ask["when"]["kind"], "pointer_equals");
-    assert_eq!(ask["when"]["pointer"], "/measure/state");
-    assert_eq!(ask["when"]["value"], Value::String("oblige".to_owned()));
+    assert!(ask["when"].is_null(), "the standing is written whatever it says: {ask}");
+    assert_eq!(ask["with"]["value"]["state"]["$from"], "/measure/state");
 }
 
 /// **THE EMPTYING IS NOT THE END OF THE RELAY.** The successor is handed its
