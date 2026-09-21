@@ -278,19 +278,54 @@ struct Scratch {
 
 impl Scratch {
     fn new() -> Result<Self, ActionError> {
-        let dir = std::env::temp_dir().join(format!(
-            "sailor-choice-{}-{}",
-            std::process::id(),
-            NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&dir)
-            .map_err(|error| ActionError::new("scratch_unwritable", error.to_string()))?;
-        Ok(Self {
-            input: dir.join("decision.jsonl"),
-            output: dir.join("scored.jsonl"),
-            dir,
-        })
+        Self::under(&std::env::temp_dir())
     }
+
+    /// A folder only this user can open, made here and never found: a path
+    /// that already exists, a link included, is passed over, because the
+    /// temporary directory may be shared with other users.
+    fn under(base: &Path) -> Result<Self, ActionError> {
+        let mut last = None;
+        for _ in 0..16 {
+            let dir = base.join(format!(
+                "sailor-choice-{}-{}-{}",
+                std::process::id(),
+                NEXT_SCRATCH.fetch_add(1, Ordering::Relaxed),
+                nanos()
+            ));
+            match private_folder(&dir) {
+                Ok(()) => {
+                    return Ok(Self {
+                        input: dir.join("decision.jsonl"),
+                        output: dir.join("scored.jsonl"),
+                        dir,
+                    })
+                }
+                Err(error) => last = Some(error),
+            }
+        }
+        Err(ActionError::new(
+            "scratch_unwritable",
+            last.map_or_else(String::new, |error| error.to_string()),
+        ))
+    }
+}
+
+fn nanos() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.subsec_nanos())
+}
+
+#[cfg(unix)]
+fn private_folder(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new().mode(0o700).create(dir)
+}
+
+#[cfg(not(unix))]
+fn private_folder(dir: &Path) -> std::io::Result<()> {
+    std::fs::DirBuilder::new().create(dir)
 }
 
 impl Drop for Scratch {
