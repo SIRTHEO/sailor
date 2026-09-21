@@ -75,7 +75,9 @@ pub(super) fn agent_of(request: &Request<'_>) -> String {
     let Some(cli) = request.options.get("cli").filter(|id| !id.is_empty()) else {
         return catalogue::say("cli.session.a_line_that_did_not_say", &[]);
     };
-    let declared = profiles::store_io::load_store().unwrap_or_default().profiles;
+    let declared = profiles::store_io::load_store()
+        .unwrap_or_default()
+        .profiles;
     let account = profiles::find_cli(cli).ok().and_then(|engine| {
         account_of_this_session(
             engine,
@@ -107,7 +109,10 @@ pub(super) fn account_of_this_session(
     };
     let (home, by_variable) = match moved_to {
         Some(dir) => (std::path::PathBuf::from(dir), true),
-        None => (profiles::existing_home(engine, std::path::Path::new(&key_of("HOME")?))?, false),
+        None => (
+            profiles::existing_home(engine, std::path::Path::new(&key_of("HOME")?))?,
+            false,
+        ),
     };
     let identity = if by_variable {
         profiles::identity_of_home(engine, &home, read)

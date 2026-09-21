@@ -641,9 +641,12 @@ mod tests {
             ],
             &[spent("claude", Some("idle@example.test"), 9_000_000, None)],
             &nothing_left(),
-            &[(("claude".to_owned(), "busy@example.test".to_owned()), worked(900, "claude-opus-5", 1_000_000))]
-                .into_iter()
-                .collect(),
+            &[(
+                ("claude".to_owned(), "busy@example.test".to_owned()),
+                worked(900, "claude-opus-5", 1_000_000),
+            )]
+            .into_iter()
+            .collect(),
             NOW,
         );
         assert_eq!(
@@ -653,7 +656,10 @@ mod tests {
         );
         let said = report(&views, 5);
         assert!(said.contains("900"), "the calls are shown: {said}");
-        assert!(said.contains("$5.00"), "and what they weigh at list price: {said}");
+        assert!(
+            said.contains("$5.00"),
+            "and what they weigh at list price: {said}"
+        );
     }
 
     /// One address signed in on two command lines is two rows, and each shows
@@ -668,8 +674,14 @@ mod tests {
             &[],
             &nothing_left(),
             &[
-                (("claude".to_owned(), "same@example.test".to_owned()), worked(7, "a-model", 10)),
-                (("codex".to_owned(), "same@example.test".to_owned()), worked(3, "a-model", 10)),
+                (
+                    ("claude".to_owned(), "same@example.test".to_owned()),
+                    worked(7, "a-model", 10),
+                ),
+                (
+                    ("codex".to_owned(), "same@example.test".to_owned()),
+                    worked(3, "a-model", 10),
+                ),
             ]
             .into_iter()
             .collect(),
@@ -696,15 +708,21 @@ mod tests {
             &[declared("claude", "who@example.test", Access::Yes)],
             &[],
             &nothing_left(),
-            &[(("claude".to_owned(), "who@example.test".to_owned()), worked(4, "a-model-nobody-priced", 2_000))]
-                .into_iter()
-                .collect(),
+            &[(
+                ("claude".to_owned(), "who@example.test".to_owned()),
+                worked(4, "a-model-nobody-priced", 2_000),
+            )]
+            .into_iter()
+            .collect(),
             NOW,
         );
         let said = report(&views, 5);
         assert!(said.contains("no price for one of these models"), "{said}");
         assert!(!said.contains("$no price"), "a sum is never spoken: {said}");
-        assert!(!said.contains("models at list price"), "nor is it priced: {said}");
+        assert!(
+            !said.contains("models at list price"),
+            "nor is it priced: {said}"
+        );
     }
 
     fn nothing_worked() -> BTreeMap<(String, String), models::work::Worked> {

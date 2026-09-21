@@ -149,7 +149,12 @@ pub fn identity_as_launched(
     key_of: &dyn Fn(&str) -> Option<String>,
     read: &dyn Fn(&Path) -> Option<String>,
 ) -> HomeIdentity {
-    identity_from(cli, home, read, home_is_where_the_engine_keeps_it(cli, home, key_of))
+    identity_from(
+        cli,
+        home,
+        read,
+        home_is_where_the_engine_keeps_it(cli, home, key_of),
+    )
 }
 
 /// The same reading for a home no variable moves: beside before inside.
@@ -648,7 +653,9 @@ pub fn environment_to_lift(
     key_of: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<String> {
     match &cli.home {
-        HomeMechanism::EnvVar(name) if home_is_where_the_engine_keeps_it(cli, profile_home, key_of) => {
+        HomeMechanism::EnvVar(name)
+            if home_is_where_the_engine_keeps_it(cli, profile_home, key_of) =>
+        {
             vec![name.clone()]
         }
         _ => Vec::new(),
@@ -1133,7 +1140,10 @@ mod tests {
         let home = Path::new("/Users/someone/.claude");
         let living_there = |name: &str| (name == "HOME").then(|| "/Users/someone".to_owned());
         let living_elsewhere = |name: &str| (name == "HOME").then(|| "/Users/another".to_owned());
-        assert_eq!(environment_to_lift(cli, home, &living_there), vec![variable.clone()]);
+        assert_eq!(
+            environment_to_lift(cli, home, &living_there),
+            vec![variable.clone()]
+        );
         assert!(environment_to_lift(cli, home, &living_elsewhere).is_empty());
     }
 

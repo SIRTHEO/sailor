@@ -378,11 +378,20 @@ mod tests {
             .filter(|(_, value)| value.is_none())
             .map(|(name, _)| name.to_string_lossy().into_owned())
             .collect();
-        assert_eq!(removed, vec![variable.clone()], "the process itself goes without it");
+        assert_eq!(
+            removed,
+            vec![variable.clone()],
+            "the process itself goes without it"
+        );
 
-        store.active.insert("codex".to_owned(), "secondo".to_owned());
+        store
+            .active
+            .insert("codex".to_owned(), "secondo".to_owned());
         let launch = resolve_with("codex", &store, &[], Path::new("/casa"), &at_home).unwrap();
-        assert!(launch.lifted.is_empty(), "a home named by the variable lifts nothing");
+        assert!(
+            launch.lifted.is_empty(),
+            "a home named by the variable lifts nothing"
+        );
     }
 
     /// A terminal is where an engine is actually worked in, and until now the

@@ -153,9 +153,12 @@ pub fn work_per_profile(
         let Some(cli) = cli_of(descriptor) else {
             continue;
         };
-        readings.extend(worked_in_homes(cli, every_home(&store, descriptor), &mut read, &|home| {
-            toolbox::work::read_in_home(descriptor, home, since)
-        }));
+        readings.extend(worked_in_homes(
+            cli,
+            every_home(&store, descriptor),
+            &mut read,
+            &|home| toolbox::work::read_in_home(descriptor, home, since),
+        ));
     }
     models::work::per_account(readings)
 }
@@ -348,10 +351,21 @@ mod tests {
             calls: 5,
             ..models::work::Worked::default()
         };
-        let homes = || vec![("someone@example.test".to_owned(), std::path::PathBuf::from("/homes/one"))];
+        let homes = || {
+            vec![(
+                "someone@example.test".to_owned(),
+                std::path::PathBuf::from("/homes/one"),
+            )]
+        };
         let mut read = std::collections::BTreeSet::new();
         let first = worked_in_homes(cli, homes(), &mut read, &|_| Some(did.clone()));
-        assert_eq!(first, vec![((cli.id.clone(), "someone@example.test".to_owned()), did.clone())]);
+        assert_eq!(
+            first,
+            vec![(
+                (cli.id.clone(), "someone@example.test".to_owned()),
+                did.clone()
+            )]
+        );
         let again = worked_in_homes(cli, homes(), &mut read, &|_| Some(did.clone()));
         assert!(again.is_empty(), "the same home read twice: {again:?}");
     }

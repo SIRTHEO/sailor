@@ -672,7 +672,6 @@ fn profile_home_from(session_env: Option<&str>) -> Option<PathBuf> {
     session_env.filter(|dir| !dir.is_empty()).map(PathBuf::from)
 }
 
-
 /// How many of the page's lines the greeting repeats.
 const PAGE_OPENING_LINES: usize = 3;
 
@@ -946,10 +945,15 @@ mod tests {
     fn a_session_is_named_by_the_home_it_runs_in() {
         let engine = profiles::find_cli("claude").expect("a known command line");
         let profiles::HomeMechanism::EnvVar(variable) = &engine.home else {
-            panic!("the fixture this test relies on has changed: {:?}", engine.home);
+            panic!(
+                "the fixture this test relies on has changed: {:?}",
+                engine.home
+            );
         };
         let read = |path: &std::path::Path| {
-            let beside = path.components().any(|part| part == std::path::Component::ParentDir);
+            let beside = path
+                .components()
+                .any(|part| part == std::path::Component::ParentDir);
             let email = if beside {
                 "the-default-account@example.test"
             } else if path.starts_with("/homes/a-profile") {
@@ -957,7 +961,9 @@ mod tests {
             } else {
                 "a-leftover@example.test"
             };
-            Some(format!(r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#))
+            Some(format!(
+                r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#
+            ))
         };
         let without = |name: &str| (name == "HOME").then(|| "/Users/someone".to_owned());
         assert_eq!(
@@ -983,7 +989,10 @@ mod tests {
     fn a_home_that_cannot_tell_is_named_by_its_profile() {
         let engine = profiles::find_cli("claude").expect("a known command line");
         let profiles::HomeMechanism::EnvVar(variable) = &engine.home else {
-            panic!("the fixture this test relies on has changed: {:?}", engine.home);
+            panic!(
+                "the fixture this test relies on has changed: {:?}",
+                engine.home
+            );
         };
         let silent = |_: &std::path::Path| None;
         let with = |name: &str| (name == variable.as_str()).then(|| "/homes/b-profile".to_owned());

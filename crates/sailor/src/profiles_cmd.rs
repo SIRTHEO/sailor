@@ -160,13 +160,7 @@ fn views_of(
             // A command line this table does not know has no home to move, so
             // there is no question to ask it.
             let (access, said) = match find_cli(&profile.cli_id) {
-                Ok(cli) => access_of(
-                    tools,
-                    probe,
-                    cli,
-                    &profile.home_dir,
-                    &profile.name,
-                ),
+                Ok(cli) => access_of(tools, probe, cli, &profile.home_dir, &profile.name),
                 Err(reason) => (
                     Access::NotKnown,
                     catalogue::say(
@@ -241,7 +235,10 @@ fn access_of(
                     Access::Mismatched,
                     catalogue::say(
                         "cli.profiles.access.mismatched",
-                        &[("home_answers_as", &home_answers_as), ("profile_named", profile_name)],
+                        &[
+                            ("home_answers_as", &home_answers_as),
+                            ("profile_named", profile_name),
+                        ],
                     ),
                 ),
                 profiles::IdentityVerdict::Verified => (
@@ -467,7 +464,10 @@ pub fn adopt(cli_id: &str, name: &String, path: Option<&Path>) -> Result<(), Str
     {
         return Err(catalogue::say(
             "cli.profiles.access.mismatched",
-            &[("home_answers_as", &home_answers_as), ("profile_named", name)],
+            &[
+                ("home_answers_as", &home_answers_as),
+                ("profile_named", name),
+            ],
         ));
     }
 
@@ -757,13 +757,7 @@ mod tests {
         )
         .expect("the identity file");
 
-        let (access, _said) = access_of(
-            &tools,
-            &probe,
-            cli,
-            &home,
-            "someone@example.com",
-        );
+        let (access, _said) = access_of(&tools, &probe, cli, &home, "someone@example.com");
         assert_eq!(access, Access::Yes);
     }
 
