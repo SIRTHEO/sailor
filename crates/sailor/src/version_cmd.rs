@@ -36,6 +36,9 @@ mod tests {
     fn the_version_names_the_commit_it_was_built_from() {
         assert_eq!(said("0.1.0", "760deb69"), "sailor 0.1.0 (760deb69)");
         assert!(said("0.1.0", "").contains("commit unknown"));
-        assert!(!env!("SAILOR_BUILD_COMMIT").is_empty(), "a build inside this repository knows its commit");
+        assert!(
+            !env!("SAILOR_BUILD_COMMIT").is_empty(),
+            "a build inside this repository knows its commit"
+        );
     }
 }
