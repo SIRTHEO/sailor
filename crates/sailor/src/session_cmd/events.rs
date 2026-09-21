@@ -78,7 +78,7 @@ pub(super) fn agent_of(request: &Request<'_>) -> String {
     let declared = profiles::store_io::load_store()
         .unwrap_or_default()
         .profiles;
-    let account = profiles::find_cli(cli).ok().and_then(|engine| {
+    let account = super::engine_named(cli).and_then(|engine| {
         account_of_this_session(
             engine,
             &|name| std::env::var(name).ok(),

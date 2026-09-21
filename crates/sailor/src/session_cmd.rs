@@ -643,7 +643,7 @@ fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
     let engine = request
         .options
         .get("cli")
-        .and_then(|id| profiles::find_cli(id).ok());
+        .and_then(|id| engine_named(id));
     let profile_home = engine.and_then(profile_home_of);
     Started {
         engine,
@@ -651,6 +651,23 @@ fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
         worktree: PathBuf::from(&arrival.anchor.worktree),
         home: profiles::store_io::home_dir().ok(),
     }
+}
+
+/// The command line a hook names by its tool id. The hooks say `claude-code`
+/// and the profiles say `claude`: the executable the descriptor detects joins them.
+fn engine_named(id: &str) -> Option<&'static profiles::KnownCli> {
+    let machine = toolbox::Machine::current();
+    engine_in(&toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine)), id)
+}
+
+fn engine_in(catalog: &toolbox::descriptor::Catalog, id: &str) -> Option<&'static profiles::KnownCli> {
+    profiles::find_cli(id).ok().or_else(|| {
+        catalog
+            .descriptors
+            .iter()
+            .find(|loaded| loaded.descriptor.id == id)
+            .and_then(|loaded| crate::remaining_cmd::cli_of(&loaded.descriptor))
+    })
 }
 
 /// **A HOOK RUNS INSIDE THE SESSION**: which profile it is under comes from
@@ -912,6 +929,21 @@ mod tests {
     use super::*;
     use sessions::census::{Inhabitant, Refusal, Terminal};
     use sessions::SESSIONS_FILE;
+
+    /// The hooks name the tool (`claude-code`, `gemini-cli`) and the profiles the
+    /// command line (`claude`, `gemini`); an exact lookup lost the engine of both.
+    #[test]
+    fn a_hook_that_names_its_tool_finds_the_command_line_behind_it() {
+        let catalog = toolbox::descriptor::Catalog::load(&[toolbox::descriptor::Source::Builtin]);
+        for (tool, line) in [("claude-code", "claude"), ("codex", "codex"), ("gemini-cli", "gemini")] {
+            assert_eq!(
+                engine_in(&catalog, tool).map(|engine| engine.id.as_str()),
+                Some(line),
+                "the hook's «{tool}» found no command line"
+            );
+        }
+        assert!(engine_in(&catalog, "no-such-tool").is_none());
+    }
 
     /// A session launched with `CLAUDE_CONFIG_DIR` set is truthfully that
     /// home, never the store's separately switchable "active" profile.
