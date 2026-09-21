@@ -38,6 +38,11 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p profiles -j 1`
 - One real probe on a real home: `SAILOR_TEST_CLAUDE_HOME=<home> cargo test -p actions -j 1 --test <the probe test>` — pasted, not skipped
 
+## E2. When a tree is taken down: `worktree_cmd`, the sweep or `workspace::standing`
+
+- `cargo test -p sailor -j 1 --test a_tree_somebody_is_in_is_never_closed --test a_closed_tree_takes_its_index_identity_with_it` — a tree somebody is in is kept, whoever asks
+- `cargo test -p workspace -j 1`
+
 ## E. When `desktop/` changes
 
 - `cd desktop && npm test` (the `Test Files` / `Tests` lines) and `npx tsc --noEmit`
