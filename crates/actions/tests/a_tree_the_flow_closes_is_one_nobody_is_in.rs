@@ -27,7 +27,7 @@ fn locked(path: &str, branch: &str) -> Worktree {
 }
 
 fn decide(trees: &[Worktree], branch: &str) -> WhatBecomesOfIt {
-    what_becomes_of_it(trees, Path::new(TOP), branch, &[], &[])
+    what_becomes_of_it(trees, Path::new(TOP), Path::new(TOP), branch, &[], &[])
 }
 
 #[test]
@@ -70,12 +70,33 @@ fn the_tree_the_flow_runs_from_is_never_taken_down() {
     );
 }
 
+/// A request may name as repo the linked tree that carries its own branch:
+/// every later step of the flow still reads that tree.
+#[test]
+fn the_linked_tree_named_as_repo_is_never_taken_down() {
+    let trees = [tree(TOP, Some("main")), tree("/trees/work", Some("work"))];
+    for repo in ["/trees/work", "/trees/work/crates"] {
+        assert_eq!(
+            what_becomes_of_it(&trees, Path::new(TOP), Path::new(repo), "work", &[], &[]),
+            WhatBecomesOfIt::ItIsWhereTheFlowRuns(PathBuf::from("/trees/work")),
+            "repo {repo}"
+        );
+    }
+}
+
 #[test]
 fn a_tree_with_a_terminal_recorded_in_it_is_kept() {
     let trees = [tree(TOP, Some("main")), tree("/trees/work", Some("work"))];
     let terminals = [PathBuf::from("/trees/work")];
     assert_eq!(
-        what_becomes_of_it(&trees, Path::new(TOP), "work", &terminals, &[]),
+        what_becomes_of_it(
+            &trees,
+            Path::new(TOP),
+            Path::new(TOP),
+            "work",
+            &terminals,
+            &[]
+        ),
         WhatBecomesOfIt::SomebodyIsIn(
             PathBuf::from("/trees/work"),
             WhoIsIn::ATerminal(PathBuf::from("/trees/work"))
@@ -88,7 +109,14 @@ fn a_tree_a_process_stands_in_is_kept_and_the_process_is_named() {
     let trees = [tree(TOP, Some("main")), tree("/trees/work", Some("work"))];
     let standing = [(4242, PathBuf::from("/trees/work/crates/flow"))];
     assert_eq!(
-        what_becomes_of_it(&trees, Path::new(TOP), "work", &[], &standing),
+        what_becomes_of_it(
+            &trees,
+            Path::new(TOP),
+            Path::new(TOP),
+            "work",
+            &[],
+            &standing
+        ),
         WhatBecomesOfIt::SomebodyIsIn(PathBuf::from("/trees/work"), WhoIsIn::AProcess(4242))
     );
 }
@@ -98,7 +126,14 @@ fn a_terminal_in_a_neighbour_tree_is_not_in_this_one() {
     let trees = [tree(TOP, Some("main")), tree("/trees/work", Some("work"))];
     let terminals = [PathBuf::from("/trees/work-two")];
     assert_eq!(
-        what_becomes_of_it(&trees, Path::new(TOP), "work", &terminals, &[]),
+        what_becomes_of_it(
+            &trees,
+            Path::new(TOP),
+            Path::new(TOP),
+            "work",
+            &terminals,
+            &[]
+        ),
         WhatBecomesOfIt::TakeItDown(PathBuf::from("/trees/work"))
     );
 }
@@ -119,7 +154,85 @@ fn somebody_in_a_locked_tree_is_named_before_the_lock() {
     let trees = [tree(TOP, Some("main")), locked("/trees/work", "work")];
     let standing = [(7, PathBuf::from("/trees/work"))];
     assert_eq!(
-        what_becomes_of_it(&trees, Path::new(TOP), "work", &[], &standing),
+        what_becomes_of_it(
+            &trees,
+            Path::new(TOP),
+            Path::new(TOP),
+            "work",
+            &[],
+            &standing
+        ),
         WhatBecomesOfIt::SomebodyIsIn(PathBuf::from("/trees/work"), WhoIsIn::AProcess(7))
     );
+}
+
+/// The action itself, on a repository with one linked tree. The terminals it
+/// reads are an empty ledger of its own, so no terminal of the machine running
+/// the case stands in these trees.
+mod on_a_real_repository {
+    use serde_json::json;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    fn git(repo: &Path, args: &[&str]) {
+        let ran = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()
+            .expect("git runs");
+        assert!(
+            ran.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&ran.stderr)
+        );
+    }
+
+    /// A primary checkout on `line`, and a linked tree beside it on `work`.
+    fn a_repository(name: &str) -> (PathBuf, PathBuf) {
+        let at = std::env::temp_dir().join(format!("closing-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&at);
+        let (primary, linked) = (at.join("primary"), at.join("linked"));
+        std::fs::create_dir_all(&primary).expect("the scratch directory");
+        std::fs::create_dir_all(at.join("ledger")).expect("the ledger directory");
+        std::env::set_var("SAILOR_LEDGER", at.join("ledger"));
+        git(&primary, &["init", "-q", "-b", "line"]);
+        git(&primary, &["config", "user.email", "closing@example"]);
+        git(&primary, &["config", "user.name", "closing"]);
+        git(&primary, &["commit", "-q", "--allow-empty", "-m", "first"]);
+        let linked_arg = linked.to_str().expect("a path in utf-8");
+        git(
+            &primary,
+            &["worktree", "add", "-q", "-b", "work", linked_arg],
+        );
+        (primary, linked)
+    }
+
+    fn close(repo: &Path) -> Result<serde_json::Value, (String, String)> {
+        let mut registry = flow::ActionRegistry::default();
+        actions::worktree::register_close_the_worktree(&mut registry);
+        let action = registry.get("close_the_worktree").expect("registered");
+        let input = json!({ "repo": repo, "branch": "work" });
+        match action.execute(&input, &flow::SharedState::default()) {
+            Ok(flow::ActionOutcome::Went(said)) => Ok(said),
+            Ok(other) => Err(("".to_owned(), format!("{other:?}"))),
+            Err(refusal) => Err((refusal.class, refusal.said)),
+        }
+    }
+
+    #[test]
+    fn the_linked_tree_goes_when_the_primary_is_named_and_stays_when_it_is() {
+        let (primary, linked) = a_repository("both");
+
+        let (class, said) = close(&linked).expect_err("the tree named as repo stays");
+        assert_eq!(class, "the_tree_stays", "{said}");
+        assert!(said.contains("runs from"), "{said}");
+        assert!(
+            linked.join(".git").exists(),
+            "the linked tree is still there"
+        );
+
+        close(&primary).expect("named from the primary, the linked tree is taken down");
+        assert!(!linked.exists(), "the linked tree is gone");
+    }
 }

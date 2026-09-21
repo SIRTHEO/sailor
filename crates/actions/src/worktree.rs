@@ -45,6 +45,7 @@ pub enum WhatBecomesOfIt {
 pub fn what_becomes_of_it(
     trees: &[Worktree],
     top: &Path,
+    repo: &Path,
     branch: &str,
     terminals: &[PathBuf],
     processes: &[(u32, PathBuf)],
@@ -56,7 +57,10 @@ pub fn what_becomes_of_it(
         return WhatBecomesOfIt::NoTreeCarriesIt;
     };
     let at = PathBuf::from(&found.path);
-    if workspace::standing::canonical(&at) == workspace::standing::canonical(top) {
+    let here = workspace::standing::canonical(&at);
+    if here == workspace::standing::canonical(top)
+        || workspace::standing::canonical(repo).starts_with(&here)
+    {
         return WhatBecomesOfIt::ItIsWhereTheFlowRuns(at);
     }
     match workspace::standing::who_is_in(&at, terminals, processes) {
@@ -102,14 +106,21 @@ impl Action for CloseTheWorktreeAction {
             .map(|main| PathBuf::from(&main.path))
             .unwrap_or_else(|| spec.repo.clone());
         let (terminals, processes) = who_holds_what()?;
-        let at = match what_becomes_of_it(&trees, &top, &spec.branch, &terminals, &processes) {
+        let at = match what_becomes_of_it(
+            &trees,
+            &top,
+            &spec.repo,
+            &spec.branch,
+            &terminals,
+            &processes,
+        ) {
             WhatBecomesOfIt::NoTreeCarriesIt => {
                 return Ok(ActionOutcome::Went(json!({ "removed": "" })))
             }
             WhatBecomesOfIt::ItIsWhereTheFlowRuns(at) => {
                 return Err(stays(format!(
-                    "the tree holding {} is the one this flow runs from ({}): name the primary \
-                     checkout as repo instead",
+                    "the tree holding {} is the one this flow runs from ({}): name another \
+                     checkout of the repository as repo instead",
                     spec.branch,
                     at.display()
                 )))
