@@ -950,10 +950,10 @@ mod tests {
         };
         let read = |path: &std::path::Path| {
             let beside = path.components().any(|part| part == std::path::Component::ParentDir);
-            let email = if path.starts_with("/homes/a-profile") {
-                "the-profile@example.test"
-            } else if beside {
+            let email = if beside {
                 "the-default-account@example.test"
+            } else if path.starts_with("/homes/a-profile") {
+                "the-profile@example.test"
             } else {
                 "a-leftover@example.test"
             };

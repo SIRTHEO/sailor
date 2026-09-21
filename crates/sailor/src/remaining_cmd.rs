@@ -135,7 +135,8 @@ pub fn per_profile(
     out
 }
 
-/// What each account did in its own home since `since`, keyed by the account.
+/// What each account did in its own home since `since`, keyed by the command
+/// line and the account: one address signed in on two engines is two rows.
 ///
 /// **THE WORK OF A PERSON IS NOT IN SAILOR'S STORE.** Only what a flow called
 /// passes through the ledger; a terminal opened by hand writes its calls in the
@@ -143,14 +144,17 @@ pub fn per_profile(
 pub fn work_per_profile(
     catalog: &toolbox::Catalog,
     since: i64,
-) -> std::collections::BTreeMap<String, models::work::Worked> {
+) -> std::collections::BTreeMap<(String, String), models::work::Worked> {
     let store = profiles::store_io::load_store().unwrap_or_default();
     let mut readings = Vec::new();
     for loaded in catalog.live() {
         let descriptor = &loaded.descriptor;
+        let Some(cli) = cli_of(descriptor) else {
+            continue;
+        };
         for (name, home) in every_home(&store, descriptor) {
             if let Some(worked) = toolbox::work::read_in_home(descriptor, &home, since) {
-                readings.push((name, worked));
+                readings.push(((cli.id.clone(), name), worked));
             }
         }
     }
@@ -202,16 +206,21 @@ fn every_home(
 fn own_home_of(
     descriptor: &toolbox::Descriptor,
 ) -> Option<(&'static profiles::KnownCli, std::path::PathBuf)> {
+    let cli = cli_of(descriptor)?;
+    let home = profiles::store_io::home_dir().ok()?;
+    Some((cli, profiles::existing_home(cli, &home)?))
+}
+
+/// The command line a descriptor detects, matched by executable.
+fn cli_of(descriptor: &toolbox::Descriptor) -> Option<&'static profiles::KnownCli> {
     let detected = descriptor
         .detect
         .as_ref()
         .and_then(|probes| probes.as_slice().first())
         .and_then(|probe| probe.command.as_deref())?;
-    let home = profiles::store_io::home_dir().ok()?;
-    let cli = profiles::known_clis()
+    profiles::known_clis()
         .iter()
-        .find(|cli| cli.executable == detected)?;
-    Some((cli, profiles::existing_home(cli, &home)?))
+        .find(|cli| cli.executable == detected)
 }
 
 /// The profiles whose command line is the one this descriptor detects. **THE

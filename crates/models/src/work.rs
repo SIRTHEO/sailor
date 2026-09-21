@@ -95,8 +95,8 @@ impl Worked {
 /// The work of every account, from the readings of every home. **AN ACCOUNT
 /// SIGNED IN IN TWO HOMES WORKED IN BOTH**: keeping one reading per name drops
 /// the other home's work without a word.
-pub fn per_account(readings: impl IntoIterator<Item = (String, Worked)>) -> BTreeMap<String, Worked> {
-    let mut found: BTreeMap<String, Worked> = BTreeMap::new();
+pub fn per_account<K: Ord>(readings: impl IntoIterator<Item = (K, Worked)>) -> BTreeMap<K, Worked> {
+    let mut found: BTreeMap<K, Worked> = BTreeMap::new();
     for (account, worked) in readings {
         found.entry(account).or_default().add(worked);
     }

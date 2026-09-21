@@ -21,6 +21,8 @@ use std::process::Command;
 struct Launch {
     executable: String,
     env: BTreeMap<String, String>,
+    /// Inherited variables the launch removes, or they would decide the home.
+    lifted: Vec<String>,
     args: Vec<String>,
     /// For command lines that do not move the home with a variable but swap a
     /// link over the credentials, the link that must be standing for the launch
@@ -123,6 +125,7 @@ fn resolve_with(
     Ok(Launch {
         executable: cli.executable.to_owned(),
         env,
+        lifted: profiles::environment_to_lift(cli, &profile.home_dir, key_of),
         args: rest.to_vec(),
         expected_link,
         identity: EngineIdentity::ProfileInForce {
@@ -264,10 +267,11 @@ pub fn run(args: &[String]) -> i32 {
     write_down_the_invocation(&launch, cli_id);
     // `exec` replaces this process's image: on success the code below never
     // runs. It returns only to say the launch failed.
-    let error = Command::new(&launch.executable)
-        .args(&launch.args)
-        .envs(&launch.env)
-        .exec();
+    let mut command = Command::new(&launch.executable);
+    for variable in &launch.lifted {
+        command.env_remove(variable);
+    }
+    let error = command.args(&launch.args).envs(&launch.env).exec();
     eprintln!(
         "{}",
         catalogue::say(
@@ -343,6 +347,28 @@ mod tests {
             launch.env.get("CODEX_HOME"),
             Some(&"/prova/codex/secondo".to_owned())
         );
+    }
+
+    /// A shell that carries the home variable would move a launch with nothing
+    /// overlaid off the home that was checked: the launch takes it away.
+    #[test]
+    fn a_launch_in_the_engines_own_home_lifts_the_inherited_variable() {
+        let cli = find_cli("codex").unwrap();
+        let HomeMechanism::EnvVar(variable) = &cli.home else {
+            panic!("the descriptor moves this home with a variable");
+        };
+        let mut store = two_profile_store();
+        store.profiles[0].home_dir = profiles::existing_home(cli, Path::new("/casa")).unwrap();
+        store.active.insert("codex".to_owned(), "primo".to_owned());
+        let at_home = |name: &str| (name == "HOME").then(|| "/casa".to_owned());
+
+        let launch = resolve_with("codex", &store, &[], Path::new("/casa"), &at_home).unwrap();
+        assert_eq!(launch.lifted, vec![variable.clone()]);
+        assert!(!launch.env.contains_key(variable));
+
+        store.active.insert("codex".to_owned(), "secondo".to_owned());
+        let launch = resolve_with("codex", &store, &[], Path::new("/casa"), &at_home).unwrap();
+        assert!(launch.lifted.is_empty(), "a home named by the variable lifts nothing");
     }
 
     /// A terminal is where an engine is actually worked in, and until now the

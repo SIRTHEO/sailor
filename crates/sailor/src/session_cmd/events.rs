@@ -66,9 +66,9 @@ pub(super) fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEven
     }
 }
 
-/// The name the others see in the survey: **the command line and the profile it
-/// runs under**, which is what tells two terminals of the same tree apart when
-/// the tree is all they have in common.
+/// The name the others see in the survey: **the command line and the account
+/// its home answers as**, which is what tells two terminals of the same tree
+/// apart when the tree is all they have in common.
 pub(super) fn agent_of(request: &Request<'_>) -> String {
     // A hook grafted before the line learnt to name its command line says
     // nothing here, and the survey shows that instead of guessing a name.

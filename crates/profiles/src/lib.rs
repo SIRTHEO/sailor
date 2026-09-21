@@ -640,6 +640,21 @@ pub fn build_environment(
     env
 }
 
+/// What a launch takes from the environment it inherits, which may name a
+/// home other than the one that was checked.
+pub fn environment_to_lift(
+    cli: &KnownCli,
+    profile_home: &Path,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    match &cli.home {
+        HomeMechanism::EnvVar(name) if home_is_where_the_engine_keeps_it(cli, profile_home, key_of) => {
+            vec![name.clone()]
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Whether `profile_home` is the very place `cli` keeps its home unaided.
 /// False where nobody says where the person lives: not knowing is not
 /// «elsewhere».
@@ -1107,6 +1122,19 @@ mod tests {
             HomeIdentity::Answers("a-leftover@example.com".to_owned())
         );
         assert!(!build_environment(cli, home, &living_elsewhere).is_empty());
+    }
+
+    #[test]
+    fn a_launch_in_the_default_home_lifts_the_variable_it_inherits() {
+        let cli = find_cli("claude").unwrap();
+        let HomeMechanism::EnvVar(variable) = &cli.home else {
+            panic!("the descriptor moves this home with a variable");
+        };
+        let home = Path::new("/Users/someone/.claude");
+        let living_there = |name: &str| (name == "HOME").then(|| "/Users/someone".to_owned());
+        let living_elsewhere = |name: &str| (name == "HOME").then(|| "/Users/another".to_owned());
+        assert_eq!(environment_to_lift(cli, home, &living_there), vec![variable.clone()]);
+        assert!(environment_to_lift(cli, home, &living_elsewhere).is_empty());
     }
 
     /// An order, not a demand: with nothing beside it, the file inside wins.
