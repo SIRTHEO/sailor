@@ -25,6 +25,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 - `cargo test -p sailor -j 1 --test a_flow_never_grows_what_it_sends_in_silence --test every_flow_path_the_code_names_exists --test take_the_next_fault --test take_the_next_work`
 - `cargo test -p sailor -j 1 --test a_flow_step_is_not_a_shell_program` — the seed counts the steps that still reach for a shell
+- `cargo test -p sailor -j 1 --test a_shipped_flow_calls_the_functions_it_defines --test a_step_may_not_name_a_field_after_what_it_points_at` — a step that defines shell it never runs, and a `with` field that covers the value its own pointer reaches for
 - `cargo test -p flow -j 1`
 
 ## C. When `crates/actions` or a brake changes

@@ -779,6 +779,7 @@
   "run.failure.no_trusted_policy": "the delivery policy could not be read from the trunk the repository declares",
   "run.failure.mandate_off_shape": "the mandate is not shaped like one this flow can read",
   "run.failure.not_authorized": "the person did not write back the word that lets this go on",
+  "run.failure.not_in_service": "the sailor in service is not the binary anybody vouched for",
   "run.failure.invalid_input": "the step's inputs are not in the expected shape",
   "run.failure.invalid_output": "the step's result is not in the shape it declared",
   "run.failure.invalid_recovered_output": "the recovered result is not in the declared shape — the work was done",

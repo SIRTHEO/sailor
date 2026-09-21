@@ -147,42 +147,33 @@
         "deps": [
           "the_request"
         ],
-        "action": "shell_check",
+        "action": "sailor_in_service",
         "max_attempts": 1,
         "when": null,
-        "with": {
-          "command": "set -eu\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nbinary=\"$home/bin/sailor\"\n[ -x \"$binary\" ] || { echo \"no sailor in service at $binary: this flow calls no other\" >&2; exit 2; }\n[ -r \"$home/state/sailor-binary-commit\" ] || { echo \"the sailor at $binary has no stamp naming the commit it was built from\" >&2; exit 2; }\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\") || { echo \"cannot read the stamp of $binary\" >&2; exit 2; }\n[ -n \"$stamp\" ] || { echo \"the stamp of $binary names no commit\" >&2; exit 2; }\n[ -r \"$home/state/sailor-binary-commit.sha256\" ] || { echo \"no sha256 is recorded for the sailor at $binary, so nothing vouches for it. A person who trusts that binary records it with: shasum -a 256 < $binary | awk '{ print \\$1 }' > $home/state/sailor-binary-commit.sha256\" >&2; exit 2; }\nrecorded=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit.sha256\") || { echo \"cannot read the recorded sha256 of $binary\" >&2; exit 2; }\ndigest=$(shasum -a 256 < \"$binary\") || { echo \"cannot read $binary\" >&2; exit 2; }\ndigest=${digest%% *}\n[ -n \"$recorded\" ] && [ \"$digest\" = \"$recorded\" ] || { echo \"the sailor at $binary has sha256 $digest, and ${recorded:-nothing} is recorded for it: it is not the binary that was put into service\" >&2; exit 2; }\nprintf '{\"sailor\":\"%s\",\"commit\":\"%s\",\"sha256\":\"%s\"}' \"$binary\" \"$stamp\" \"$digest\"\n",
-          "env": {},
-          "timeout_secs": 30,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "sailor": {
-                "type": "string"
-              },
-              "commit": {
-                "type": "string"
-              },
-              "sha256": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "sailor",
-              "commit",
-              "sha256"
-            ],
-            "allow_extra": false
-          }
-        },
-        "needs": [
-          "shasum"
-        ],
+        "with": {},
+        "needs": [],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "commit": {
+              "type": "string"
+            },
+            "sailor": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "commit",
+            "sailor",
+            "sha256"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -436,10 +427,10 @@
               "$from": "/the_request/branch"
             },
             "SAILOR_BIN": {
-              "$from": "/the_sailor/answer/sailor"
+              "$from": "/the_sailor/sailor"
             },
             "SAILOR_SHA": {
-              "$from": "/the_sailor/answer/sha256"
+              "$from": "/the_sailor/sha256"
             }
           },
           "timeout_secs": 120,
