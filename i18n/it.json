@@ -818,7 +818,7 @@
   "run.failure.task_unreadable": "il file del compito non si è potuto leggere, o non nomina un comando di prova",
   "run.failure.terminal_not_held": "Sailor non ha in mano quel terminale",
   "run.failure.test_command_not_runnable": "il comando di prova del compito non è partito: cargo c'è su questa macchina?",
-  "run.failure.the_tree_stays": "l’albero che porta quel ramo resta in piedi: qualcuno è dentro, è bloccato, oppure nessuno ha potuto dire chi sta dove",
+  "run.failure.the_tree_stays": "l’albero che porta quel ramo resta in piedi: qualcuno è dentro, è bloccato, è l’albero da cui gira il flusso, git non ha voluto rimuoverlo, oppure nessuno ha potuto dire chi sta dove",
   "run.failure.tool_unavailable": "lo strumento non c'è su questa macchina",
   "run.failure.patch_refused": "la patch non è stata applicata: nomina un file a cui nessuno ha dato assenso, o uno dietro la parete che nessun assenso apre",
   "run.failure.tree_not_cut": "il passo ha chiesto un albero suo e git non ha potuto tagliarlo, quindi non è stato eseguito in quello condiviso",
