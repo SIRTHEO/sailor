@@ -21,6 +21,8 @@ use std::process::Command;
 struct Launch {
     executable: String,
     env: BTreeMap<String, String>,
+    /// Inherited variables the launch removes, or they would decide the home.
+    lifted: Vec<String>,
     args: Vec<String>,
     /// For command lines that do not move the home with a variable but swap a
     /// link over the credentials, the link that must be standing for the launch
@@ -84,7 +86,7 @@ fn resolve_with(
     // this file: launching under the wrong identity is the worst fault this
     // command could commit, and a mismatch is exactly that fault. Past this
     // point there is no reader left to print a warning to before `exec`.
-    let identity = profiles::identity_of_home(cli, &profile.home_dir, &|path| {
+    let identity = profiles::identity_as_launched(cli, &profile.home_dir, key_of, &|path| {
         std::fs::read_to_string(path).ok()
     });
     let identity_unverified_note = match profiles::verdict_of(&identity, &profile.name) {
@@ -123,6 +125,7 @@ fn resolve_with(
     Ok(Launch {
         executable: cli.executable.to_owned(),
         env,
+        lifted: profiles::environment_to_lift(cli, &profile.home_dir, key_of),
         args: rest.to_vec(),
         expected_link,
         identity: EngineIdentity::ProfileInForce {
@@ -133,6 +136,17 @@ fn resolve_with(
         },
         identity_unverified_note,
     })
+}
+
+/// The process a launch becomes: what it lifts goes before what it overlays,
+/// so a variable the profile names itself still reaches the engine.
+fn command_for(launch: &Launch) -> Command {
+    let mut command = Command::new(&launch.executable);
+    for variable in &launch.lifted {
+        command.env_remove(variable);
+    }
+    command.args(&launch.args).envs(&launch.env);
+    command
 }
 
 /// The run_id of an engine nobody started for a flow. A real id would tie the
@@ -264,10 +278,7 @@ pub fn run(args: &[String]) -> i32 {
     write_down_the_invocation(&launch, cli_id);
     // `exec` replaces this process's image: on success the code below never
     // runs. It returns only to say the launch failed.
-    let error = Command::new(&launch.executable)
-        .args(&launch.args)
-        .envs(&launch.env)
-        .exec();
+    let error = command_for(&launch).exec();
     eprintln!(
         "{}",
         catalogue::say(
@@ -342,6 +353,44 @@ mod tests {
         assert_eq!(
             launch.env.get("CODEX_HOME"),
             Some(&"/prova/codex/secondo".to_owned())
+        );
+    }
+
+    /// A shell that carries the home variable would move a launch with nothing
+    /// overlaid off the home that was checked: the launch takes it away.
+    #[test]
+    fn a_launch_in_the_engines_own_home_lifts_the_inherited_variable() {
+        let cli = find_cli("codex").unwrap();
+        let HomeMechanism::EnvVar(variable) = &cli.home else {
+            panic!("the descriptor moves this home with a variable");
+        };
+        let mut store = two_profile_store();
+        store.profiles[0].home_dir = profiles::existing_home(cli, Path::new("/casa")).unwrap();
+        store.active.insert("codex".to_owned(), "primo".to_owned());
+        let at_home = |name: &str| (name == "HOME").then(|| "/casa".to_owned());
+
+        let launch = resolve_with("codex", &store, &[], Path::new("/casa"), &at_home).unwrap();
+        assert_eq!(launch.lifted, vec![variable.clone()]);
+        assert!(!launch.env.contains_key(variable));
+
+        let removed: Vec<_> = command_for(&launch)
+            .get_envs()
+            .filter(|(_, value)| value.is_none())
+            .map(|(name, _)| name.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            removed,
+            vec![variable.clone()],
+            "the process itself goes without it"
+        );
+
+        store
+            .active
+            .insert("codex".to_owned(), "secondo".to_owned());
+        let launch = resolve_with("codex", &store, &[], Path::new("/casa"), &at_home).unwrap();
+        assert!(
+            launch.lifted.is_empty(),
+            "a home named by the variable lifts nothing"
         );
     }
 

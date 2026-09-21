@@ -242,7 +242,7 @@ fn name_the_repairs(views: &mut [AccountView], declared: &[ProfileView]) {
 /// **READ WHATEVER IS ASKED, BECAUSE IT COSTS NO ROUND TRIP.** These records
 /// are files under the homes; only the ones touched inside the window are
 /// opened, so the whole panel is read without asking anybody anything.
-fn what_they_worked(since: i64) -> BTreeMap<String, models::work::Worked> {
+fn what_they_worked(since: i64) -> BTreeMap<(String, String), models::work::Worked> {
     let machine = toolbox::Machine::current();
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
     crate::remaining_cmd::work_per_profile(&catalog, since)
@@ -280,7 +280,7 @@ pub fn joined(
     declared: &[ProfileView],
     spending: &[AccountStanding],
     quota: &BTreeMap<String, QuotaSeen>,
-    worked: &BTreeMap<String, models::work::Worked>,
+    worked: &BTreeMap<(String, String), models::work::Worked>,
     now: i64,
 ) -> Vec<AccountView> {
     let mut views: Vec<AccountView> = declared
@@ -300,7 +300,9 @@ pub fn joined(
                 spent,
             );
             view.quota = left.cloned();
-            view.worked = worked.get(&profile.name).cloned();
+            view.worked = worked
+                .get(&(profile.cli_id.clone(), profile.name.clone()))
+                .cloned();
             view
         })
         .collect();
@@ -639,9 +641,12 @@ mod tests {
             ],
             &[spent("claude", Some("idle@example.test"), 9_000_000, None)],
             &nothing_left(),
-            &[("busy@example.test".to_owned(), worked(900, "claude-opus-5", 1_000_000))]
-                .into_iter()
-                .collect(),
+            &[(
+                ("claude".to_owned(), "busy@example.test".to_owned()),
+                worked(900, "claude-opus-5", 1_000_000),
+            )]
+            .into_iter()
+            .collect(),
             NOW,
         );
         assert_eq!(
@@ -651,7 +656,46 @@ mod tests {
         );
         let said = report(&views, 5);
         assert!(said.contains("900"), "the calls are shown: {said}");
-        assert!(said.contains("$5.00"), "and what they weigh at list price: {said}");
+        assert!(
+            said.contains("$5.00"),
+            "and what they weigh at list price: {said}"
+        );
+    }
+
+    /// One address signed in on two command lines is two rows, and each shows
+    /// only the work done on its own command line.
+    #[test]
+    fn one_address_on_two_command_lines_is_credited_once_each() {
+        let views = joined(
+            &[
+                declared("claude", "same@example.test", Access::Yes),
+                declared("codex", "same@example.test", Access::Yes),
+            ],
+            &[],
+            &nothing_left(),
+            &[
+                (
+                    ("claude".to_owned(), "same@example.test".to_owned()),
+                    worked(7, "a-model", 10),
+                ),
+                (
+                    ("codex".to_owned(), "same@example.test".to_owned()),
+                    worked(3, "a-model", 10),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            NOW,
+        );
+        let calls_of = |cli: &str| {
+            views
+                .iter()
+                .find(|view| view.cli == cli)
+                .and_then(|view| view.worked.as_ref())
+                .map(|did| did.calls)
+        };
+        assert_eq!(calls_of("claude"), Some(7));
+        assert_eq!(calls_of("codex"), Some(3));
     }
 
     /// **A SENTENCE IS NOT A SUM.** Where no price covers a model, the words
@@ -664,18 +708,24 @@ mod tests {
             &[declared("claude", "who@example.test", Access::Yes)],
             &[],
             &nothing_left(),
-            &[("who@example.test".to_owned(), worked(4, "a-model-nobody-priced", 2_000))]
-                .into_iter()
-                .collect(),
+            &[(
+                ("claude".to_owned(), "who@example.test".to_owned()),
+                worked(4, "a-model-nobody-priced", 2_000),
+            )]
+            .into_iter()
+            .collect(),
             NOW,
         );
         let said = report(&views, 5);
         assert!(said.contains("no price for one of these models"), "{said}");
         assert!(!said.contains("$no price"), "a sum is never spoken: {said}");
-        assert!(!said.contains("models at list price"), "nor is it priced: {said}");
+        assert!(
+            !said.contains("models at list price"),
+            "nor is it priced: {said}"
+        );
     }
 
-    fn nothing_worked() -> BTreeMap<String, models::work::Worked> {
+    fn nothing_worked() -> BTreeMap<(String, String), models::work::Worked> {
         BTreeMap::new()
     }
 
