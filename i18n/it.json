@@ -776,6 +776,7 @@
   "run.failure.history_unreadable": "la storia delle corse non si è potuta leggere — se fosse vuota lo direbbe",
   "run.failure.invalid_for_each_call": "la chiamata del passo a eseguire un flusso per ogni elemento non è nella forma attesa",
   "run.failure.no_trusted_policy": "la politica di consegna non si è potuta leggere dal tronco che il deposito dichiara",
+  "run.failure.mandate_off_shape": "il mandato non ha la forma di uno che questo flusso possa leggere",
   "run.failure.not_authorized": "la persona non ha scritto la parola che lascia proseguire",
   "run.failure.invalid_input": "gli ingressi del passo non sono nella forma attesa",
   "run.failure.invalid_output": "il risultato del passo non ha la forma che aveva dichiarato",

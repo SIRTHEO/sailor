@@ -776,6 +776,7 @@
   "run.failure.history_unreadable": "the run history could not be read — an empty one would say so",
   "run.failure.invalid_for_each_call": "the step's call to run a flow for each element is not in the expected shape",
   "run.failure.no_trusted_policy": "the delivery policy could not be read from the trunk the repository declares",
+  "run.failure.mandate_off_shape": "the mandate is not shaped like one this flow can read",
   "run.failure.not_authorized": "the person did not write back the word that lets this go on",
   "run.failure.invalid_input": "the step's inputs are not in the expected shape",
   "run.failure.invalid_output": "the step's result is not in the shape it declared",
