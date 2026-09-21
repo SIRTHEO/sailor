@@ -1,9 +1,7 @@
 //! Real processes: starting them, writing them in the ledger, stopping them.
 //!
-//! **EVERY PROCESS STARTED HERE IS IN THE LEDGER BEFORE IT IS USED** — fault 4
-//! cured where it is born. `Process::start` is the one road, it opens only to
-//! a `StartToken`, and it lives here because the command line starts processes
-//! too and must not carry the machinery that rebuilds a checkout.
+//! **EVERY PROCESS STARTED HERE IS IN THE LEDGER BEFORE IT IS USED** (fault 4):
+//! `Process::start` is the one road, and it opens only to a `StartToken`.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -90,12 +88,8 @@ pub struct Process {
 }
 
 impl Process {
-    /// Born in a **process group of its own**, so killing it kills what it lit.
-    ///
-    /// `sailor-live` starts `cargo` and the window's server, and both have
-    /// children: without the group, `kill` reaches the ancestor and the
-    /// grandchild survives holding the port. The twin is in
-    /// `actions::run_with_timeout`.
+    /// Born in a **process group of its own**, so killing it kills what it lit:
+    /// otherwise a grandchild survives holding the port.
     fn in_its_own_group(command: &mut Command) {
         #[cfg(unix)]
         {
@@ -174,12 +168,8 @@ impl Process {
         Ok(process)
     }
 
-    /// Lets it run on after whoever started it has gone: without this, the hook
-    /// that starts a run would kill it on the way out.
-    ///
-    /// **A START NOTHING WROTE DOWN IS NOT ONE TO LET GO.** The destructor was
-    /// its last guarantee and no row is left to name it by, so it is stopped
-    /// here instead of left where nobody can find it — fault 4.
+    /// Lets it run on after whoever started it has gone. **A START NOTHING WROTE
+    /// DOWN IS NOT ONE TO LET GO**: it is stopped here instead (fault 4).
     pub fn let_it_go(mut self) -> Result<u32, String> {
         let pid = self.child.id();
         if self.store.is_none() {

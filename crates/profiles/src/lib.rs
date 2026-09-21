@@ -112,13 +112,6 @@ pub fn verdict_of(identity: &HomeIdentity, profile_name: &str) -> IdentityVerdic
     }
 }
 
-/// The account a home answers as, read off the real disk; `None` where nobody
-/// can tell. **ONE READING FOR EVERY CALLER**: the quota and the row that shows
-/// it are keyed by this name, and two spellings list the account twice.
-pub fn home_answers_as(cli: &KnownCli, home: &Path) -> Option<String> {
-    answered(identity_of_home(cli, home, &read_the_file))
-}
-
 /// The account the home an engine keeps for itself answers as. **A DEFAULT HOME
 /// IS REACHED WITH NO VARIABLE SET**, so the file beside it is the one a launch
 /// reads; one left inside it belongs to a run that pointed the variable there.
@@ -145,6 +138,23 @@ pub fn identity_of_home(
     read: &dyn Fn(&Path) -> Option<String>,
 ) -> HomeIdentity {
     identity_from(cli, home, read, false)
+}
+
+/// The account a home answers as **the way a launch reaches it**: the test
+/// [`build_environment`] makes before it leaves the variable out is the one
+/// that decides which file is read, so a check and a launch cannot disagree.
+pub fn identity_as_launched(
+    cli: &KnownCli,
+    home: &Path,
+    key_of: &dyn Fn(&str) -> Option<String>,
+    read: &dyn Fn(&Path) -> Option<String>,
+) -> HomeIdentity {
+    identity_from(
+        cli,
+        home,
+        read,
+        home_is_where_the_engine_keeps_it(cli, home, key_of),
+    )
 }
 
 /// The same reading for a home no variable moves: beside before inside.
@@ -635,6 +645,23 @@ pub fn build_environment(
     env
 }
 
+/// What a launch takes from the environment it inherits, which may name a
+/// home other than the one that was checked.
+pub fn environment_to_lift(
+    cli: &KnownCli,
+    profile_home: &Path,
+    key_of: &dyn Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    match &cli.home {
+        HomeMechanism::EnvVar(name)
+            if home_is_where_the_engine_keeps_it(cli, profile_home, key_of) =>
+        {
+            vec![name.clone()]
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Whether `profile_home` is the very place `cli` keeps its home unaided.
 /// False where nobody says where the person lives: not knowing is not
 /// «elsewhere».
@@ -1071,6 +1098,53 @@ mod tests {
             HomeIdentity::Answers("a-leftover@example.com".to_owned()),
             "a home reached by variable still reads the file inside it"
         );
+    }
+
+    /// A profile adopted on the default home is launched with no variable, so
+    /// it is checked the way it is launched; the same path under another
+    /// person's home is reached by variable and read from inside.
+    #[test]
+    fn a_home_is_checked_the_way_it_is_launched() {
+        let cli = find_cli("claude").unwrap();
+        let home = Path::new("/Users/someone/.claude");
+        let read = |path: &Path| {
+            let email = if leaves_the_home(path) {
+                "the-account-in-use@example.test"
+            } else {
+                "a-leftover@example.test"
+            };
+            Some(format!(
+                r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#
+            ))
+        };
+        let living_there = |name: &str| (name == "HOME").then(|| "/Users/someone".to_owned());
+        let living_elsewhere = |name: &str| (name == "HOME").then(|| "/Users/another".to_owned());
+        assert_eq!(
+            identity_as_launched(cli, home, &living_there, &read),
+            HomeIdentity::Answers("the-account-in-use@example.test".to_owned())
+        );
+        assert!(build_environment(cli, home, &living_there).is_empty());
+        assert_eq!(
+            identity_as_launched(cli, home, &living_elsewhere, &read),
+            HomeIdentity::Answers("a-leftover@example.test".to_owned())
+        );
+        assert!(!build_environment(cli, home, &living_elsewhere).is_empty());
+    }
+
+    #[test]
+    fn a_launch_in_the_default_home_lifts_the_variable_it_inherits() {
+        let cli = find_cli("claude").unwrap();
+        let HomeMechanism::EnvVar(variable) = &cli.home else {
+            panic!("the descriptor moves this home with a variable");
+        };
+        let home = Path::new("/Users/someone/.claude");
+        let living_there = |name: &str| (name == "HOME").then(|| "/Users/someone".to_owned());
+        let living_elsewhere = |name: &str| (name == "HOME").then(|| "/Users/another".to_owned());
+        assert_eq!(
+            environment_to_lift(cli, home, &living_there),
+            vec![variable.clone()]
+        );
+        assert!(environment_to_lift(cli, home, &living_elsewhere).is_empty());
     }
 
     /// An order, not a demand: with nothing beside it, the file inside wins.

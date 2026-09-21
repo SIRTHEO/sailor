@@ -135,7 +135,8 @@ pub fn per_profile(
     out
 }
 
-/// What each account did in its own home since `since`, keyed by the account.
+/// What each account did in its own home since `since`, keyed by the command
+/// line and the account: one address signed in on two engines is two rows.
 ///
 /// **THE WORK OF A PERSON IS NOT IN SAILOR'S STORE.** Only what a flow called
 /// passes through the ledger; a terminal opened by hand writes its calls in the
@@ -143,15 +144,40 @@ pub fn per_profile(
 pub fn work_per_profile(
     catalog: &toolbox::Catalog,
     since: i64,
-) -> std::collections::BTreeMap<String, models::work::Worked> {
+) -> std::collections::BTreeMap<(String, String), models::work::Worked> {
     let store = profiles::store_io::load_store().unwrap_or_default();
-    let mut found = std::collections::BTreeMap::new();
+    let mut read = std::collections::BTreeSet::new();
+    let mut readings = Vec::new();
     for loaded in catalog.live() {
         let descriptor = &loaded.descriptor;
-        for (name, home) in every_home(&store, descriptor) {
-            if let Some(worked) = toolbox::work::read_in_home(descriptor, &home, since) {
-                found.insert(name, worked);
-            }
+        let Some(cli) = cli_of(descriptor) else {
+            continue;
+        };
+        readings.extend(worked_in_homes(
+            cli,
+            every_home(&store, descriptor),
+            &mut read,
+            &|home| toolbox::work::read_in_home(descriptor, home, since),
+        ));
+    }
+    models::work::per_account(readings)
+}
+
+/// **A HOME IS READ ONCE PER COMMAND LINE**, however many descriptors detect
+/// it: two readings of one home are one account's work counted twice.
+fn worked_in_homes(
+    cli: &profiles::KnownCli,
+    homes: Vec<(String, std::path::PathBuf)>,
+    read: &mut std::collections::BTreeSet<(String, std::path::PathBuf)>,
+    work_in: &dyn Fn(&std::path::Path) -> Option<models::work::Worked>,
+) -> Vec<((String, String), models::work::Worked)> {
+    let mut found = Vec::new();
+    for (name, home) in homes {
+        if !read.insert((cli.id.clone(), home.clone())) {
+            continue;
+        }
+        if let Some(worked) = work_in(&home) {
+            found.push(((cli.id.clone(), name), worked));
         }
     }
     found
@@ -202,16 +228,21 @@ fn every_home(
 fn own_home_of(
     descriptor: &toolbox::Descriptor,
 ) -> Option<(&'static profiles::KnownCli, std::path::PathBuf)> {
+    let cli = cli_of(descriptor)?;
+    let home = profiles::store_io::home_dir().ok()?;
+    Some((cli, profiles::existing_home(cli, &home)?))
+}
+
+/// The command line a descriptor detects, matched by executable.
+fn cli_of(descriptor: &toolbox::Descriptor) -> Option<&'static profiles::KnownCli> {
     let detected = descriptor
         .detect
         .as_ref()
         .and_then(|probes| probes.as_slice().first())
         .and_then(|probe| probe.command.as_deref())?;
-    let home = profiles::store_io::home_dir().ok()?;
-    let cli = profiles::known_clis()
+    profiles::known_clis()
         .iter()
-        .find(|cli| cli.executable == detected)?;
-    Some((cli, profiles::existing_home(cli, &home)?))
+        .find(|cli| cli.executable == detected)
 }
 
 /// The profiles whose command line is the one this descriptor detects. **THE
@@ -310,6 +341,34 @@ fn now_secs() -> Result<i64, String> {
 mod tests {
     use super::*;
     use models::remaining::RemainingError;
+
+    /// The key is the one the panel joins its rows on, and a home a second
+    /// descriptor detects again adds nothing.
+    #[test]
+    fn work_is_keyed_by_the_command_line_and_read_once_per_home() {
+        let cli = profiles::find_cli("codex").unwrap();
+        let did = models::work::Worked {
+            calls: 5,
+            ..models::work::Worked::default()
+        };
+        let homes = || {
+            vec![(
+                "someone@example.test".to_owned(),
+                std::path::PathBuf::from("/homes/one"),
+            )]
+        };
+        let mut read = std::collections::BTreeSet::new();
+        let first = worked_in_homes(cli, homes(), &mut read, &|_| Some(did.clone()));
+        assert_eq!(
+            first,
+            vec![(
+                (cli.id.clone(), "someone@example.test".to_owned()),
+                did.clone()
+            )]
+        );
+        let again = worked_in_homes(cli, homes(), &mut read, &|_| Some(did.clone()));
+        assert!(again.is_empty(), "the same home read twice: {again:?}");
+    }
 
     fn a_window(unit: &str, used_fraction: f64, resets_at: Option<&str>) -> Remaining {
         Remaining {
