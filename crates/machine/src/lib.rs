@@ -3,7 +3,6 @@
 //! **APART FROM THE LIVE MODE ON PURPOSE**: the command line must not depend
 //! on the supervisor. It is the `processes` table and a signal, read by both.
 
-use ledger::holdings::Whose;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -30,30 +29,6 @@ pub struct LeftRunning {
 /// What was left running, confirmed pid by pid.
 /// The kind under which a build directory is written down as taken.
 pub const BUILD_DIRECTORY: &str = "build-directory";
-
-/// Whether anything Sailor made has nobody answering for it: a row it still
-/// calls running over a process that is gone, or a holding whose owner and
-/// whose run are both over. The question a flow wakes on, so it wakes on a
-/// state and not on a period.
-pub fn something_is_left_behind(store: &ledger::Ledger) -> Result<bool, String> {
-    let ghost = left_running(store)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .any(|one| !one.still_alive);
-    if ghost {
-        return Ok(true);
-    }
-    let run_is_open = |run: &str| {
-        store
-            .run_header(run)
-            .map(|header| header.is_none_or(|one| one.ended_at.is_none()))
-            .map_err(|error| error.to_string())
-    };
-    Ok(store
-        .holdings_left_held(BUILD_DIRECTORY)?
-        .iter()
-        .any(|holding| ledger::holdings::whose(holding, &run_is_open) == Whose::Nobody))
-}
 
 /// Every process of this machine with the directory it stands in. **A table
 /// that comes back empty is a refusal**: this very process is always in it.

@@ -660,17 +660,15 @@ fn profile_home_of(engine: &profiles::KnownCli) -> Option<PathBuf> {
         profiles::HomeMechanism::EnvVar(variable) => std::env::var(variable).ok(),
         _ => None,
     };
-    profile_home_from(engine, live_env.as_deref())
+    profile_home_from(live_env.as_deref())
 }
 
 /// [`profile_home_of`], with the variable already read: pure, so a test can
 /// say what a session was launched under without touching this process.
-fn profile_home_from(engine: &profiles::KnownCli, session_env: Option<&str>) -> Option<PathBuf> {
-    if let Some(dir) = session_env.filter(|dir| !dir.is_empty()) {
-        return Some(PathBuf::from(dir));
-    }
-    let store = profiles::store_io::load_store().ok()?;
-    crate::memory_cmd::active_profile(&store, &engine.id).map(|profile| profile.home_dir.clone())
+/// With the variable absent the engine is in the home it keeps for itself,
+/// whatever profile the store holds active.
+fn profile_home_from(session_env: Option<&str>) -> Option<PathBuf> {
+    session_env.filter(|dir| !dir.is_empty()).map(PathBuf::from)
 }
 
 
@@ -929,13 +927,91 @@ mod tests {
         );
 
         let explicit = "/home/someone/.config/sailor/profiles-homes/some-engine/an-account";
-        let home = profile_home_from(engine, Some(explicit));
+        let home = profile_home_from(Some(explicit));
 
         assert_eq!(
             home,
             Some(PathBuf::from(explicit)),
             "the session's own variable must win outright, with no store read at all"
         );
+    }
+
+    /// A session is named by the home it runs in: its variable's home read from
+    /// inside, or with no variable the engine's own home read from beside it.
+    #[test]
+    fn a_session_is_named_by_the_home_it_runs_in() {
+        let engine = profiles::find_cli("claude").expect("a known command line");
+        let profiles::HomeMechanism::EnvVar(variable) = &engine.home else {
+            panic!(
+                "the fixture this test relies on has changed: {:?}",
+                engine.home
+            );
+        };
+        let read = |path: &std::path::Path| {
+            let beside = path
+                .components()
+                .any(|part| part == std::path::Component::ParentDir);
+            let email = if beside {
+                "the-default-account@example.test"
+            } else if path.starts_with("/homes/a-profile") {
+                "the-profile@example.test"
+            } else {
+                "a-leftover@example.test"
+            };
+            Some(format!(
+                r#"{{"oauthAccount":{{"emailAddress":"{email}"}}}}"#
+            ))
+        };
+        let without = |name: &str| (name == "HOME").then(|| "/Users/someone".to_owned());
+        assert_eq!(
+            account_of_this_session(engine, &without, &read, &[]).as_deref(),
+            Some("the-default-account@example.test")
+        );
+        let with = |name: &str| {
+            if name == variable.as_str() {
+                Some("/homes/a-profile".to_owned())
+            } else {
+                without(name)
+            }
+        };
+        assert_eq!(
+            account_of_this_session(engine, &with, &read, &[]).as_deref(),
+            Some("the-profile@example.test")
+        );
+    }
+
+    /// A home that cannot say which account it holds is named by the profile
+    /// declared on it, so two terminals under two profiles stay two names.
+    #[test]
+    fn a_home_that_cannot_tell_is_named_by_its_profile() {
+        let engine = profiles::find_cli("claude").expect("a known command line");
+        let profiles::HomeMechanism::EnvVar(variable) = &engine.home else {
+            panic!(
+                "the fixture this test relies on has changed: {:?}",
+                engine.home
+            );
+        };
+        let silent = |_: &std::path::Path| None;
+        let with = |name: &str| (name == variable.as_str()).then(|| "/homes/b-profile".to_owned());
+        let declared = [profiles::Profile {
+            name: "b-profile".to_owned(),
+            cli_id: engine.id.clone(),
+            home_dir: PathBuf::from("/homes/b-profile"),
+            endpoint: None,
+        }];
+        assert_eq!(
+            account_of_this_session(engine, &with, &silent, &declared).as_deref(),
+            Some("b-profile")
+        );
+        assert_eq!(account_of_this_session(engine, &with, &silent, &[]), None);
+    }
+
+    /// A session started with no variable runs in the engine's own home, so no
+    /// profile is its home, whichever one the store holds active.
+    #[test]
+    fn a_session_without_the_variable_is_under_no_profile() {
+        assert_eq!(profile_home_from(None), None);
+        assert_eq!(profile_home_from(Some("")), None);
     }
 
     /// The moments are toolbox's list and nothing is added or lost on the way:
