@@ -36,6 +36,7 @@ pub mod graph_memory;
 pub mod handoff;
 pub mod history;
 pub mod in_service;
+pub mod local_choice;
 pub mod mandate;
 pub mod mcp;
 pub mod memory;
