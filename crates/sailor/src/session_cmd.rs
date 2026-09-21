@@ -164,6 +164,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     // **ONLY WHOEVER SPEAKS OF A TERMINAL DEMANDS ONE.** `list` and `census`
     // speak of all of them: asking them for a tty makes them fail wherever the
     // output is captured, which is every script and every hook.
+    let machine = sessions::census::AskedOnce::new(LocalMachine);
     let tty = match options.get("tty") {
         Some(declared) => declared.clone(),
         // **TWO QUESTIONS, NOT ONE.** Our own descriptors first: they run
@@ -172,7 +173,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
         // Asking only the first made this command exit **1 on every hook**,
         // against the principle at the head of this module.
         None if NEEDS_A_TERMINAL.contains(&verb) => sessions::tty::current()
-            .or_else(|| sessions::census::tty_of_nearest_ancestor(&LocalMachine))
+            .or_else(|| sessions::census::tty_of_nearest_ancestor(&machine))
             .ok_or_else(|| catalogue::say("cli.session.no_terminal_anywhere", &[]))?,
         None => String::new(),
     };
@@ -208,7 +209,7 @@ fn dispatch(args: &[String]) -> Result<Report, String> {
     };
 
     // Here, and only here, the machine is looked at: an event has arrived.
-    let census = Census::of(&LocalMachine);
+    let census = Census::of(&machine);
 
     act(&Request {
         verb,

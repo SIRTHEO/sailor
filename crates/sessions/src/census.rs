@@ -141,6 +141,12 @@ pub trait Machine {
     fn process_table(&self) -> Result<String, Refusal>;
     /// A pid's working directory. `None` is "I do not know".
     fn working_directory(&self, pid: u32) -> Option<String>;
+    /// Every pid's working directory; a pid missing from the answer is unknown.
+    fn working_directories(&self, pids: &[u32]) -> BTreeMap<u32, String> {
+        pids.iter()
+            .filter_map(|&pid| self.working_directory(pid).map(|dir| (pid, dir)))
+            .collect()
+    }
     /// The pid of whoever is asking: the canary.
     fn own_pid(&self) -> u32;
 }
@@ -272,6 +278,8 @@ impl Census {
             return Census::NoTerminal;
         }
 
+        let with_a_terminal: Vec<u32> = grouped.values().flatten().map(|row| row.pid).collect();
+        let directories = machine.working_directories(&with_a_terminal);
         let terminals = grouped
             .into_iter()
             .map(|(tty, rows)| Terminal {
@@ -284,7 +292,7 @@ impl Census {
                         tty: row.tty.clone(),
                         uptime: row.uptime.clone(),
                         command: row.command.clone(),
-                        working_directory: machine.working_directory(row.pid),
+                        working_directory: directories.get(&row.pid).cloned(),
                     })
                     .collect(),
                 tty,
@@ -331,17 +339,77 @@ impl Machine for LocalMachine {
     }
 
     fn working_directory(&self, pid: u32) -> Option<String> {
-        let text = read_from("lsof", &["-a", "-p", &pid.to_string(), "-d", "cwd", "-Fn"]).ok()?;
-        // `-Fn` writes one field per line, with the field letter in front:
-        // `p<pid>`, `fcwd`, `n<path>`.
-        text.lines()
-            .find_map(|line| line.strip_prefix('n'))
-            .map(str::to_owned)
+        self.working_directories(&[pid]).remove(&pid)
+    }
+
+    /// **ONE `lsof` FOR EVERY PID**, each prompt waited on one per process.
+    /// `lsof` exits 1 when a pid is gone and still writes the others.
+    fn working_directories(&self, pids: &[u32]) -> BTreeMap<u32, String> {
+        if pids.is_empty() {
+            return BTreeMap::new();
+        }
+        let list: Vec<String> = pids.iter().map(u32::to_string).collect();
+        let Ok(output) = Command::new("lsof")
+            .args(["-a", "-p", &list.join(","), "-d", "cwd", "-Fpn"])
+            .output()
+        else {
+            return BTreeMap::new();
+        };
+        directories_from(&String::from_utf8_lossy(&output.stdout))
     }
 
     fn own_pid(&self) -> u32 {
         std::process::id()
     }
+}
+
+/// A machine whose process table is read once, for the terminal and the census.
+pub struct AskedOnce<M: Machine> {
+    machine: M,
+    table: std::cell::OnceCell<Result<String, Refusal>>,
+}
+
+impl<M: Machine> AskedOnce<M> {
+    pub fn new(machine: M) -> Self {
+        Self {
+            machine,
+            table: std::cell::OnceCell::new(),
+        }
+    }
+}
+
+impl<M: Machine> Machine for AskedOnce<M> {
+    fn process_table(&self) -> Result<String, Refusal> {
+        self.table
+            .get_or_init(|| self.machine.process_table())
+            .clone()
+    }
+
+    fn working_directory(&self, pid: u32) -> Option<String> {
+        self.machine.working_directory(pid)
+    }
+
+    fn working_directories(&self, pids: &[u32]) -> BTreeMap<u32, String> {
+        self.machine.working_directories(pids)
+    }
+
+    fn own_pid(&self) -> u32 {
+        self.machine.own_pid()
+    }
+}
+
+/// `-Fpn` read back: a `p<pid>` line, then that process's `n<path>`.
+pub fn directories_from(text: &str) -> BTreeMap<u32, String> {
+    let mut found = BTreeMap::new();
+    let mut current = None;
+    for line in text.lines() {
+        if let Some(pid) = line.strip_prefix('p') {
+            current = pid.parse::<u32>().ok();
+        } else if let (Some(path), Some(pid)) = (line.strip_prefix('n'), current) {
+            found.insert(pid, path.to_owned());
+        }
+    }
+    found
 }
 
 /// **NO PIPES, EVER.** The output is captured directly, so a denial arrives
