@@ -136,6 +136,11 @@ while IFS="$tab" read -r letter kind text; do
         "cd desktop && npm test"|"cd desktop && npx tsc --noEmit")
             words=${text#cd desktop && }
             if [ "$list_only" -eq 1 ]; then say "(in desktop) $words"; continue; fi
+            # A tree cut for the gates has never installed the window's packages.
+            if [ ! -d "$root/desktop/node_modules" ]; then
+                say "\$ (in desktop) npm ci"
+                (cd "$root/desktop" && npm ci </dev/null) >&2 2>&1 || { count_red "cd desktop && npm ci"; continue; }
+            fi
             say "\$ (in desktop) $words"
             ran=$((ran + 1))
             set -f
