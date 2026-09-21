@@ -42,7 +42,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("flow", 184),
     ("inventory", 265),
     ("ledger", 136),
-    ("machine", 225),
+    ("machine", 223),
     ("models", 240),
     ("profiles", 163),
     ("registry", 277),
@@ -55,7 +55,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("toolbox", 261),
     ("trigger", 236),
     ("ui", 184),
-    ("workspace", 115),
+    ("workspace", 114),
 ];
 
 /// Words no English sentence uses, which a sentence in this tree's other
