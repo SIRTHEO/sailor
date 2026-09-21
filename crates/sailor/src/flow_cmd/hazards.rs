@@ -338,6 +338,49 @@ pub(super) fn pointers_that_cannot_match(flow: &FlowFile) -> Vec<DeadPointer> {
     found
 }
 
+/// **A STEP'S OWN `with` IS LAID OVER WHAT IT WAS HANDED**, so a field named
+/// after the value it points at covers that value before the pointer is read,
+/// and the step is handed the pointer itself. `declared_input_of` sees the
+/// name and says the pointer matches, which is why the other check passes it.
+/// Found by a step whose `with` read `"text": {"$from": "/text"}`: it broke at
+/// the first run with «invalid type: map, expected a string».
+pub(super) fn pointers_their_own_field_covers(flow: &FlowFile) -> Vec<DeadPointer> {
+    let mut found = Vec::new();
+    for step in flow.graph.steps() {
+        let Some(fields) = step.with.as_ref().and_then(Value::as_object) else {
+            continue;
+        };
+        for (key, value) in fields {
+            let covered = format!("/{key}");
+            for pointer in pointers_inside(value) {
+                if *pointer == covered || pointer.starts_with(&format!("{covered}/")) {
+                    found.push(DeadPointer {
+                        step: step.id.clone(),
+                        field: key.clone(),
+                        pointer: pointer.clone(),
+                    });
+                }
+            }
+        }
+    }
+    found
+}
+
+fn pointers_inside(value: &Value) -> Vec<&String> {
+    match value {
+        Value::Object(fields) => {
+            for (key, _) in reference::POINTER_KEYS {
+                if let Some(Value::String(pointer)) = fields.get(key) {
+                    return vec![pointer];
+                }
+            }
+            fields.values().flat_map(pointers_inside).collect()
+        }
+        Value::Array(items) => items.iter().flat_map(pointers_inside).collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn pointer_of(condition: &flow::Condition) -> Option<&str> {
     match condition {
         flow::Condition::PointerEquals { pointer, .. } => Some(pointer),

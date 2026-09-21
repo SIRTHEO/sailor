@@ -228,6 +228,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   // against — every delivery flow branches on its three `asks_*` — so it draws
   // in the same family as the other readings that end in a verdict.
   delivery_policy: "check",
+  // The mandate a delivery flow was given, read and refused before anything
+  // moves: a check, and the first step of every one of them.
+  delivery_request: "check",
   // Whether the person wrote back the one word that lets the run go on. It
   // reads what a `handed_to_agent` step left and says yes or no: a check.
   the_person_said: "check",

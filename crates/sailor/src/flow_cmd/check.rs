@@ -14,7 +14,8 @@ use super::extensions::{extensions_of_this_machine_into, undeclared_extensions_n
 use super::hazards::{
     blind_steps_asking_for_a_session, deciders_that_are_not_checks, handed_without_choices,
     hardcoded_paths,
-    outside_text_in_command, pointers_that_cannot_match, undelimited_commits, HardcodedPath,
+    outside_text_in_command, pointers_that_cannot_match, pointers_their_own_field_covers,
+    undelimited_commits, HardcodedPath,
 };
 use super::{missing_actions, one_flow, open_default_ledger};
 
@@ -232,6 +233,18 @@ pub fn refusals_of(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
         refused.push(catalogue::say(
             "cli.flow.pointer_that_cannot_match",
             &[("flow", &flow.id), ("fields", &dead.join("; "))],
+        ));
+    }
+    // The other check cannot see this one: the name is in the shape, so the
+    // pointer looks reachable. What covers it is the step's own «with».
+    let covered: Vec<String> = pointers_their_own_field_covers(flow)
+        .iter()
+        .map(|found| format!("{} in «{}» ({})", found.step, found.field, found.pointer))
+        .collect();
+    if !covered.is_empty() {
+        refused.push(catalogue::say(
+            "cli.flow.pointer_its_own_field_covers",
+            &[("flow", &flow.id), ("fields", &covered.join("; "))],
         ));
     }
     // An error, not a warning: the step does not fail, it commits another
