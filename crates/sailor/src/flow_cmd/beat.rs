@@ -87,20 +87,14 @@ enum LastRuns {
 #[derive(Default)]
 struct Glance {
     last_started: BTreeMap<String, i64>,
-    and_also: flow::AndAlso,
     streaks: Vec<flow::FailureStreak>,
     faults_written: BTreeSet<String>,
     ledger: Option<Ledger>,
 }
 
 fn glance_at(ledger: &Ledger) -> Result<Glance, ledger::LedgerError> {
-    let a_sweep_would_take = crate::worktree_cmd::a_sweep_would_take(ledger);
     Ok(Glance {
         last_started: ledger.last_started_at()?,
-        and_also: flow::AndAlso {
-            something_is_left_behind: machine::something_is_left_behind(ledger).unwrap_or(false),
-            a_tree_is_left_behind: workspace::a_tree_is_left_behind(ledger, &a_sweep_would_take),
-        },
         streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
         faults_written: ledger.faults_written()?,
         ledger: Some(ledger.clone()),
@@ -200,7 +194,7 @@ fn tick_flows_with(
                 None => Some(catalogue::say("cli.flow.no_schedule_by_hand_only", &[])),
                 Some(schedule) => {
                     let last_run = last.get(&flow.id).copied();
-                    if flow::is_due(schedule, last_run, now, glance.and_also) {
+                    if flow::is_due(schedule, last_run, now) {
                         None
                     } else {
                         Some(match last_run {
@@ -393,7 +387,7 @@ pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
             continue;
         };
         let last_run = last.get(&flow.id).copied();
-        let verdict = if flow::is_due(schedule, last_run, now, glance.and_also) {
+        let verdict = if flow::is_due(schedule, last_run, now) {
             due += 1;
             catalogue::say("cli.flow.due", &[])
         } else {

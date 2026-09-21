@@ -1,6 +1,6 @@
 {
   "id": "ask-for-a-mandate",
-  "description": "THE RELAY ASKS, AND ASKS FOR NOTHING ELSE. When a session of this machine finishes a turn, this flow reads how full that session's context has become \u2014 from the record the command line already writes about itself, never by holding the terminal \u2014 and, past the point where the work measurably starts to rot, leaves one request where the next hook will read it: write the mandate for whoever comes after you. Nothing is typed into any terminal, nothing is reset, no tree is written. The measurement it acts on: over 3,414 sessions of this machine an edit refused because the file does not say what the agent believed rises from 0.22% of attempts below 64k tokens to 1.98% above 300k, while the window after a reset is measurably no worse than any other. So the cost is in not handing over, and the ask is the cheapest half of handing over.",
+  "description": "THE RELAY ASKS, AND ASKS FOR NOTHING ELSE. When a session of this machine finishes a turn, this flow reads how full that session's context has become \u2014 from the record the command line already writes about itself, never by holding the terminal \u2014 and, past the point where the work measurably starts to rot, leaves one request where the next hook will read it: write the mandate for whoever comes after you. The standing is written after every turn that could be measured, whatever it says, so a context emptied by a reset takes its request down at the next turn instead of repeating a count from before it; a turn whose transcript could not be read leaves the last standing as it was. Nothing is typed into any terminal, nothing is reset, no tree is written. The measurement it acts on: over 3,414 sessions of this machine an edit refused because the file does not say what the agent believed rises from 0.22% of attempts below 64k tokens to 1.98% above 300k, while the window after a reset is measurably no worse than any other. So the cost is in not handing over, and the ask is the cheapest half of handing over.",
   "inputs": {},
   "graph": {
     "steps": [
@@ -119,9 +119,8 @@
         "action": "store_write",
         "max_attempts": 1,
         "when": {
-          "kind": "pointer_equals",
-          "pointer": "/measure/state",
-          "value": "oblige"
+          "kind": "pointer_has_value",
+          "pointer": "/measure/tokens"
         },
         "with": {
           "collection": "mandate_asks",
