@@ -11,6 +11,7 @@ dependencies = [
  "flow",
  "ledger",
  "libc",
+ "machine",
  "models",
  "profiles",
  "release",
@@ -1884,6 +1885,7 @@ version = "0.1.0"
 dependencies = [
  "ledger",
  "libc",
+ "sessions",
 ]
 
 [[package]]

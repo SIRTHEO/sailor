@@ -55,6 +55,30 @@ pub fn something_is_left_behind(store: &ledger::Ledger) -> Result<bool, String> 
         .any(|holding| ledger::holdings::whose(holding, &run_is_open) == Whose::Nobody))
 }
 
+/// **HISTORY AND GIT CANNOT SEE A PERSON.** A clean tree whose work the trunk
+/// holds reads like a finished one; the sweep took a live one down (fault 167).
+pub fn occupied_trees(rows: impl Iterator<Item = (String, bool)>) -> Vec<PathBuf> {
+    rows.filter(|(at, open)| *open && !at.is_empty())
+        .map(|(at, _)| PathBuf::from(at))
+        .collect()
+}
+
+/// **A STORE THAT IS NOT THERE IS NOT ONE THAT WILL NOT OPEN**: a machine that
+/// never tracked a terminal has nobody standing, and refusing sweeps nothing.
+pub fn who_is_standing() -> Option<Vec<PathBuf>> {
+    let Ok(path) = sessions::Sessions::default_path() else {
+        return Some(Vec::new());
+    };
+    if !path.exists() {
+        return Some(Vec::new());
+    }
+    let rows = sessions::Sessions::open(path).ok()?.terminals().ok()?;
+    Some(occupied_trees(
+        rows.into_iter()
+            .map(|row| (row.worktree, row.closed_at.is_none())),
+    ))
+}
+
 /// Every process of this machine with the directory it stands in. **A table
 /// that comes back empty is a refusal**: this very process is always in it.
 pub fn where_processes_stand() -> Result<Vec<(u32, std::path::PathBuf)>, String> {

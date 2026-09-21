@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 const A_PROGRAM_NOT_A_CHECK: usize = 1000;
 
 /// Steps over that size today. Downwards only.
-const SHELL_PROGRAMS_TODAY: usize = 38;
+const SHELL_PROGRAMS_TODAY: usize = 37;
 
 /// Copies beyond the first of a shell body repeated between flows. `policy`,
 /// the word a person writes back and the mandate went first, into

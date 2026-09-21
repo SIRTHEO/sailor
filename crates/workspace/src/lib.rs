@@ -472,8 +472,12 @@ pub fn remove(repo: &Path, name: &str) -> Result<PathBuf, String> {
         .find(|tree| tree.name() == name)
         .ok_or_else(|| format!("no worktree called {name}"))?;
     let path = PathBuf::from(&found.path);
-    git(repo, &["worktree", "remove", &found.path])?;
+    remove_at(repo, &path)?;
     Ok(path)
+}
+
+pub fn remove_at(repo: &Path, at: &Path) -> Result<(), String> {
+    git(repo, &["worktree", "remove", &at.to_string_lossy()]).map(|_| ())
 }
 
 /// One file git reports as changed, with its two-letter porcelain status.

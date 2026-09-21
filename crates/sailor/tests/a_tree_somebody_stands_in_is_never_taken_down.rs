@@ -3,7 +3,7 @@
 //! files, and neither can see a person: it took down the tree a peer session
 //! was working in, the same minute that session left its mandate.
 
-use sailor::worktree_cmd::occupied_trees;
+use machine::occupied_trees;
 use std::path::PathBuf;
 
 /// The reading is handed in, so this asks the rule and not the machine.

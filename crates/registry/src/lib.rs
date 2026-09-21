@@ -221,6 +221,7 @@ pub fn registry_in(
     // reading half goes in without a store; the two that write stay out.
     actions::delivery::register_delivery(&mut registry);
     actions::in_service::register_in_service(&mut registry);
+    actions::worktree::register_close_the_worktree(&mut registry);
     actions::presence::register_presence(&mut registry, ledger.clone());
     // The graph a flow deposits proposals and decisions into.
     actions::graph_memory::register_graph_memory(&mut registry, ledger.clone());
