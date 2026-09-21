@@ -88,6 +88,7 @@ fn called_in(body: &str, name: &str) -> bool {
 #[test]
 fn no_shipped_flow_defines_a_shell_function_the_step_never_calls() {
     let mut dead = Vec::new();
+    let mut read = 0;
     for path in flow_files(&root()) {
         let text = std::fs::read_to_string(&path).expect("a flow file reads");
         let flow: serde_json::Value = serde_json::from_str(&text).expect("a flow file is JSON");
@@ -103,6 +104,7 @@ fn no_shipped_flow_defines_a_shell_function_the_step_never_calls() {
             let Some(body) = step["with"]["command"].as_str() else {
                 continue;
             };
+            read += 1;
             let id = step["id"].as_str().unwrap_or("?");
             for defined in defined_in(body) {
                 if !called_in(body, &defined) {
@@ -111,6 +113,7 @@ fn no_shipped_flow_defines_a_shell_function_the_step_never_calls() {
             }
         }
     }
+    workspace::measured(read, "shell commands read in the shipped flows");
     assert!(
         dead.is_empty(),
         "a shell function is defined in a step that never calls it: {}. \
