@@ -160,6 +160,9 @@ fn an_archive_tag_the_remote_rewrote_does_not_stop_a_release() {
     );
 }
 
+/// Any version tag, not only the one being cut: the previous tag is read from
+/// them, so one that disagrees with the remote would give the notes a wrong
+/// starting point.
 #[test]
 fn a_version_tag_that_disagrees_stops_the_release_and_says_why() {
     let scratch = Scratch::new("version");
@@ -171,4 +174,47 @@ fn a_version_tag_that_disagrees_stops_the_release_and_says_why() {
         said.contains("was refused") && said.contains("v0.0.9"),
         "{said}"
     );
+}
+
+/// A git call that talks to a remote, and the first word after its verb and
+/// its flags: the remote it reaches.
+fn remote_named_in(line: &str) -> Option<&str> {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let verb = words
+        .iter()
+        .position(|word| matches!(*word, "fetch" | "ls-remote" | "push"))?;
+    words[..verb].contains(&"git").then_some(())?;
+    words[verb + 1..]
+        .iter()
+        .copied()
+        .find(|word| !word.starts_with('-'))
+}
+
+#[test]
+fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
+    let system = workspace_root().join("crates/flow/system");
+    let mut named = Vec::new();
+    for entry in std::fs::read_dir(&system).expect("the shipped flows") {
+        let path = entry.expect("an entry").path();
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(flow) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        for step in flow["graph"]["steps"].as_array().into_iter().flatten() {
+            let command = step["with"]["command"].as_str().unwrap_or_default();
+            let literal = command.lines().any(|line| {
+                remote_named_in(line) == Some("origin") || line.contains("refs/remotes/origin/")
+            });
+            if literal {
+                named.push(format!("{}: {}", path.display(), step["id"]));
+            }
+        }
+    }
+    assert!(
+        named.is_empty(),
+        "steps that name the remote instead of reading it: {named:#?}"
+    );
+    assert_eq!(remote_named_in("git fetch --quiet origin"), Some("origin"));
 }
