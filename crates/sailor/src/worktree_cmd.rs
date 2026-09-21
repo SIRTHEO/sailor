@@ -577,26 +577,6 @@ pub fn owner_in(store: &Ledger) -> impl Fn(&OpenTree) -> Whose + '_ {
     }
 }
 
-/// What the beat wakes the sweep on: a tree the sweep would take down, read off
-/// the same machine the sweep reads. A reading that fails wakes nothing.
-pub fn a_sweep_would_take(store: &Ledger) -> impl Fn(&OpenTree) -> bool + '_ {
-    let occupied = who_is_standing();
-    let standing = machine::where_processes_stand().ok();
-    move |tree| {
-        let (Some(occupied), Some(standing)) = (occupied.as_deref(), standing.as_deref()) else {
-            return false;
-        };
-        let owner = owner_in(store);
-        let holders = Holders {
-            occupied,
-            standing,
-            owner: &owner,
-            now: now(),
-        };
-        why_it_stays(Path::new(&tree.path), Some(tree), &holders).is_none()
-    }
-}
-
 /// When `git worktree add` wrote the tree's `.git` file, which is when it was cut.
 fn cut_at(at: &Path) -> Option<i64> {
     let written = std::fs::metadata(at.join(".git")).ok()?.modified().ok()?;
