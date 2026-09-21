@@ -139,15 +139,13 @@ pub(super) fn page_unseen(started: &Started<'_>, page: Option<&PageOnDisk>) -> O
 
 /// The page, where the home has one. **A missing file is `None`**, not an
 /// empty page: the greeting must not send a reader to a file that is not there.
+///
+/// **ITS ADDRESS AND NOT ITS OPENING.** The greeting is read again on every
+/// call of the session; the first memories of the page, chosen by date and not
+/// by what the session is about, were three quarters of it.
 pub(super) fn page_on_disk(home: Option<&std::path::Path>) -> Option<PageOnDisk> {
     let path = actions::memory::page_path(home?);
-    let text = std::fs::read_to_string(&path).ok()?;
-    let opening = text
-        .lines()
-        .take(PAGE_OPENING_LINES)
-        .collect::<Vec<_>>()
-        .join("\n");
-    Some(PageOnDisk { path, opening })
+    path.is_file().then_some(PageOnDisk { path })
 }
 
 /// The two lists and the memories this tree is handed, from a ledger already
@@ -329,10 +327,7 @@ pub(super) fn what_is_still_open(found: &StillOpen) -> Option<String> {
     if let Some(page) = &found.page {
         lines.push(catalogue::say(
             "cli.session.memory_page",
-            &[
-                ("path", &page.path.display().to_string()),
-                ("opening", &page.opening),
-            ],
+            &[("path", &page.path.display().to_string())],
         ));
     }
     if let Some(unseen) = &found.page_unseen {

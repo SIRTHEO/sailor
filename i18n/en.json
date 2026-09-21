@@ -1017,7 +1017,7 @@
   "cli.remember.kept_in_tree": "kept: «{label}» ({type}), for {tree}",
   "cli.remember.kept_everywhere": "kept: «{label}» ({type}), for every tree",
   "cli.session.remembered": "{count} memor(ies) hold for this tree or for every tree, the latest {recent}: `sailor search <word>` finds them, `sailor remember` adds one.",
-  "cli.session.memory_page": "The page of memories is {path}; it opens with:\n{opening}",
+  "cli.session.memory_page": "The page of memories is {path}.",
   "cli.session.page_unseen": "{engine} reads {files} at its start and none of them names the page: it does not see the memories until one does.",
   "cli.command.memory": "renders what is remembered into the one file every command line reads at its start",
   "cli.memory.page_says": "writes the page of every tree's memories still valid to state/memory.md under Sailor's home; with --print it is printed instead, and with --tree <path> only that tree's memories and the ones that hold in every tree are printed",
