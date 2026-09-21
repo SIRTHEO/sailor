@@ -754,6 +754,7 @@
   "run.failure.answer_not_json": "the answer was not JSON",
   "run.failure.answer_off_shape": "the answer is not in the declared shape",
   "run.failure.answer_too_large": "the command printed more than an answer can hold — it was refused, not cut short",
+  "run.failure.scratch_unwritable": "the files a choice is handed through could not be written here",
   "run.failure.check_failed": "the check did not pass",
   "run.failure.check_timed_out": "the check went past its time limit",
   "run.refusal.at_path": "refused by {check} at {path}: {rule}; it saw «{seen}»",

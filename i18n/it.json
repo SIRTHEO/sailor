@@ -754,6 +754,7 @@
   "run.failure.answer_not_json": "la risposta non era JSON",
   "run.failure.answer_off_shape": "la risposta non ha la forma dichiarata",
   "run.failure.answer_too_large": "il comando ha stampato più di quanto una risposta possa contenere — è stata rifiutata, non troncata",
+  "run.failure.scratch_unwritable": "i file con cui si passa una scelta non si sono potuti scrivere qui",
   "run.failure.check_failed": "la verifica non è passata",
   "run.failure.check_timed_out": "la verifica ha superato il tempo massimo",
   "run.refusal.at_path": "rifiutato da {check} in {path}: {rule}; ha visto «{seen}»",
