@@ -101,11 +101,13 @@ fn nothing_is_emptied_that_did_not_hand_a_mandate_on_first() {
 
 /// **AN ASK WRITTEN ONLY WHEN FULL IS NEVER TAKEN DOWN.** A reset empties the
 /// context and keeps the session, so a request kept from before it repeated a
-/// count the session no longer held. Every turn writes what it measured.
+/// count the session no longer held. Every turn that measured something writes
+/// what it measured; one that could not read its transcript writes nothing.
 #[test]
 fn every_turn_writes_the_standing_it_measured() {
     let ask = step("ask-for-a-mandate", "ask");
-    assert!(ask["when"].is_null(), "the standing is written whatever it says: {ask}");
+    assert_eq!(ask["when"]["kind"], "pointer_has_value", "{ask}");
+    assert_eq!(ask["when"]["pointer"], "/measure/tokens");
     assert_eq!(ask["with"]["value"]["state"]["$from"], "/measure/state");
 }
 
