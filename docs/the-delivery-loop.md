@@ -55,8 +55,7 @@ the policy file, read through one mechanical resolver — `sailor policy` — bo
 to the trunk's own commit rather than the working tree or the branch under
 review (`crates/sailor/tests/the_delivery_policy_is_read_from_the_trusted_trunk.rs`).
 
-**Shipped as flows, and run so far only against a throwaway local remote with a
-stand-in forge:** steps 4, 5, 7 and 8, 10 and 9 as `open-the-draft-pull-request`,
+**Shipped as flows:** steps 4, 5, 7 and 8, 10 and 9 as `open-the-draft-pull-request`,
 `review-a-pinned-commit`, `integrate-on-the-trunk`, `close-the-work` and
 `cut-a-release` in `crates/flow/system/`. Each forge call acts as the account
 in `sailor.forgeAs` and refuses without one; the publication gate
@@ -71,7 +70,11 @@ flow pushes to the trunk**, because the trunk refuses it: the checkpoint is
 pushed to its own branch with a lease on the ref it has just read, the
 private-names check is posted from here because only this machine holds the
 list, and the integration waits for the checks and then asks the forge to
-merge. No run of them has touched the host yet. They bootstrap in order: the integration runs
+merge. Measured on the host on 21/09/2026: `open-the-draft-pull-request` opens
+real requests, and `review-a-pinned-commit` has completed once; no run of
+`integrate-on-the-trunk` or `cut-a-release` has reached its end yet, the first
+stopping where no review of the branch was recorded and the second where the
+sailor in service did not match its recorded sha256. They bootstrap in order: the integration runs
 the trunk's `scripts/run-gates.sh`, and the gate refuses a privacy script that
 differs from the trunk's, so the resolver and the privacy script with `--text`
 reach the trunk by hand before these flows can carry anything.
