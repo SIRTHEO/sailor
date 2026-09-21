@@ -100,3 +100,28 @@ fn the_command_reads_the_row_and_writes_the_scored_one_where_it_is_told() {
         (Some("chose"), Some("b"))
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_choice_makes_its_own_private_folder_and_never_reuses_one() {
+    use std::os::unix::fs::PermissionsExt;
+    let base = std::env::temp_dir().join(format!("sailor-choice-base-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(&base).expect("a base");
+    let taken = base.join("taken");
+    std::fs::create_dir(&taken).expect("a folder somebody made first");
+    assert!(
+        private_folder(&taken).is_err(),
+        "an existing path is not taken over"
+    );
+    let place = Scratch::under(&base).expect("a folder of its own");
+    let mode = std::fs::metadata(&place.dir)
+        .expect("made")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o700);
+    let made = place.dir.clone();
+    drop(place);
+    assert!(!made.exists(), "gone with the step");
+    let _ = std::fs::remove_dir_all(&base);
+}
