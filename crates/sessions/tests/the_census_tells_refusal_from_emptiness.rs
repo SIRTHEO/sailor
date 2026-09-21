@@ -207,3 +207,85 @@ fn a_command_made_of_several_words_stays_whole() {
     assert_eq!(terminals.len(), 1);
     assert_eq!(terminals[0].inhabitants[0].command, "npm exec socraticode");
 }
+
+/// A machine that counts how many questions the census puts to it about
+/// directories: one per pid is a child process per pid on the real machine.
+struct Counting {
+    one_at_a_time: std::cell::Cell<usize>,
+    all_at_once: std::cell::Cell<usize>,
+}
+
+impl Machine for Counting {
+    fn process_table(&self) -> Result<String, Refusal> {
+        Ok(FIVE_LINES.to_owned())
+    }
+    fn working_directory(&self, _pid: u32) -> Option<String> {
+        self.one_at_a_time.set(self.one_at_a_time.get() + 1);
+        None
+    }
+    fn working_directories(&self, pids: &[u32]) -> std::collections::BTreeMap<u32, String> {
+        self.all_at_once.set(self.all_at_once.get() + 1);
+        pids.iter().map(|&pid| (pid, format!("/dir/{pid}"))).collect()
+    }
+    fn own_pid(&self) -> u32 {
+        4242
+    }
+}
+
+#[test]
+fn the_census_asks_for_every_directory_in_one_question() {
+    let machine = Counting {
+        one_at_a_time: std::cell::Cell::new(0),
+        all_at_once: std::cell::Cell::new(0),
+    };
+    let census = Census::of(&machine);
+    assert_eq!(
+        (machine.all_at_once.get(), machine.one_at_a_time.get()),
+        (1, 0),
+        "the census asked one pid at a time"
+    );
+    let shell = census.seen()[0]
+        .inhabitants
+        .iter()
+        .find(|inhabitant| inhabitant.pid == 7073)
+        .expect("the shell is on ttys001");
+    assert_eq!(shell.working_directory.as_deref(), Some("/dir/7073"));
+}
+
+#[test]
+fn a_pid_the_answer_leaves_without_a_directory_is_not_known() {
+    let found = sessions::census::directories_from("p7073\nfcwd\nn/work/general\np7072\nfcwd\n");
+    assert_eq!(found.get(&7073).map(String::as_str), Some("/work/general"));
+    assert_eq!(found.get(&7072), None);
+}
+
+/// A machine that counts how many times its process table is read.
+struct CountingTables {
+    reads: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl Machine for CountingTables {
+    fn process_table(&self) -> Result<String, Refusal> {
+        self.reads.set(self.reads.get() + 1);
+        Ok(FIVE_LINES.to_owned())
+    }
+    fn working_directory(&self, _pid: u32) -> Option<String> {
+        None
+    }
+    fn own_pid(&self) -> u32 {
+        4242
+    }
+}
+
+#[test]
+fn a_machine_asked_once_reads_its_table_once() {
+    let reads = std::rc::Rc::new(std::cell::Cell::new(0));
+    let machine = sessions::census::AskedOnce::new(CountingTables {
+        reads: reads.clone(),
+    });
+    let tty = sessions::census::tty_of_nearest_ancestor(&machine);
+    let census = Census::of(&machine);
+    assert_eq!(tty.as_deref(), Some("ttys001"));
+    assert_eq!(census.seen().len(), 2);
+    assert_eq!(reads.get(), 1, "the process table was read more than once");
+}
