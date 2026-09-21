@@ -47,7 +47,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "text": {
+          "mandate": {
             "$from": "/text"
           },
           "required": [

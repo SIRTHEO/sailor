@@ -115,7 +115,7 @@ impl Action for ThePersonSaidAction {
 
 pub const DELIVERY_REQUEST_ACTION: &str = "delivery_request";
 
-const REQUEST_FIELDS: &[&str] = &["text", "required", "optional", "exactly_one_of"];
+const REQUEST_FIELDS: &[&str] = &["mandate", "required", "optional", "exactly_one_of"];
 
 /// The shapes a field of a mandate must have to be one. Checked by name because
 /// that is what the mandate names them: a `branch` that is not a branch name
@@ -161,7 +161,10 @@ type Shape = (&'static str, fn(&str) -> bool, &'static str);
 
 #[derive(Debug, Deserialize)]
 struct RequestSpec {
-    text: String,
+    /// **NOT `text`**: a step's `with` is laid over what it was handed, so a
+    /// field named after the one it points at covers the value before the
+    /// pointer is read, and the step is handed the pointer itself.
+    mandate: String,
     required: Vec<String>,
     #[serde(default)]
     optional: BTreeMap<String, String>,
@@ -209,7 +212,7 @@ fn as_word(said: Option<&Value>) -> String {
 
 fn read_mandate(spec: &RequestSpec) -> Result<Value, String> {
     let asked: Value =
-        serde_json::from_str(&spec.text).map_err(|why| format!("the mandate is not one JSON object: {why}"))?;
+        serde_json::from_str(&spec.mandate).map_err(|why| format!("the mandate is not one JSON object: {why}"))?;
     let asked = asked
         .as_object()
         .ok_or("the mandate is not one JSON object")?;

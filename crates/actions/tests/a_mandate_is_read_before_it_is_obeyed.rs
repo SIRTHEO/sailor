@@ -49,7 +49,7 @@ fn a_repository(at: &Path) {
 
 fn the_mandate(at: &Path, text: Value) -> Result<Value, String> {
     reading(json!({
-        "text": text.to_string(),
+        "mandate": text.to_string(),
         "required": ["repo", "branch", "title"],
         "optional": { "base": "", "forge_repo": "", "issue": "", "no_issue": "", "version": "" },
         "exactly_one_of": ["issue", "no_issue"],
@@ -104,7 +104,7 @@ fn a_mandate_that_is_not_one_json_object_is_refused_rather_than_half_read() {
 
     for text in ["branch: work/a-change", "[\"work/a-change\"]", ""] {
         let why = reading(json!({
-            "text": text,
+            "mandate": text,
             "required": ["repo"],
         }))
         .expect_err("that is not a mandate");
@@ -233,7 +233,7 @@ fn an_issue_written_as_a_number_is_the_same_mandate_as_one_written_as_its_text()
 #[test]
 fn a_repo_that_is_not_an_absolute_path_is_refused_rather_than_resolved_from_wherever_this_runs() {
     let why = reading(json!({
-        "text": json!({ "repo": "a/relative/way" }).to_string(),
+        "mandate": json!({ "repo": "a/relative/way" }).to_string(),
         "required": ["repo"],
     }))
     .expect_err("a relative path means a different tree to every caller");
@@ -253,7 +253,7 @@ fn a_repository_whose_trunk_carries_no_policy_is_refused_by_name() {
     git(&at, &["commit", "-q", "-m", "first"]);
 
     let why = reading(json!({
-        "text": json!({ "repo": &at }).to_string(),
+        "mandate": json!({ "repo": &at }).to_string(),
         "required": ["repo"],
     }))
     .expect_err("there is no policy to read");
@@ -269,7 +269,7 @@ fn a_field_the_action_does_not_read_is_named_rather_than_ignored() {
     let unknown = registry
         .get("delivery_request")
         .expect("registered")
-        .unknown_fields(&json!({ "text": "{}", "required": [], "mandate": "{}" }));
+        .unknown_fields(&json!({ "mandate": "{}", "required": [], "text": "{}" }));
 
-    assert_eq!(unknown, vec!["mandate".to_owned()]);
+    assert_eq!(unknown, vec!["text".to_owned()]);
 }
