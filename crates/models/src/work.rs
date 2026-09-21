@@ -72,6 +72,35 @@ impl Worked {
                 all
             })
     }
+
+    /// Adds another home's reading of the same account: a session lives in
+    /// one home only, so the sessions add up like the calls do.
+    pub fn add(&mut self, other: Worked) {
+        self.calls += other.calls;
+        self.sessions += other.sessions;
+        for (model, tokens) in other.by_model {
+            let held = self.by_model.entry(model).or_default();
+            held.input += tokens.input;
+            held.output += tokens.output;
+            held.cache_read += tokens.cache_read;
+            held.cache_write += tokens.cache_write;
+            held.cache_write_long += tokens.cache_write_long;
+        }
+        if other.latest > self.latest {
+            self.latest = other.latest;
+        }
+    }
+}
+
+/// The work of every account, from the readings of every home. **AN ACCOUNT
+/// SIGNED IN IN TWO HOMES WORKED IN BOTH**: keeping one reading per name drops
+/// the other home's work without a word.
+pub fn per_account(readings: impl IntoIterator<Item = (String, Worked)>) -> BTreeMap<String, Worked> {
+    let mut found: BTreeMap<String, Worked> = BTreeMap::new();
+    for (account, worked) in readings {
+        found.entry(account).or_default().add(worked);
+    }
+    found
 }
 
 /// What this work would cost at list price, in micro-units; `None` where a
@@ -216,6 +245,35 @@ mod tests {
                "output_tokens":{output},"cache_read_input_tokens":7,
                "cache_creation_input_tokens":3}}}}}}"#
         )
+    }
+
+    fn tallied(lines: &[String]) -> Worked {
+        let mut tally = Tallying::default();
+        for line in lines {
+            tally.read_line(line, &words(), "2026-09-19T09:00:00Z");
+        }
+        tally.finish()
+    }
+
+    #[test]
+    fn an_account_signed_in_in_two_homes_is_credited_with_both() {
+        let dedicated = tallied(&[a_call("2026-09-19T10:00:00Z", "one", "big", 10, 1)]);
+        let default = tallied(&[
+            a_call("2026-09-19T11:00:00Z", "two", "big", 20, 2),
+            a_call("2026-09-19T12:00:00Z", "three", "small", 30, 3),
+        ]);
+        let other = tallied(&[a_call("2026-09-19T13:00:00Z", "four", "big", 40, 4)]);
+        let found = per_account([
+            ("someone@example.test".to_owned(), dedicated),
+            ("somebody-else@example.test".to_owned(), other),
+            ("someone@example.test".to_owned(), default),
+        ]);
+        let someone = &found["someone@example.test"];
+        assert_eq!((someone.calls, someone.sessions), (3, 3));
+        assert_eq!(someone.by_model["big"].input, 30);
+        assert_eq!(someone.by_model["small"].input, 30);
+        assert_eq!(someone.latest, "2026-09-19T12:00:00Z");
+        assert_eq!(found["somebody-else@example.test"].calls, 1);
     }
 
     #[test]

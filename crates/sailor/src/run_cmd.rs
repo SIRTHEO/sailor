@@ -84,7 +84,7 @@ fn resolve_with(
     // this file: launching under the wrong identity is the worst fault this
     // command could commit, and a mismatch is exactly that fault. Past this
     // point there is no reader left to print a warning to before `exec`.
-    let identity = profiles::identity_of_home(cli, &profile.home_dir, &|path| {
+    let identity = profiles::identity_as_launched(cli, &profile.home_dir, key_of, &|path| {
         std::fs::read_to_string(path).ok()
     });
     let identity_unverified_note = match profiles::verdict_of(&identity, &profile.name) {

@@ -145,16 +145,16 @@ pub fn work_per_profile(
     since: i64,
 ) -> std::collections::BTreeMap<String, models::work::Worked> {
     let store = profiles::store_io::load_store().unwrap_or_default();
-    let mut found = std::collections::BTreeMap::new();
+    let mut readings = Vec::new();
     for loaded in catalog.live() {
         let descriptor = &loaded.descriptor;
         for (name, home) in every_home(&store, descriptor) {
             if let Some(worked) = toolbox::work::read_in_home(descriptor, &home, since) {
-                found.insert(name, worked);
+                readings.push((name, worked));
             }
         }
     }
-    found
+    models::work::per_account(readings)
 }
 
 /// The same reading with the account written into every name it carries.

@@ -75,12 +75,41 @@ pub(super) fn agent_of(request: &Request<'_>) -> String {
     let Some(cli) = request.options.get("cli").filter(|id| !id.is_empty()) else {
         return catalogue::say("cli.session.a_line_that_did_not_say", &[]);
     };
-    match profiles::store_io::load_store()
-        .ok()
-        .and_then(|store| store.active.get(cli).cloned())
-    {
-        Some(profile) => format!("{cli} ({profile})"),
+    let account = profiles::find_cli(cli).ok().and_then(|engine| {
+        account_of_this_session(engine, &|name| std::env::var(name).ok(), &|path| {
+            std::fs::read_to_string(path).ok()
+        })
+    });
+    match account {
+        Some(account) => format!("{cli} ({account})"),
         None => cli.clone(),
+    }
+}
+
+/// The account the session a hook runs in answers as, from that session's own
+/// variable, or from the engine's own home when the variable is absent.
+/// **NEVER THE STORE'S ACTIVE PROFILE**: it can be switched while a session
+/// keeps the account it started with.
+pub(super) fn account_of_this_session(
+    engine: &profiles::KnownCli,
+    key_of: &dyn Fn(&str) -> Option<String>,
+    read: &dyn Fn(&std::path::Path) -> Option<String>,
+) -> Option<String> {
+    let moved_to = match &engine.home {
+        profiles::HomeMechanism::EnvVar(variable) => key_of(variable).filter(|dir| !dir.is_empty()),
+        _ => None,
+    };
+    let identity = match moved_to {
+        Some(dir) => profiles::identity_of_home(engine, std::path::Path::new(&dir), read),
+        None => {
+            let here = key_of("HOME")?;
+            let own = profiles::existing_home(engine, std::path::Path::new(&here))?;
+            profiles::identity_of_own_home(engine, &own, read)
+        }
+    };
+    match identity {
+        profiles::HomeIdentity::Answers(account) => Some(account),
+        profiles::HomeIdentity::CannotTell(_) => None,
     }
 }
 
