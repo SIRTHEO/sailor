@@ -218,3 +218,34 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
     );
     assert_eq!(remote_named_in("git fetch --quiet origin"), Some("origin"));
 }
+
+/// No step reads a tag it fetches whole, and a tag the remote rewrote makes a
+/// plain fetch fail with the reason hidden by `--quiet`: every whole fetch says
+/// it leaves the tags where they are.
+#[test]
+fn no_shipped_fetch_follows_the_remote_tags() {
+    let system = workspace_root().join("crates/flow/system");
+    let mut following = Vec::new();
+    for entry in std::fs::read_dir(&system).expect("the shipped flows") {
+        let path = entry.expect("an entry").path();
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(flow) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        for step in flow["graph"]["steps"].as_array().into_iter().flatten() {
+            let command = step["with"]["command"].as_str().unwrap_or_default();
+            for line in command.lines() {
+                let fetch = line.split_whitespace().any(|word| word == "fetch");
+                if fetch && remote_named_in(line).is_some() && !line.contains("--no-tags") {
+                    following.push(format!("{}: {}", path.display(), step["id"]));
+                }
+            }
+        }
+    }
+    assert!(
+        following.is_empty(),
+        "steps whose fetch follows the remote tags: {following:#?}"
+    );
+}
