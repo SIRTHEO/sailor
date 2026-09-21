@@ -2,7 +2,7 @@
 //! build in service. Sources the repository does not track say they do not
 //! know, even when they sit inside some other repository.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::Command;
 
 fn asked(args: &[&str]) -> Option<String> {
@@ -23,14 +23,22 @@ fn main() {
         "cargo:rustc-env=SAILOR_BUILD_COMMIT={}",
         commit.as_deref().unwrap_or("")
     );
-    let Some(git_dir) = asked(&["rev-parse", "--absolute-git-dir"]).map(PathBuf::from) else {
-        return;
-    };
-    // HEAD moves on a checkout, its log on every commit. A watched file that
-    // is missing would make every build dirty, so only those present count.
-    for watched in [git_dir.join("HEAD"), git_dir.join("logs").join("HEAD")] {
-        if watched.exists() {
-            println!("cargo:rerun-if-changed={}", watched.display());
+    let mut watched = vec![
+        "HEAD".to_owned(),
+        "logs/HEAD".to_owned(),
+        "packed-refs".to_owned(),
+    ];
+    watched.extend(asked(&["symbolic-ref", "-q", "HEAD"]));
+    // HEAD moves on a checkout, the branch it names on a commit even where no
+    // reflog is kept. A watched file that is missing would make every build
+    // dirty, so only those present count.
+    for path in watched {
+        let Some(file) = asked(&["rev-parse", "--path-format=absolute", "--git-path", &path])
+        else {
+            continue;
+        };
+        if Path::new(&file).exists() {
+            println!("cargo:rerun-if-changed={file}");
         }
     }
 }

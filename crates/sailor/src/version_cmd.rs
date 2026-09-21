@@ -39,4 +39,27 @@ mod tests {
         assert!(unknown.starts_with("sailor 0.1.0 ("), "{unknown}");
         assert_ne!(unknown, "sailor 0.1.0 ()");
     }
+
+    fn git(args: &[&str]) -> Option<String> {
+        let out = std::process::Command::new("git")
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .args(args)
+            .output()
+            .ok()?;
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+            .filter(|said| !said.is_empty())
+    }
+
+    /// Sources a repository tracks name its head; sources nothing tracks, such
+    /// as an archive, say they do not know.
+    #[test]
+    fn a_build_from_a_tracked_tree_names_its_head() {
+        let tracked = git(&["ls-files", "build.rs"]).is_some();
+        let head = tracked
+            .then(|| git(&["rev-parse", "--verify", "HEAD^{commit}"]))
+            .flatten();
+        assert_eq!(env!("SAILOR_BUILD_COMMIT"), head.as_deref().unwrap_or(""));
+    }
 }
