@@ -1017,7 +1017,7 @@
   "cli.remember.kept_in_tree": "tenuta: «{label}» ({type}), per {tree}",
   "cli.remember.kept_everywhere": "tenuta: «{label}» ({type}), per ogni albero",
   "cli.session.remembered": "{count} memorie valgono per questo albero o per ogni albero, le ultime {recent}: `sailor search <parola>` le trova, `sailor remember` ne aggiunge una.",
-  "cli.session.memory_page": "La pagina delle memorie è {path}; comincia così:\n{opening}",
+  "cli.session.memory_page": "La pagina delle memorie è {path}.",
   "cli.session.page_unseen": "{engine} legge {files} all'avvio e nessuno di essi nomina la pagina: non vede le memorie finché uno non lo fa.",
   "cli.command.memory": "rende ciò che si ricorda nell'unico file che ogni riga di comando legge all'avvio",
   "cli.memory.page_says": "scrive in state/memory.md sotto la casa di Sailor la pagina delle memorie ancora valide di ogni albero; con --print la stampa invece, e con --tree <percorso> stampa solo le memorie di quell'albero e quelle che valgono in ogni albero",

@@ -617,10 +617,9 @@ struct StillOpen {
     handover: Option<ledger::HandoverMissed>,
 }
 
-/// The page of memories as it sits on disk: its address, and how it opens.
+/// The page of memories as it sits on disk: its address.
 struct PageOnDisk {
     path: PathBuf,
-    opening: String,
 }
 
 /// The files this terminal's engine reads at its start, none of which names
@@ -672,8 +671,6 @@ fn profile_home_from(session_env: Option<&str>) -> Option<PathBuf> {
     session_env.filter(|dir| !dir.is_empty()).map(PathBuf::from)
 }
 
-/// How many of the page's lines the greeting repeats.
-const PAGE_OPENING_LINES: usize = 3;
 
 
 
@@ -2192,8 +2189,10 @@ mod tests {
         );
     }
 
-    /// The page's address and its first lines travel in the greeting **only
-    /// while the file is there**: a path to nothing is a promise nobody keeps.
+    /// The page's address travels in the greeting **only while the file is
+    /// there**: a path to nothing is a promise nobody keeps. **Its memories do
+    /// not travel at all**: the greeting is paid again on every call of the
+    /// session, and the memories a session needs are not the newest ones.
     #[test]
     fn the_greeting_names_the_page_only_where_the_file_exists() {
         let scratch = Scratch::new("pagina-delle-memorie");
@@ -2233,8 +2232,8 @@ mod tests {
             "the path is not named: {said}"
         );
         assert!(
-            said.contains("**three**") && !said.contains("**four**"),
-            "the opening is not the first three lines: {said}"
+            !said.contains("**one**") && !said.contains("(project)"),
+            "the greeting copies memories off the page: {said}"
         );
         assert!(
             page_on_disk(None).is_none(),
