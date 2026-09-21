@@ -1,5 +1,6 @@
 //! The commit this binary is built from, so `sailor version` can name the
-//! build in service. A build outside a repository says it does not know.
+//! build in service. Sources the repository does not track say they do not
+//! know, even when they sit inside some other repository.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -13,24 +14,23 @@ fn asked(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
-    let commit = asked(&["rev-parse", "--verify", "HEAD^{commit}"]);
+    println!("cargo:rerun-if-changed=build.rs");
+    let tracked = asked(&["ls-files", "build.rs"]).is_some();
+    let commit = tracked
+        .then(|| asked(&["rev-parse", "--verify", "HEAD^{commit}"]))
+        .flatten();
     println!(
         "cargo:rustc-env=SAILOR_BUILD_COMMIT={}",
         commit.as_deref().unwrap_or("")
     );
-    // A new commit moves HEAD, or the branch HEAD points at: either reruns this.
-    if let Some(git_dir) = asked(&["rev-parse", "--absolute-git-dir"]).map(PathBuf::from) {
-        println!("cargo:rerun-if-changed={}", git_dir.join("HEAD").display());
-        if let Some(branch) = asked(&["symbolic-ref", "--quiet", "HEAD"]) {
-            let common = asked(&["rev-parse", "--path-format=absolute", "--git-common-dir"])
-                .map(PathBuf::from)
-                .unwrap_or(git_dir);
-            println!("cargo:rerun-if-changed={}", common.join(&branch).display());
-            println!(
-                "cargo:rerun-if-changed={}",
-                common.join("packed-refs").display()
-            );
+    let Some(git_dir) = asked(&["rev-parse", "--absolute-git-dir"]).map(PathBuf::from) else {
+        return;
+    };
+    // HEAD moves on a checkout, its log on every commit. A watched file that
+    // is missing would make every build dirty, so only those present count.
+    for watched in [git_dir.join("HEAD"), git_dir.join("logs").join("HEAD")] {
+        if watched.exists() {
+            println!("cargo:rerun-if-changed={}", watched.display());
         }
     }
-    println!("cargo:rerun-if-changed=build.rs");
 }

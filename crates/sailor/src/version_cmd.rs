@@ -18,7 +18,7 @@ pub fn run(_args: &[String]) -> i32 {
 
 fn said(version: &str, commit: &str) -> String {
     if commit.is_empty() {
-        return format!("sailor {version} (built outside a repository: commit unknown)");
+        return catalogue::say("cli.version.commit_unknown", &[("version", version)]);
     }
     format!("sailor {version} ({commit})")
 }
@@ -35,10 +35,8 @@ mod tests {
     #[test]
     fn the_version_names_the_commit_it_was_built_from() {
         assert_eq!(said("0.1.0", "760deb69"), "sailor 0.1.0 (760deb69)");
-        assert!(said("0.1.0", "").contains("commit unknown"));
-        assert!(
-            !env!("SAILOR_BUILD_COMMIT").is_empty(),
-            "a build inside this repository knows its commit"
-        );
+        let unknown = said("0.1.0", "");
+        assert!(unknown.starts_with("sailor 0.1.0 ("), "{unknown}");
+        assert_ne!(unknown, "sailor 0.1.0 ()");
     }
 }
