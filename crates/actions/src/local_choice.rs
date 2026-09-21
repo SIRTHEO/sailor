@@ -93,7 +93,10 @@ impl Action for LocalChoiceAction {
             .map_err(|error| ActionError::new("scratch_unwritable", error.to_string()))?;
         let mut env = spec.env.clone();
         env.insert(DECISION_INPUT_VARIABLE.to_owned(), path_text(&place.input));
-        env.insert(DECISION_OUTPUT_VARIABLE.to_owned(), path_text(&place.output));
+        env.insert(
+            DECISION_OUTPUT_VARIABLE.to_owned(),
+            path_text(&place.output),
+        );
         let invocation = CheckInvocation {
             command: spec.command.clone(),
             env,
@@ -177,7 +180,11 @@ pub fn read_choice(
             reading.insert(key.into(), json!(value));
         }
     }
-    let scores: Vec<(&str, f64)> = ids.iter().copied().zip(probabilities.iter().copied()).collect();
+    let scores: Vec<(&str, f64)> = ids
+        .iter()
+        .copied()
+        .zip(probabilities.iter().copied())
+        .collect();
     let Some((best, probability)) = scores
         .iter()
         .copied()

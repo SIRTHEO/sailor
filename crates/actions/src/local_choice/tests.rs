@@ -33,11 +33,17 @@ fn what_the_row_does_not_publish_turns_a_winner_into_an_abstention() {
     for (row, threshold) in [
         (SCORED.replace(r#""prompt_sha256":"d173df","#, ""), 0.7),
         (SCORED.to_owned(), 0.95),
-        (SCORED.replace(r#""Explore","Plan""#, r#""Explore","Deploy""#), 0.7),
+        (
+            SCORED.replace(r#""Explore","Plan""#, r#""Explore","Deploy""#),
+            0.7,
+        ),
     ] {
         let read = read_choice(&passed(), &row, &declared, threshold);
         assert_eq!(read["outcome"], "abstained", "{row}");
-        assert!(read.get("chosen").is_none(), "an abstention hands on no winner");
+        assert!(
+            read.get("chosen").is_none(),
+            "an abstention hands on no winner"
+        );
     }
 }
 
@@ -53,7 +59,10 @@ fn a_scorer_that_fails_or_writes_nothing_is_data_not_an_error() {
         (down, SCORED),
         (CheckResult::TimedOut, SCORED),
         (passed(), ""),
-        (passed(), r#"{"option_ids":["a","b"],"probabilities":[1.0]}"#),
+        (
+            passed(),
+            r#"{"option_ids":["a","b"],"probabilities":[1.0]}"#,
+        ),
     ] {
         let read = read_choice(&answer, scored, &declared, 0.5);
         assert_eq!(read["outcome"], "failed", "{scored}");
