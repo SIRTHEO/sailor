@@ -3,7 +3,9 @@
 //! with the probability it won by. The step never fails on the answer: `chose`,
 //! `abstained` and `failed` are data a later step branches on.
 
-use crate::process::{run_shell_check_watched, sink_for_step, CheckInvocation, CheckResult, Pipe, StepSinks};
+use crate::process::{
+    run_shell_check_watched, sink_for_step, CheckInvocation, CheckResult, Pipe, StepSinks,
+};
 use flow::{Action, ActionError, ActionOutcome, Ran, SharedState, StepSpecies};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -20,7 +22,10 @@ pub const EVIDENCE_VARIABLE: &str = "SAILOR_EVIDENCE";
 /// The exit a decider gives when it looked and stayed below its threshold.
 const ABSTAINED_EXIT: i32 = 3;
 
-pub fn register_local_choice(registry: &mut flow::ActionRegistry, watcher: Option<Arc<dyn StepSinks>>) {
+pub fn register_local_choice(
+    registry: &mut flow::ActionRegistry,
+    watcher: Option<Arc<dyn StepSinks>>,
+) {
     registry.register(LOCAL_CHOICE_ACTION, LocalChoiceAction { watcher });
 }
 
@@ -59,7 +64,8 @@ impl Action for LocalChoiceAction {
     }
 
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        self.execute_and_report(input, shared).map(|(outcome, _)| outcome)
+        self.execute_and_report(input, shared)
+            .map(|(outcome, _)| outcome)
     }
 
     fn execute_and_report(
@@ -84,10 +90,16 @@ impl Action for LocalChoiceAction {
         let ran = invocation.ran();
         let live = sink_for_step(&self.watcher, shared);
         if let Some(live) = live.as_deref() {
-            live.chunk(Pipe::Stderr, format!("[sailor] {}\n", ran.announce()).as_bytes());
+            live.chunk(
+                Pipe::Stderr,
+                format!("[sailor] {}\n", ran.announce()).as_bytes(),
+            );
         }
         let answer = run_shell_check_watched(&invocation, live.as_deref());
-        Ok((ActionOutcome::Went(read_choice(&answer, spec.options.as_deref())), Some(ran)))
+        Ok((
+            ActionOutcome::Went(read_choice(&answer, spec.options.as_deref())),
+            Some(ran),
+        ))
     }
 
     fn species(&self) -> StepSpecies {
@@ -104,31 +116,56 @@ impl Action for LocalChoiceAction {
 pub fn read_choice(answer: &CheckResult, declared: Option<&[String]>) -> Value {
     let (code, stdout, stderr) = match answer {
         CheckResult::Passed { stdout } => (0, stdout.as_str(), ""),
-        CheckResult::Failed { code, stdout, stderr } => (code.unwrap_or(-1), stdout.as_str(), stderr.as_str()),
+        CheckResult::Failed {
+            code,
+            stdout,
+            stderr,
+        } => (code.unwrap_or(-1), stdout.as_str(), stderr.as_str()),
         CheckResult::TimedOut => return failed("timed_out"),
     };
     let Some(said) = last_json_object(stdout) else {
-        return failed(&format!("no answer on stdout (exit {code}): {}", first_line(stderr)));
+        return failed(&format!(
+            "no answer on stdout (exit {code}): {}",
+            first_line(stderr)
+        ));
     };
     let offered: Vec<String> = said
         .get("offered")
         .and_then(Value::as_array)
-        .map(|all| all.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        .map(|all| {
+            all.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default();
     let chosen = said.get("chosen").and_then(Value::as_str);
     let probability = said.get("probability").and_then(Value::as_f64);
     let threshold = said.get("threshold").and_then(Value::as_f64);
-    let version = said.get("version").and_then(Value::as_str).filter(|version| !version.is_empty() && *version != "?");
+    let version = said
+        .get("version")
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty() && *version != "?");
     let mut reading = Map::new();
     reading.insert("offered".into(), json!(offered));
-    for (key, value) in [("probability", probability.map(Value::from)), ("threshold", threshold.map(Value::from)), ("version", version.map(Value::from))] {
+    for (key, value) in [
+        ("probability", probability.map(Value::from)),
+        ("threshold", threshold.map(Value::from)),
+        ("version", version.map(Value::from)),
+    ] {
         if let Some(value) = value {
             reading.insert(key.into(), value);
         }
     }
     let why = if code != 0 && code != ABSTAINED_EXIT {
-        return with(reading, "failed", None, Some(&format!("exit {code}: {}", first_line(stderr))));
-    } else if code == ABSTAINED_EXIT || said.get("outcome").and_then(Value::as_str) != Some("chose") {
+        return with(
+            reading,
+            "failed",
+            None,
+            Some(&format!("exit {code}: {}", first_line(stderr))),
+        );
+    } else if code == ABSTAINED_EXIT || said.get("outcome").and_then(Value::as_str) != Some("chose")
+    {
         "below its threshold"
     } else if version.is_none() {
         "the table carries no version"
@@ -144,7 +181,12 @@ pub fn read_choice(answer: &CheckResult, declared: Option<&[String]>) -> Value {
     with(reading, "abstained", None, Some(why))
 }
 
-fn with(mut reading: Map<String, Value>, outcome: &str, chosen: Option<&str>, why: Option<&str>) -> Value {
+fn with(
+    mut reading: Map<String, Value>,
+    outcome: &str,
+    chosen: Option<&str>,
+    why: Option<&str>,
+) -> Value {
     reading.insert("outcome".into(), json!(outcome));
     if let Some(chosen) = chosen {
         reading.insert("chosen".into(), json!(chosen));
@@ -170,14 +212,20 @@ fn same_options(declared: &[String], offered: &[String]) -> bool {
 }
 
 fn last_json_object(stdout: &str) -> Option<Map<String, Value>> {
-    stdout.lines().rev().find_map(|line| match serde_json::from_str(line.trim()) {
-        Ok(Value::Object(object)) => Some(object),
-        _ => None,
-    })
+    stdout
+        .lines()
+        .rev()
+        .find_map(|line| match serde_json::from_str(line.trim()) {
+            Ok(Value::Object(object)) => Some(object),
+            _ => None,
+        })
 }
 
 fn first_line(text: &str) -> &str {
-    text.lines().find(|line| !line.trim().is_empty()).unwrap_or("").trim()
+    text.lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .trim()
 }
 
 #[cfg(test)]
