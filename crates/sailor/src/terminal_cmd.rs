@@ -576,6 +576,7 @@ fn list(args: &[String]) -> Result<i32, String> {
         return Ok(0);
     };
     let mut found = 0;
+    let mut unreached = Vec::new();
     let host_address = terminal::host::address_in(&store_root(&options)?);
     for entry in entries.flatten() {
         let path = entry.path();
@@ -586,10 +587,13 @@ fn list(args: &[String]) -> Result<i32, String> {
         if path == host_address {
             continue;
         }
-        // A file left behind by a process that died badly answers nobody: the
-        // knock is what tells a live terminal from its leftovers.
-        if std::os::unix::net::UnixStream::connect(&path).is_err() {
-            continue;
+        match what_the_knock_says(std::os::unix::net::UnixStream::connect(&path)) {
+            Knock::Answered => {}
+            Knock::Leftover => continue,
+            Knock::NotAllowed(error) => {
+                unreached.push(error);
+                continue;
+            }
         }
         let Some(name) = path
             .file_stem()
@@ -600,10 +604,39 @@ fn list(args: &[String]) -> Result<i32, String> {
         println!("{}", how_full(&room, &name, ceiling));
         found += 1;
     }
-    if found == 0 {
+    if let Some(error) = unreached.first() {
+        let count = unreached.len().to_string();
+        let room = room.display().to_string();
+        println!(
+            "{}",
+            catalogue::say(
+                "cli.terminal.knock_not_allowed",
+                &[("count", &count), ("room", &room), ("error", error)],
+            )
+        );
+    } else if found == 0 {
         println!("{}", catalogue::say("cli.terminal.none_held", &[]));
     }
     Ok(0)
+}
+
+enum Knock {
+    Answered,
+    /// A file left behind by a process that died badly: it answers nobody.
+    Leftover,
+    /// The reader may not knock. The terminal behind it may well be alive,
+    /// so it is neither listed nor counted as gone.
+    NotAllowed(String),
+}
+
+fn what_the_knock_says<T>(knocked: std::io::Result<T>) -> Knock {
+    match knocked {
+        Ok(_) => Knock::Answered,
+        Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+            Knock::NotAllowed(error.to_string())
+        }
+        Err(_) => Knock::Leftover,
+    }
 }
 
 /// One line about a terminal: what it has moved, and what that is worth.
@@ -673,6 +706,24 @@ fn options_of(args: &[String]) -> Result<Vec<(String, String)>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_knock_the_reader_may_not_make_is_not_a_dead_terminal() {
+        let refused = std::io::Error::from_raw_os_error(libc::EPERM);
+        assert!(matches!(
+            super::what_the_knock_says::<()>(Err(refused)),
+            super::Knock::NotAllowed(_)
+        ));
+        let nobody = std::io::Error::from_raw_os_error(libc::ECONNREFUSED);
+        assert!(matches!(
+            super::what_the_knock_says::<()>(Err(nobody)),
+            super::Knock::Leftover
+        ));
+        assert!(matches!(
+            super::what_the_knock_says(Ok(())),
+            super::Knock::Answered
+        ));
+    }
+
     use super::*;
 
     fn words(of: &[&str]) -> Vec<String> {
