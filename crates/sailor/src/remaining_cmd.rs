@@ -234,7 +234,7 @@ fn own_home_of(
 }
 
 /// The command line a descriptor detects, matched by executable.
-fn cli_of(descriptor: &toolbox::Descriptor) -> Option<&'static profiles::KnownCli> {
+pub(crate) fn cli_of(descriptor: &toolbox::Descriptor) -> Option<&'static profiles::KnownCli> {
     let detected = descriptor
         .detect
         .as_ref()
