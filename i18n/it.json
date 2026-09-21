@@ -779,6 +779,7 @@
   "run.failure.no_trusted_policy": "la politica di consegna non si è potuta leggere dal tronco che il deposito dichiara",
   "run.failure.mandate_off_shape": "il mandato non ha la forma di uno che questo flusso possa leggere",
   "run.failure.not_authorized": "la persona non ha scritto la parola che lascia proseguire",
+  "run.failure.not_in_service": "il sailor in servizio non è il binario per cui qualcuno ha risposto",
   "run.failure.invalid_input": "gli ingressi del passo non sono nella forma attesa",
   "run.failure.invalid_output": "il risultato del passo non ha la forma che aveva dichiarato",
   "run.failure.invalid_recovered_output": "il risultato recuperato non ha la forma dichiarata — il lavoro era stato fatto",

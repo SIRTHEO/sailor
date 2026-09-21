@@ -13,6 +13,7 @@ dependencies = [
  "libc",
  "models",
  "profiles",
+ "release",
  "serde",
  "serde_json",
  "sessions",

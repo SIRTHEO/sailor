@@ -26,6 +26,11 @@ models = { path = "../models" }
 # step starts must read the same home as `sailor run`, or two runs of one
 # flow are not the same measurement. See fault 18.
 profiles = { path = "../profiles" }
+# Where a release puts the binary in service and writes the commit it was built
+# from: the table says it is the only place that fact exists, and a flow that
+# looks for that binary reads the table instead of writing the path again.
+# No cycle: `release` depends on nothing.
+release = { path = "../release" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The frozen benchmark's hash: the same digest `flow` and `workspace` use.

@@ -13,13 +13,13 @@ use std::path::{Path, PathBuf};
 const A_PROGRAM_NOT_A_CHECK: usize = 1000;
 
 /// Steps over that size today. Downwards only.
-const SHELL_PROGRAMS_TODAY: usize = 41;
+const SHELL_PROGRAMS_TODAY: usize = 38;
 
 /// Copies beyond the first of a shell body repeated between flows. `policy`,
 /// the word a person writes back and the mandate went first, into
 /// `delivery_policy`, `the_person_said` and `delivery_request`; `the_account`,
 /// `the_sailor` and `text_gate` are what is left of the same shape.
-const REDUNDANT_SHELL_COPIES_TODAY: usize = 5;
+const REDUNDANT_SHELL_COPIES_TODAY: usize = 3;
 
 /// The longest single step. It shrinks or it stays.
 const LONGEST_SHELL_STEP_TODAY: usize = 4300;

@@ -231,6 +231,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   // The mandate a delivery flow was given, read and refused before anything
   // moves: a check, and the first step of every one of them.
   delivery_request: "check",
+  sailor_in_service: "check",
   // Whether the person wrote back the one word that lets the run go on. It
   // reads what a `handed_to_agent` step left and says yes or no: a check.
   the_person_said: "check",
