@@ -104,8 +104,10 @@ fn a_pointer_into_the_field_is_covered_as_much_as_the_field_itself() {
     let refused = refusals_of(&flow, &registry());
 
     assert!(
-        refused.iter().any(|said| said.contains(COVERS)
-            && said.contains("the_request in «text» (/text/inner)")),
+        refused
+            .iter()
+            .any(|said| said.contains(COVERS)
+                && said.contains("the_request in «text» (/text/inner)")),
         "a pointer under the covered name is covered too:\n{}",
         refused.join("\n")
     );

@@ -82,7 +82,10 @@ fn the_trunk_and_the_remote_are_read_out_of_the_repository_rather_than_assumed()
     assert_eq!(said["trunk"], "delivery-line");
     assert_eq!(said["remote"], "far-side");
     assert_eq!(said["base"], "delivery-line", "an unsaid base is the trunk");
-    assert_eq!(said["issue"], "", "an unsaid field is its default, not absent");
+    assert_eq!(
+        said["issue"], "",
+        "an unsaid field is its default, not absent"
+    );
 }
 
 #[test]
@@ -122,7 +125,10 @@ fn a_field_the_mandate_does_not_name_is_named_back_rather_than_left_empty() {
     let why = the_mandate(&at, asked).expect_err("a blank field is a missing one");
 
     assert!(why.contains("does not name"), "{why}");
-    assert!(why.contains("branch"), "the refusal must name the field: {why}");
+    assert!(
+        why.contains("branch"),
+        "the refusal must name the field: {why}"
+    );
 }
 
 /// **A MISSPELLED FIELD IS A MANDATE NOBODY GAVE.** `bran` for `branch` reads
@@ -147,7 +153,11 @@ fn a_branch_that_is_not_a_branch_name_is_refused_before_it_reaches_git() {
     let at = scratch("branch");
     a_repository(&at);
 
-    for named in ["--upload-pack=say-anything", "work/a change", "$(say-anything)"] {
+    for named in [
+        "--upload-pack=say-anything",
+        "work/a change",
+        "$(say-anything)",
+    ] {
         let mut asked = a_whole_mandate(&at);
         asked["branch"] = json!(named);
         let why = the_mandate(&at, asked).expect_err("that is not a branch name");
