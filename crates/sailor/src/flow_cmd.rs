@@ -10,7 +10,7 @@ use flow::{ActionRegistry, FlowFile, Graph};
 use ledger::Ledger;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use ui::gather::FlowSource;
 
@@ -465,13 +465,17 @@ fn usage() -> String {
 /// is a machine where nothing ran; one that will not open answers `Err`, so the
 /// list cannot print «never run» for a flow run a hundred times.
 fn runs_by_flow() -> Result<Runs, String> {
-    let Ok(dir) = default_ledger_dir() else {
-        return Ok(Runs::default());
-    };
-    if !ui::gather::ledger_present(&dir) {
+    match default_ledger_dir() {
+        Ok(dir) => runs_in(&dir),
+        Err(_) => Ok(Runs::default()),
+    }
+}
+
+fn runs_in(dir: &Path) -> Result<Runs, String> {
+    if !ui::gather::ledger_present(dir) {
         return Ok(Runs::default());
     }
-    let ledger = Ledger::open_for_reading(&dir).map_err(|error| error.to_string())?;
+    let ledger = Ledger::open_for_reading(dir).map_err(|error| error.to_string())?;
     let by_flow = ledger
         .runs_by_entity()
         .map_err(|error| error.to_string())?
@@ -856,5 +860,57 @@ mod tests {
             catalogue::say("cli.flow.list_never_run", &[])
         );
         assert!(super::how_the_runs_were_read(&empty).is_none());
+    }
+
+    fn a_run_of(entity: &str, run_id: &str) -> ledger::RunRecord {
+        ledger::RunRecord {
+            run_id: run_id.to_owned(),
+            kind: "flow".to_owned(),
+            entity: entity.to_owned(),
+            parent_run_id: None,
+            started_by: "a test".to_owned(),
+            status: "complete".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 100,
+            ended_at: Some(100),
+            worktree: None,
+            stop_reason: None,
+        }
+    }
+
+    #[test]
+    fn a_ledger_whose_folder_refuses_a_writer_still_counts_its_runs() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = TestDirectory::new();
+        {
+            let ledger = Ledger::open(&directory.0).expect("the ledger opens");
+            ledger
+                .record_run(&a_run_of("cut-a-release", "one"))
+                .expect("a run");
+            ledger
+                .record_run(&a_run_of("cut-a-release", "two"))
+                .expect("a run");
+        }
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o555)).expect("read only");
+        let counted = super::runs_in(&directory.0);
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o755))
+            .expect("writable again");
+        let counted = counted.expect("a reader may read what it may not write");
+        assert_eq!(
+            counted
+                .by_flow
+                .get("cut-a-release")
+                .map(|(count, _)| *count),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn a_ledger_that_will_not_open_answers_why_and_not_an_empty_count() {
+        let directory = TestDirectory::new();
+        directory.write("state.db", "not a database");
+        directory.write("events.db", "not a database");
+        assert!(super::runs_in(&directory.0).is_err());
     }
 }
