@@ -389,6 +389,7 @@
   "cli.terminal.no_store": "I cannot tell where the store lives",
   "cli.terminal.no_such_descriptor": "«{cli}»: no descriptor of that name is loaded",
   "cli.terminal.knock_not_allowed": "{count} letterbox(es) in {room} could not be knocked on from here ({error}): the terminals behind them may be alive, so this list is not the whole machine",
+  "cli.version.commit_unknown": "sailor {version} (commit unknown: built from sources no repository tracks)",
   "cli.terminal.none_held": "Sailor is holding no terminal",
   "cli.terminal.not_a_token_count": "«{written}» is not a number of tokens",
   "cli.terminal.not_held": "{address}: Sailor is not holding this terminal ({error})",
