@@ -359,7 +359,8 @@ fn the_ask_of(
 /// by another session on this terminal, or written before this session was
 /// compacted, describes work nobody here remembers: a fresh one is asked for.
 fn speaks_for(written: &sessions::mandate::Written, session: &str, compacted: Option<i64>) -> bool {
-    let same_author = written.session.is_empty() || session.is_empty() || written.session == session;
+    let same_author =
+        written.session.is_empty() || session.is_empty() || written.session == session;
     same_author && compacted.is_none_or(|at| written.at > at)
 }
 
@@ -908,10 +909,24 @@ mod tests {
         let foreign = the_ask_of(&ledger, &directory, "ttys003", "the-one-here", "", None);
         assert!(foreign.is_some_and(|said| said.contains("270000")));
 
-        let before = the_ask_of(&ledger, &directory, "ttys003", "the-one-before", "", Some(150));
+        let before = the_ask_of(
+            &ledger,
+            &directory,
+            "ttys003",
+            "the-one-before",
+            "",
+            Some(150),
+        );
         assert!(before.is_some_and(|said| said.contains("270000")));
 
-        let after = the_ask_of(&ledger, &directory, "ttys003", "the-one-before", "", Some(50));
+        let after = the_ask_of(
+            &ledger,
+            &directory,
+            "ttys003",
+            "the-one-before",
+            "",
+            Some(50),
+        );
         assert!(after.is_some_and(|said| !said.contains("270000")));
         let _ = std::fs::remove_dir_all(&directory);
     }

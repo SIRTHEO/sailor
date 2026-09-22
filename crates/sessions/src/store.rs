@@ -548,7 +548,11 @@ impl Sessions {
     }
 
     /// The last time a session announced one of these events, if it ever did.
-    pub fn last_event_of(&self, session: &str, names: &[&str]) -> Result<Option<i64>, SessionError> {
+    pub fn last_event_of(
+        &self,
+        session: &str,
+        names: &[&str],
+    ) -> Result<Option<i64>, SessionError> {
         let mut last = None;
         for name in names {
             let at: Option<i64> = self.connection.query_row(
