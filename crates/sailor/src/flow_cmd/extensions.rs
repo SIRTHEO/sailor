@@ -223,6 +223,9 @@ fn walk_text(field: &str, value: &Value, visit: &mut dyn FnMut(&str, &str)) {
                 } else {
                     format!("{field}.{key}")
                 };
+                if trail == trigger::sensor::SENSOR_POINTER_FIELD {
+                    continue;
+                }
                 walk_text(&trail, inner, visit);
             }
         }
@@ -457,6 +460,22 @@ mod tests {
         let text = "read /answer/verdict and crates/flow/system/ and either/or; the text is \
                     \"/text\"; https://x/y; /Users/x; the skills/ directory";
         assert_eq!(extensions_named_in(text), Vec::<String>::new());
+    }
+
+    /// A sensor's pointer names a part of its reading; the command it runs is
+    /// still read.
+    #[test]
+    fn a_sensor_pointer_is_not_a_command() {
+        let flow = flow_of(
+            "trigger",
+            r#"{"source": "sensor", "sensor": {"action": "shell_check",
+                "with": {"command": "run /first"}, "pointer": "/answer"}}"#,
+        );
+        let fields: Vec<String> = undeclared_extensions_named_in_text(&flow)
+            .into_iter()
+            .map(|named| named.field)
+            .collect();
+        assert_eq!(fields, vec!["sensor.with.command".to_owned()]);
     }
 
     /// A step that declares what it names is clean; the same name undeclared
