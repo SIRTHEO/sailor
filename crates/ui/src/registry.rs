@@ -92,6 +92,8 @@ mod tests {
         decides_done: false,
         required: false,
             needs: Vec::new(),
+            weight: flow::Weight::Light,
+            at_the_end: false,
         }
     }
 

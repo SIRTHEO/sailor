@@ -229,9 +229,10 @@
       },
       {
         "id": "release_tree",
-        "deps": ["select", "worker_tree", "acceptance"],
+        "deps": ["select", "worker_tree"],
         "action": "shell_check",
         "max_attempts": 1,
+        "at_the_end": true,
         "when": null,
         "with": {
           "command": "git -C \"$REPO\" worktree remove --force \"$PATH_TO_RELEASE\"",
@@ -426,9 +427,7 @@
         "output_schema": { "type": "any" }
       }
     ],
-    "skippable_dependencies": [
-      { "step": "release_tree", "dependency": "acceptance" }
-    ]
+    "skippable_dependencies": []
   },
   "inputs": {
     "trigger": {

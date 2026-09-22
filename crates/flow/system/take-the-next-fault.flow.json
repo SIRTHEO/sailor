@@ -104,6 +104,7 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
+        "weight": "heavy",
         "when": null,
         "with": {
           "command": "set -eu\n# The command that will judge the repair, fixed by whoever launched and\n# never by the engine: an empty one exits zero for every result there is.\n[ -n \"$CHECK\" ] || { echo \"no acceptance was given: launch with the command that runs the test from the root of the tree, exiting zero only when green, as sailor flow run take-the-next-fault \\\"cargo test -p <crate> --test <file>\\\"\" >&2; exit 1; }",

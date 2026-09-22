@@ -709,6 +709,8 @@ mod tests {
         decides_done: false,
         required: false,
                 needs: Vec::new(),
+                weight: crate::Weight::Light,
+                at_the_end: false,
             })
             .collect();
         FlowFile {

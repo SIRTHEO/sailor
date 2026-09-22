@@ -388,6 +388,7 @@
         ],
         "action": "judge_change",
         "max_attempts": 1,
+        "weight": "heavy",
         "when": null,
         "with": {
           "tree": {
@@ -564,11 +565,11 @@
         "id": "put_away",
         "deps": [
           "item",
-          "cut",
-          "record"
+          "cut"
         ],
         "action": "shell_check",
         "max_attempts": 1,
+        "at_the_end": true,
         "when": null,
         "with": {
           "command": "set -eu\ngit -C \"$TREE\" add --intent-to-add -A >/dev/null 2>&1 || true\ngit -C \"$TREE\" diff \"$BASE\" > \"$LOGS/$TASK-$RUN.diff\" || true\nrm -rf \"$TREE\"",

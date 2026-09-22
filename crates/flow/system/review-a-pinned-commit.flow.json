@@ -458,11 +458,11 @@
         "id": "release_tree",
         "deps": [
           "the_request",
-          "reviewer_tree",
-          "record"
+          "reviewer_tree"
         ],
         "action": "shell_check",
         "max_attempts": 1,
+        "at_the_end": true,
         "when": null,
         "with": {
           "command": "set -eu\ngit -C \"$REPO\" worktree unlock \"$TREE\" 2>/dev/null || true\ngit -C \"$REPO\" worktree remove \"$TREE\"\n",

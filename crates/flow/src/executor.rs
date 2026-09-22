@@ -1472,6 +1472,21 @@ fn run_one(
     let mut mine = shared.clone();
     mine.insert(CURRENT_STEP.to_owned(), Value::String(step.id.clone()));
 
+    let turn = match (work.action, step.weight) {
+        (Some(_), crate::Weight::Heavy) => {
+            match crate::machine_turn::the_machine_for(run_id, &step.id) {
+                Ok(turn) => turn,
+                Err(why) => {
+                    let completion = broke(ActionError::new("no_turn_on_the_machine", why), clock.now()?);
+                    return store.close(run_id, &step.id, work.attempt, epoch, completion);
+                }
+            }
+        }
+        _ => None,
+    };
+    if let Some(turn) = &turn {
+        mine.insert(crate::MACHINE_TURN.to_owned(), Value::String(turn.token.clone()));
+    }
     let completion = match work.action {
         None => closed(Outcome::Skipped, None, None, None, clock.now()?),
         Some(action) => match action.execute_and_report(&work.input, &mine) {
@@ -1503,6 +1518,7 @@ fn run_one(
             Err(error) => broke(error, clock.now()?),
         },
     };
+    drop(turn);
     store.close(run_id, &step.id, work.attempt, epoch, completion)
 }
 
@@ -1683,6 +1699,7 @@ fn times_broken(step: &Step, records: &[StepRecord]) -> u32 {
 
 fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Decision, FlowError> {
     let mut ready = Vec::new();
+    let mut ready_at_the_end = Vec::new();
     let mut running = Vec::new();
     let mut waiting = Vec::new();
     let mut not_yet: Vec<(String, i64)> = Vec::new();
@@ -1698,7 +1715,11 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
             Some(due) if due > now => not_yet.push((step.id.clone(), due)),
             _ => {
                 if dependencies_satisfied(graph, step, records) {
-                    ready.push(step.id.clone());
+                    if step.at_the_end {
+                        ready_at_the_end.push(step.id.clone());
+                    } else {
+                        ready.push(step.id.clone());
+                    }
                 }
             }
         };
@@ -1730,7 +1751,11 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
             None => ready_or_later(None),
         }
     }
-    if !failed.is_empty() {
+    // A failed run ends, so what it opened is closed first; a paused one does
+    // not end, and keeps it.
+    if !failed.is_empty() && running.is_empty() && !ready_at_the_end.is_empty() {
+        Ok(Decision::Ready(ready_at_the_end))
+    } else if !failed.is_empty() {
         Ok(Decision::Failed(failed))
     } else if !ready.is_empty() {
         Ok(Decision::Ready(ready))
@@ -1749,6 +1774,8 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
         Ok(Decision::Waiting(waiting))
     } else if !stopped.is_empty() {
         Ok(Decision::Stopped(stopped))
+    } else if !ready_at_the_end.is_empty() {
+        Ok(Decision::Ready(ready_at_the_end))
     } else if let Some((step, reason)) = requirement_unmet(graph, records) {
         Ok(Decision::RequirementUnmet { step, reason })
     } else {
@@ -2293,6 +2320,8 @@ mod tests {
         decides_done: false,
         required: false,
         needs: Vec::new(),
+        weight: crate::Weight::Light,
+        at_the_end: false,
         }
     }
 

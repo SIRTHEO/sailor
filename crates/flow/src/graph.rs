@@ -1,5 +1,5 @@
 use crate::for_each::FOR_EACH_ACTION;
-use crate::ValueSchema;
+use crate::{ValueSchema, Weight};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -68,6 +68,15 @@ pub struct Step {
     /// ran, or forgave its own failure leaves the run short of complete.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub required: bool,
+    /// A heavy step waits for the machine's turn before its action starts, and
+    /// holds it until the action ends: one heavy step at a time on the machine.
+    #[serde(default, skip_serializing_if = "Weight::is_light")]
+    pub weight: Weight,
+    /// This step closes what the run opened. It waits until nothing else can
+    /// move, and runs whether the run is completing or failing; a run paused on
+    /// a person, a clock or a stop keeps what it opened for whoever resumes it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub at_the_end: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -625,6 +634,8 @@ mod tests {
         decides_done: false,
         required: false,
             needs: Vec::new(),
+            weight: crate::Weight::Light,
+            at_the_end: false,
         }
     }
 

@@ -125,9 +125,13 @@ impl Action for ShellCheckAction {
         let spec: CheckSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         check_tolerance(&spec.accept, &CHECK_FAILURES)?;
+        let mut env = spec.env.clone();
+        if let Some(token) = shared.get(flow::MACHINE_TURN).and_then(Value::as_str) {
+            env.insert(flow::MACHINE_TURN_VARIABLE.to_owned(), token.to_owned());
+        }
         let invocation = CheckInvocation {
             command: spec.command.clone(),
-            env: spec.env.clone(),
+            env,
             timeout: Duration::from_secs(spec.timeout_secs),
             workdir: spec.workdir.clone(),
         };

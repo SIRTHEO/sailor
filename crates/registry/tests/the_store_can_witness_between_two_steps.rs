@@ -72,6 +72,8 @@ fn step(id: &str, deps: &[&str], action: &str, with: Value) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        weight: flow::Weight::Light,
+        at_the_end: false,
         when: None,
         with: Some(with),
         input_schema: ValueSchema::Any,

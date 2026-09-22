@@ -58,6 +58,8 @@ fn step(id: &str, action: &str, deps: &[&str]) -> Step {
         decides_done: false,
         required: false,
         needs: Vec::new(),
+        weight: flow::Weight::Light,
+        at_the_end: false,
     }
 }
 

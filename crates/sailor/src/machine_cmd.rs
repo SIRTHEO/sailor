@@ -27,6 +27,10 @@ pub const USAGE: &[Form] = &[
         form: "sailor machine free-one <path>",
         says_key: "cli.machine.form.free_one",
     },
+    Form {
+        form: "sailor machine turn -- <command>...",
+        says_key: "cli.machine.form.turn",
+    },
 ];
 
 pub fn run(args: &[String]) -> i32 {
@@ -37,6 +41,12 @@ pub fn run(args: &[String]) -> i32 {
         "free-one" => match args.get(1) {
             Some(path) => free_one(path, open_ledger().ok().as_ref()),
             None => Err(crate::forms_as_lines(USAGE).join("\n")),
+        },
+        "turn" => match args.get(1..) {
+            Some([dashes, program, rest @ ..]) if dashes == "--" => {
+                return run_in_a_turn(program, rest);
+            }
+            _ => Err(crate::forms_as_lines(USAGE).join("\n")),
         },
         other => Err(catalogue::say("cli.no_such_form", &[("verb", other)])),
     };
@@ -56,6 +66,86 @@ fn open_ledger() -> Result<Ledger, String> {
     let directory =
         ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
     Ledger::open(&directory).map_err(|error| error.to_string())
+}
+
+/// Heavy work waits here for the machine: a step the flow declares heavy,
+/// a release, a ratchet, or any command a person runs through `turn`.
+pub fn the_machine_for(purpose: &str) -> Result<machine::turn::Turn, String> {
+    let directory =
+        ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
+    let carried = std::env::var(flow::MACHINE_TURN_VARIABLE).ok();
+    machine::turn::wait_for_the_machine(
+        &machine::turn::turns_under(&directory),
+        purpose,
+        carried.as_deref(),
+        &mut |first, ahead| {
+            eprintln!(
+                "{}",
+                catalogue::say(
+                    "cli.machine.waits_for_the_machine",
+                    &[
+                        ("pid", &first.pid.to_string()),
+                        ("purpose", &first.purpose),
+                        ("ahead", &ahead.to_string()),
+                    ],
+                )
+            );
+        },
+    )
+    .map_err(|error| error.to_string())
+}
+
+/// What the flow engine waits on before a heavy step.
+pub struct TheMachine;
+
+impl flow::MachineTurns for TheMachine {
+    fn wait_for_the_machine(&self, run_id: &str, step_id: &str) -> Result<flow::HeldTurn, String> {
+        let turn = the_machine_for(&format!("{run_id} {step_id}"))?;
+        Ok(flow::HeldTurn {
+            token: turn.token().to_owned(),
+            hold: Box::new(turn),
+        })
+    }
+}
+
+fn run_in_a_turn(program: &str, rest: &[String]) -> i32 {
+    let purpose = std::iter::once(program.to_owned())
+        .chain(rest.iter().cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+    let turn = match the_machine_for(&purpose) {
+        Ok(turn) => turn,
+        Err(why) => {
+            eprintln!("sailor machine: {why}");
+            return 2;
+        }
+    };
+    match std::process::Command::new(program)
+        .args(rest)
+        .env(flow::MACHINE_TURN_VARIABLE, turn.token())
+        .status()
+    {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(error) => {
+            eprintln!("sailor machine: {program}: {error}");
+            127
+        }
+    }
+}
+
+fn about_the_turn() -> Option<String> {
+    let directory = ledger::default_directory()?;
+    let turns = machine::turn::turns_under(&directory);
+    let held = machine::turn::who_holds_the_machine(&turns)?;
+    let waiting = machine::turn::who_waits_for_the_machine(&turns);
+    Some(catalogue::say(
+        "cli.machine.turn_held",
+        &[
+            ("pid", &held.pid.to_string()),
+            ("purpose", &held.purpose),
+            ("waiting", &waiting.len().to_string()),
+        ],
+    ))
 }
 
 /// One row of the reading, already decided.
@@ -136,6 +226,10 @@ fn reading() -> Result<String, String> {
         said.push_str(&word);
     }
     if let Some(word) = about_what_listens(&store)? {
+        said.push('\n');
+        said.push_str(&word);
+    }
+    if let Some(word) = about_the_turn() {
         said.push('\n');
         said.push_str(&word);
     }

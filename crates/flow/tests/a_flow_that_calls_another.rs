@@ -222,6 +222,8 @@ fn calling_step(id: &str, calls: &str, inputs: Value) -> Step {
         decides_done: false,
         required: false,
         needs: Vec::new(),
+        weight: flow::Weight::Light,
+        at_the_end: false,
     }
 }
 

@@ -757,6 +757,7 @@ fn measured(asked: &Asked) -> Result<bool, String> {
     let shared = checkout_holding_the_gate(&root);
     let gate = if the_shared_place_takes_a_lock(&shared) { shared } else { root.clone() };
     let _only_one = only_gate_in(&gate)?;
+    let _turn = crate::machine_cmd::the_machine_for("sailor ratchet")?;
     this_checkouts_own_copies_go(&root, &gate, crate::machine_cmd::an_earlier_runs_build_goes);
     let clean = gate.join("target").join("ratchet-tree");
     let moved = clean_tree_with_changes(&root, &clean, !asked.as_committed)?;
