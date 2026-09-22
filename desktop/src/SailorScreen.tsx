@@ -14,6 +14,7 @@ import { Manual } from "./Manual";
 import { ModelsScreen } from "./ModelsScreen";
 import { ProfileList } from "./ProfileList";
 import { RunningScreen } from "./RunningScreen";
+import { TheWindow } from "./window/TheWindow";
 
 
 export function SailorScreen({
@@ -47,6 +48,7 @@ export function SailorScreen({
         )}
         {tab === "commands" && <Manual native={native} />}
         {tab === "look" && <LookScreen />}
+        {tab === "window" && <TheWindow native={native} />}
       </div>
     </div>
   );

@@ -7601,6 +7601,92 @@ tr[data-followable]:hover {
   overflow: auto;
 }
 
+.window-panel__empty {
+  margin: 0;
+  padding: 4px 20px 16px;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.window-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.window-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 20px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.window-row:hover {
+  background: var(--surface-2);
+}
+
+/* The mark is a bar and a weight, never a tint: the tint on this window means
+   a machine is doing something. */
+.window-row[aria-current] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+.window-row__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.window-row__since {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.window-row__gone {
+  font-size: var(--text-small);
+  color: var(--state-broke);
+}
+
+.window-facts {
+  margin: 0;
+  padding: 16px 20px;
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 8px 16px;
+  font-size: var(--text-body);
+}
+
+.window-facts dt {
+  color: var(--muted);
+}
+
+.window-facts dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.window-facts__path {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+/* «None declared» is a fact the workspace stated; an empty cell is not. */
+.window-facts__absent {
+  color: var(--muted);
+}
+
 /* PROHIBITION 11 ON THIS WINDOW: the panel is a list, and a list one can
    reopen is worth less than a field one can read. */
 @media (width <= 700px) {

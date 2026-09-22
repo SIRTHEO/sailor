@@ -2,14 +2,10 @@ import { describe, expect, test } from "vitest";
 import { PLACES } from "./places";
 
 /**
- * **RULE 2 OF W30: THREE PLACES AT MOST.** A person scans and does not read a
- * list to find their place: `World.tsx` renders one button per row of
- * `PLACES`, and past three the row becomes a list. The fourth place moved to
- * a second level, reached from the run that explains it.
- *
- * **IT COUNTS THE ROW, NOT A COLUMN** (ADR-023). The column of icons is
- * scanned rather than read, carries five lists, and is held by
- * `window/lists.test.ts`, which names them one by one.
+ * **RULE 2 OF W30: THREE PLACES AT MOST**, and it counts the row, not the
+ * column of icons beside it: `World.tsx` draws one button per row of `PLACES`,
+ * and past three the row becomes a list. The column carries five, held by
+ * `window/lists.test.ts` — ADR-023.
  */
 describe("the primary navigation holds at most 3 places", () => {
   test("PLACES.length is 3 or fewer", () => {
