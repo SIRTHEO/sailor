@@ -127,6 +127,11 @@ pub(super) fn filed_what_was_dropped(
         session: session.to_owned(),
         engine: request.options.get("cli").cloned().unwrap_or_default(),
         tokens: tokens_asked_of(ledger, tty),
+        tree: request
+            .store
+            .and_then(|sessions| sessions.terminal(tty).ok().flatten())
+            .map(|row| row.worktree)
+            .unwrap_or_default(),
     };
     filing_from(&catalog, &machine.env, ledger.directory(), tty, &known)
 }
@@ -138,6 +143,8 @@ struct Known {
     session: String,
     engine: String,
     tokens: Option<u64>,
+    /// The tree the terminal is registered in: the one its successor is checked against.
+    tree: String,
 }
 
 /// The fill the relay measured when it asked.
@@ -267,11 +274,18 @@ fn filed(
         object.insert("tokens".to_owned(), serde_json::Value::from(tokens));
     }
     object.entry("tokens").or_insert_with(|| serde_json::Value::from(0));
-    let at = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-    let tree = flow::workspace::find_root(&at).unwrap_or(at);
-    object
-        .entry("tree")
-        .or_insert_with(|| serde_json::Value::String(tree.display().to_string()));
+    if known.tree.is_empty() {
+        let at = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let tree = flow::workspace::find_root(&at).unwrap_or(at);
+        object
+            .entry("tree")
+            .or_insert_with(|| serde_json::Value::String(tree.display().to_string()));
+    } else {
+        object.insert(
+            "tree".to_owned(),
+            serde_json::Value::String(known.tree.clone()),
+        );
+    }
     object.insert(
         "store".to_owned(),
         serde_json::Value::String(store.display().to_string()),
@@ -495,12 +509,14 @@ mod tests {
         for held in ["session", "engine", "tokens"] {
             bare.as_object_mut().expect("an object").remove(held);
         }
+        bare["tree"] = serde_json::json!("/a/scratch/directory/the/session/stood/in");
         std::fs::write(&dropped, bare.to_string()).expect("what the shell could write");
 
         let known = Known {
             session: "a-session-of-this-test".to_owned(),
             engine: "claude-code".to_owned(),
             tokens: Some(251_000),
+            tree: "/the/tree/the/terminal/is/registered/in".to_owned(),
         };
         filing_from(&shipped(), &env, &store, "ttys009", &known)
             .expect("a drop missing only what the hook knows is still filed");
@@ -512,6 +528,10 @@ mod tests {
         assert_eq!(
             filed.written.tokens, 251_000,
             "the fill is the one the relay measured, not one the session guessed"
+        );
+        assert_eq!(
+            filed.written.tree, "/the/tree/the/terminal/is/registered/in",
+            "the tree is the one the successor is checked against"
         );
         let _ = std::fs::remove_dir_all(&directory);
     }
