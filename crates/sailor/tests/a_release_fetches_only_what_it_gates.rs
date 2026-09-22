@@ -305,3 +305,39 @@ fn no_shipped_fetch_follows_the_remote_tags() {
         "steps whose fetch follows the remote tags: {following:#?}"
     );
 }
+
+/// A `candidate_gate` handed no trunk to compare reads the remote trunk as
+/// moved from nothing, and stops every run it stands in: such a gate says it
+/// stands before its push, where the remote holds nothing of it yet.
+#[test]
+fn a_gate_with_no_trunk_to_compare_stands_before_its_push() {
+    let system = workspace_root().join("crates/flow/system");
+    let mut gates = Vec::new();
+    let mut unmarked = Vec::new();
+    for entry in std::fs::read_dir(&system).expect("the shipped flows") {
+        let path = entry.expect("an entry").path();
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(flow) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        for step in flow["graph"]["steps"].as_array().into_iter().flatten() {
+            if step["action"] != "candidate_gate" || step["with"].get("trunk_was").is_some() {
+                continue;
+            }
+            gates.push(format!("{}: {}", path.display(), step["id"]));
+            if step["with"]["before_the_push"] != true {
+                unmarked.push(format!("{}: {}", path.display(), step["id"]));
+            }
+        }
+    }
+    assert!(
+        !gates.is_empty(),
+        "no gate before its push was found to judge"
+    );
+    assert!(
+        unmarked.is_empty(),
+        "gates with no trunk to compare that would read the remote: {unmarked:#?}"
+    );
+}

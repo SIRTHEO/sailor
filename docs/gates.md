@@ -33,7 +33,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 - `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` (both suites, always both)
 - A first-execution timeout (`engine_timed_out` on a fresh temp-file engine) is rerun once and said aloud
-- `cargo test -p actions -j 1 --test a_candidate_leaves_only_through_the_gate` — the last gate before a draft, integration, a release or closing the work lets a candidate leave, proved without a forge or a binary in service
+- `cargo test -p actions -j 1 --test a_candidate_leaves_only_through_the_gate` — the last gate before a draft, integration, a release (before its build and before its push) or closing the work lets a candidate leave, proved without a forge or a binary in service
 
 ## D. When `crates/profiles`, the login probe or a launch changes
 
