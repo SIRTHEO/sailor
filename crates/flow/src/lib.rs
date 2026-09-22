@@ -32,7 +32,7 @@ pub use executor::{
     WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::{CapKind, FlowFile, Provenance};
-pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step};
+pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step, BROKEN_FIELD};
 pub use record::{
     canonical_text, digest_input, truncate_said, AttemptRelation, Holder, HolderIdentity, Outcome,
     Ran, Refusal, RefusalRule, StepRecord, StepSpecies, Why, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES,

@@ -129,6 +129,7 @@ fn step(id: &str, action: &str, deps: Vec<String>) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
         with: None,
         needs: Vec::new(),
     }
