@@ -341,7 +341,7 @@ pub struct Holders<'a> {
 /// hold is named and stays: this is the gesture that must never lose work.
 /// `occupied` is handed in and never read in here: a condition read from the
 /// machine can only be tested by arranging the machine, and such a test never
-/// gets written. [`who_is_standing`] is what the command line hands it.
+/// gets written. [`machine::who_is_standing`] is what the command line hands it.
 pub fn sweep(
     repo: &Path,
     store: &dyn OpenTrees,
@@ -548,26 +548,6 @@ pub fn owner_in(store: &Ledger) -> impl Fn(&OpenTree) -> Whose + '_ {
                 .map(|header| header.is_none_or(|one| one.ended_at.is_none()))
                 .map_err(|error| error.to_string())
         })
-    }
-}
-
-/// What the beat wakes the sweep on: a tree the sweep would take down, read off
-/// the same machine the sweep reads. A reading that fails wakes nothing.
-pub fn a_sweep_would_take(store: &Ledger) -> impl Fn(&OpenTree) -> bool + '_ {
-    let occupied = machine::who_is_standing();
-    let standing = machine::where_processes_stand().ok();
-    move |tree| {
-        let (Some(occupied), Some(standing)) = (occupied.as_deref(), standing.as_deref()) else {
-            return false;
-        };
-        let owner = owner_in(store);
-        let holders = Holders {
-            occupied,
-            standing,
-            owner: &owner,
-            now: now(),
-        };
-        why_it_stays(Path::new(&tree.path), Some(tree), &holders).is_none()
     }
 }
 

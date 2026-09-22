@@ -901,6 +901,28 @@ mod tests {
         assert!(names.contains(&"no_product_home_is_written_into_the_code"), "{names:?}");
     }
 
+    /// The release reads each judge's receipt, but only the release did: a
+    /// judge without one crossed three integrations and stopped the binary at
+    /// the last door. Written in the judge's text, it is seen by every battery.
+    #[test]
+    fn every_judge_of_this_tree_writes_a_receipt() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("the crate lives in <root>/crates/sailor")
+            .to_path_buf();
+        let silent: Vec<String> = judges_in(&root)
+            .into_iter()
+            .filter(|judge| {
+                let path = root.join("crates").join(&judge.package).join("tests").join(format!("{}.rs", judge.test));
+                let text = std::fs::read_to_string(path).unwrap_or_default();
+                !["measured(", "measured_against(", "measured_nothing("].iter().any(|call| text.contains(call))
+            })
+            .map(|judge| judge.test)
+            .collect();
+        assert!(silent.is_empty(), "judges that read the sources and print no receipt: {silent:?}");
+    }
+
     /// A test that never opens the sources is not a judge, whatever its name.
     #[test]
     fn a_test_that_does_not_read_the_sources_is_not_a_judge() {

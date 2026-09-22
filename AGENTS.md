@@ -261,7 +261,18 @@ Traps already paid for:
   that must come out as carrying. Before deleting it, `git tag archive/<name>
   <sha>` and push the tag: from there the deletion is reversible, and the proof
   that it is, is `git for-each-ref --contains <sha> refs/tags refs/remotes`. The
-  working copy is removed with `git worktree remove`.
+  working copy is closed with `sailor worktree close <name>`, which asks who is
+  standing in it first, **never with `git worktree remove` by hand**.
+- **A tree is closed by whoever opened it, and by nobody else.** A tree you did
+  not cut is not yours to take down, however clean and merged it reads: a
+  workspace another program opened (anything under `~/orca/workspaces/`) holds a
+  person's tabs, and the program closes them all when the directory goes. On
+  21/09/2026 a session took one down with `git worktree remove` after a clean
+  `lsof` reading, and a person's live session went with it: the session had been
+  started with `cd <another tree> && claude`, so no process stood in the tree. Name
+  it and leave it. **A reading taken inside the sandbox is not a reading**: `lsof`
+  and `ps` there cannot see other processes and answer empty, which is «I could
+  not look», never «nobody is here».
 - **The shape of the name has a judge, and the judge is pure.** There are three
   shapes and nothing else: the trunk; `work/<what-it-does>` with lowercase,
   digits and hyphens in the topic; `worktree-agent-<id>`, which is written by
@@ -302,6 +313,10 @@ Traps already paid for:
 - **A branch with nothing open on it is invisible.** Work that is paused gets a
   draft request saying what it holds and what it needs, so the decision is made
   on a page instead of in a branch list.
+- **The loop is run as flows, not by hand.** `docs/the-delivery-loop.md` names
+  the flow for each step, from `open-the-draft-pull-request` to `cut-a-release`;
+  `sailor flow list` says how often each has run. A step done by hand is a step
+  whose flow nobody learns is broken.
 - **In a shared checkout, commit by path and never restore the tree.** Several
   sessions write in the same working copy: `git add -A` sweeps somebody else's
   index, and `--abort`, `stash` or `reset --hard` throws away work that is not

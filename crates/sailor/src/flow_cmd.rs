@@ -10,7 +10,7 @@ use flow::{ActionRegistry, FlowFile, Graph};
 use ledger::Ledger;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use ui::gather::FlowSource;
 
@@ -461,30 +461,46 @@ fn usage() -> String {
     )
 }
 
-/// How many runs each flow has, and when the last one began. Empty when no
-/// ledger has been opened here: a list must still print without one.
-fn runs_by_flow() -> BTreeMap<String, (usize, i64)> {
-    let Ok(dir) = default_ledger_dir() else {
-        return BTreeMap::new();
-    };
-    if !ui::gather::ledger_present(&dir) {
-        return BTreeMap::new();
+/// How many runs each flow has, and when the last one began. An absent ledger
+/// is a machine where nothing ran; one that will not open answers `Err`, so the
+/// list cannot print «never run» for a flow run a hundred times.
+fn runs_by_flow() -> Result<Runs, String> {
+    match default_ledger_dir() {
+        Ok(dir) => runs_in(&dir),
+        Err(_) => Ok(Runs::default()),
     }
-    let Ok(ledger) = Ledger::open(&dir) else {
-        return BTreeMap::new();
-    };
-    ledger
+}
+
+fn runs_in(dir: &Path) -> Result<Runs, String> {
+    if !ui::gather::ledger_present(dir) {
+        return Ok(Runs::default());
+    }
+    let ledger = Ledger::open_for_reading(dir).map_err(|error| error.to_string())?;
+    let by_flow = ledger
         .runs_by_entity()
-        .unwrap_or_default()
+        .map_err(|error| error.to_string())?
         .into_iter()
         .map(|(entity, count, last)| (entity, (count.max(0) as usize, last)))
-        .collect()
+        .collect();
+    Ok(Runs {
+        by_flow,
+        as_of_checkpoint: ledger.reads_as_of_the_last_checkpoint(),
+    })
+}
+
+#[derive(Default)]
+struct Runs {
+    by_flow: BTreeMap<String, (usize, i64)>,
+    as_of_checkpoint: bool,
 }
 
 /// A flow the product ships and nobody has run is a claim, not a feature, and
 /// the list is where that shows.
-fn how_often_it_ran(ran: &BTreeMap<String, (usize, i64)>, name: &str) -> String {
-    let Some((count, last)) = ran.get(name) else {
+fn how_often_it_ran(ran: &Result<Runs, String>, name: &str) -> String {
+    let Ok(ran) = ran else {
+        return catalogue::say("cli.flow.list_runs_unknown", &[]);
+    };
+    let Some((count, last)) = ran.by_flow.get(name) else {
         return catalogue::say("cli.flow.list_never_run", &[]);
     };
     let days = now_secs()
@@ -494,6 +510,22 @@ fn how_often_it_ran(ran: &BTreeMap<String, (usize, i64)>, name: &str) -> String 
         "cli.flow.list_ran",
         &[("count", &count.to_string()), ("days", &days.to_string())],
     )
+}
+
+/// The line under the list that says the counts beside it are partial or
+/// missing, and why.
+fn how_the_runs_were_read(ran: &Result<Runs, String>) -> Option<String> {
+    match ran {
+        Err(error) => Some(catalogue::say(
+            "cli.flow.list_ledger_unreadable",
+            &[("error", error)],
+        )),
+        Ok(runs) if runs.as_of_checkpoint => Some(catalogue::say(
+            "cli.store.read_as_of_the_last_checkpoint",
+            &[],
+        )),
+        Ok(_) => None,
+    }
 }
 
 fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
@@ -544,6 +576,9 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
     }
     if let Some(no_home) = flow::system::no_home_said(sources) {
         let _ = writeln!(report, "{no_home}");
+    }
+    if let Some(partial) = how_the_runs_were_read(&ran) {
+        let _ = writeln!(report, "{partial}");
     }
     let _ = write!(report, "{}", waiting_report());
     Ok(report)
@@ -810,5 +845,72 @@ mod tests {
             assert!(report.contains(name), "manca «{name}» in:\n{report}");
         }
         assert!(report.contains("built in"), "{report}");
+    }
+
+    #[test]
+    fn a_ledger_that_will_not_open_is_not_read_as_never_run() {
+        let blind: Result<super::Runs, String> = Err("unable to open database file".to_owned());
+        let said = super::how_often_it_ran(&blind, "cut-a-release");
+        assert_ne!(said, catalogue::say("cli.flow.list_never_run", &[]));
+        let why = super::how_the_runs_were_read(&blind).expect("the list says why");
+        assert!(why.contains("unable to open database file"), "{why}");
+        let empty: Result<super::Runs, String> = Ok(super::Runs::default());
+        assert_eq!(
+            super::how_often_it_ran(&empty, "cut-a-release"),
+            catalogue::say("cli.flow.list_never_run", &[])
+        );
+        assert!(super::how_the_runs_were_read(&empty).is_none());
+    }
+
+    fn a_run_of(entity: &str, run_id: &str) -> ledger::RunRecord {
+        ledger::RunRecord {
+            run_id: run_id.to_owned(),
+            kind: "flow".to_owned(),
+            entity: entity.to_owned(),
+            parent_run_id: None,
+            started_by: "a test".to_owned(),
+            status: "complete".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: 100,
+            ended_at: Some(100),
+            worktree: None,
+            stop_reason: None,
+        }
+    }
+
+    #[test]
+    fn a_ledger_whose_folder_refuses_a_writer_still_counts_its_runs() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = TestDirectory::new();
+        {
+            let ledger = Ledger::open(&directory.0).expect("the ledger opens");
+            ledger
+                .record_run(&a_run_of("cut-a-release", "one"))
+                .expect("a run");
+            ledger
+                .record_run(&a_run_of("cut-a-release", "two"))
+                .expect("a run");
+        }
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o555)).expect("read only");
+        let counted = super::runs_in(&directory.0);
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o755))
+            .expect("writable again");
+        let counted = counted.expect("a reader may read what it may not write");
+        assert_eq!(
+            counted
+                .by_flow
+                .get("cut-a-release")
+                .map(|(count, _)| *count),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn a_ledger_that_will_not_open_answers_why_and_not_an_empty_count() {
+        let directory = TestDirectory::new();
+        directory.write("state.db", "not a database");
+        directory.write("events.db", "not a database");
+        assert!(super::runs_in(&directory.0).is_err());
     }
 }

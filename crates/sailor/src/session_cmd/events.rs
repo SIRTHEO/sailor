@@ -66,21 +66,65 @@ pub(super) fn event_named(request: &Request<'_>, fallback: &str) -> TerminalEven
     }
 }
 
-/// The name the others see in the survey: **the command line and the profile it
-/// runs under**, which is what tells two terminals of the same tree apart when
-/// the tree is all they have in common.
+/// The name the others see in the survey: **the command line and the account
+/// its home answers as**, which is what tells two terminals of the same tree
+/// apart when the tree is all they have in common.
 pub(super) fn agent_of(request: &Request<'_>) -> String {
     // A hook grafted before the line learnt to name its command line says
     // nothing here, and the survey shows that instead of guessing a name.
     let Some(cli) = request.options.get("cli").filter(|id| !id.is_empty()) else {
         return catalogue::say("cli.session.a_line_that_did_not_say", &[]);
     };
-    match profiles::store_io::load_store()
-        .ok()
-        .and_then(|store| store.active.get(cli).cloned())
-    {
-        Some(profile) => format!("{cli} ({profile})"),
+    let declared = profiles::store_io::load_store()
+        .unwrap_or_default()
+        .profiles;
+    let account = super::engine_named(cli).and_then(|engine| {
+        account_of_this_session(
+            engine,
+            &|name| std::env::var(name).ok(),
+            &|path| std::fs::read_to_string(path).ok(),
+            &declared,
+        )
+    });
+    match account {
+        Some(account) => format!("{cli} ({account})"),
         None => cli.clone(),
+    }
+}
+
+/// The account the session a hook runs in answers as, from that session's own
+/// variable, or from the engine's own home when the variable is absent. A home
+/// that cannot tell is named by the profile declared on it.
+/// **NEVER THE STORE'S ACTIVE PROFILE**: it can be switched while a session
+/// keeps the account it started with.
+pub(super) fn account_of_this_session(
+    engine: &profiles::KnownCli,
+    key_of: &dyn Fn(&str) -> Option<String>,
+    read: &dyn Fn(&std::path::Path) -> Option<String>,
+    declared: &[profiles::Profile],
+) -> Option<String> {
+    let moved_to = match &engine.home {
+        profiles::HomeMechanism::EnvVar(variable) => key_of(variable).filter(|dir| !dir.is_empty()),
+        _ => None,
+    };
+    let (home, by_variable) = match moved_to {
+        Some(dir) => (std::path::PathBuf::from(dir), true),
+        None => (
+            profiles::existing_home(engine, std::path::Path::new(&key_of("HOME")?))?,
+            false,
+        ),
+    };
+    let identity = if by_variable {
+        profiles::identity_of_home(engine, &home, read)
+    } else {
+        profiles::identity_of_own_home(engine, &home, read)
+    };
+    match identity {
+        profiles::HomeIdentity::Answers(account) => Some(account),
+        profiles::HomeIdentity::CannotTell(_) => declared
+            .iter()
+            .find(|profile| profile.cli_id == engine.id && profile.home_dir == home)
+            .map(|profile| profile.name.clone()),
     }
 }
 

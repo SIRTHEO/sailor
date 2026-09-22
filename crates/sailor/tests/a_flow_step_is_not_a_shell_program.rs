@@ -83,6 +83,7 @@ fn shell_bodies(root: &Path) -> Vec<(String, String, String)> {
 
 fn weigh(root: &Path) -> Weighed {
     let bodies = shell_bodies(root);
+    workspace::measured(bodies.len(), "shell steps read in the shipped flows");
     let mut repeated: BTreeMap<&str, usize> = BTreeMap::new();
     for (_, _, body) in &bodies {
         if body.len() >= TOO_SHORT_TO_COUNT {

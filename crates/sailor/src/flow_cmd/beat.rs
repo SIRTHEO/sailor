@@ -4,6 +4,7 @@
 use ledger::Ledger;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
+use std::path::Path;
 use ui::gather::FlowSource;
 
 use super::run_and_resume::{run_flow, seat_of};
@@ -16,22 +17,34 @@ use super::{default_ledger_dir, known_flows, nothing_found};
 /// `unfinished_runs` misses it, and the flow it came from reads as «ran
 /// recently», so `due` calls it not due. It vanishes twice.
 pub(super) fn waiting_report() -> String {
-    let ledger = default_ledger_dir()
-        .ok()
-        .filter(|dir| dir.join("state.db").exists())
-        .and_then(|dir| Ledger::open(&dir).ok());
-    let waiting = ledger
-        .as_ref()
-        .and_then(|ledger| ledger.waiting_runs().ok())
-        .unwrap_or_default();
+    waiting_report_at(default_ledger_dir())
+}
+
+fn waiting_report_at(dir: Result<std::path::PathBuf, String>) -> String {
+    match dir {
+        Ok(dir) => waiting_report_in(&dir),
+        Err(error) => catalogue::say("cli.flow.waiting_unknown", &[("error", &error)]),
+    }
+}
+
+fn waiting_report_in(dir: &Path) -> String {
+    if !dir.join("state.db").exists() {
+        return catalogue::say("cli.flow.no_run_is_waiting", &[]);
+    }
+    let read = Ledger::open_for_reading(dir)
+        .and_then(|ledger| Ok((ledger.waiting_runs()?, ledger.runs_to_ask_again()?)));
+    // A ledger that will not be read says nobody could look, not that nobody
+    // waits: a run left for a person would vanish from the only place it shows.
+    let (waiting, to_ask_again) = match read {
+        Ok(read) => read,
+        Err(error) => {
+            return catalogue::say("cli.flow.waiting_unknown", &[("error", &error.to_string())])
+        }
+    };
     // Two lists and not one: a run somebody must come and take is not a run
     // that comes back by itself, and reading them together sends a person to
     // take a step nobody handed them. An empty first list cannot return early
     // any more, or the second one would never be reached.
-    let to_ask_again = ledger
-        .as_ref()
-        .and_then(|ledger| ledger.runs_to_ask_again().ok())
-        .unwrap_or_default();
     let mut report = if waiting.is_empty() {
         catalogue::say("cli.flow.no_run_is_waiting", &[])
     } else {
@@ -87,20 +100,14 @@ enum LastRuns {
 #[derive(Default)]
 struct Glance {
     last_started: BTreeMap<String, i64>,
-    and_also: flow::AndAlso,
     streaks: Vec<flow::FailureStreak>,
     faults_written: BTreeSet<String>,
     ledger: Option<Ledger>,
 }
 
 fn glance_at(ledger: &Ledger) -> Result<Glance, ledger::LedgerError> {
-    let a_sweep_would_take = crate::worktree_cmd::a_sweep_would_take(ledger);
     Ok(Glance {
         last_started: ledger.last_started_at()?,
-        and_also: flow::AndAlso {
-            something_is_left_behind: machine::something_is_left_behind(ledger).unwrap_or(false),
-            a_tree_is_left_behind: workspace::a_tree_is_left_behind(ledger, &a_sweep_would_take),
-        },
         streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
         faults_written: ledger.faults_written()?,
         ledger: Some(ledger.clone()),
@@ -200,7 +207,7 @@ fn tick_flows_with(
                 None => Some(catalogue::say("cli.flow.no_schedule_by_hand_only", &[])),
                 Some(schedule) => {
                     let last_run = last.get(&flow.id).copied();
-                    if flow::is_due(schedule, last_run, now, glance.and_also) {
+                    if flow::is_due(schedule, last_run, now) {
                         None
                     } else {
                         Some(match last_run {
@@ -393,7 +400,7 @@ pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
             continue;
         };
         let last_run = last.get(&flow.id).copied();
-        let verdict = if flow::is_due(schedule, last_run, now, glance.and_also) {
+        let verdict = if flow::is_due(schedule, last_run, now) {
             due += 1;
             catalogue::say("cli.flow.due", &[])
         } else {
@@ -727,5 +734,42 @@ mod tests {
         assert!(said.contains("0 run, 1 held"), "{said}");
         drop(ledger);
         let _ = fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn a_ledger_whose_folder_refuses_a_writer_still_shows_who_waits() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory = super::super::test_support::TestDirectory::new();
+        Ledger::open(&directory.0)
+            .expect("the ledger opens")
+            .record_run(&a_closed_run("cut-a-release", "cut-1", "waiting", 100))
+            .expect("a waiting run");
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o555)).expect("read only");
+        let said = waiting_report_in(&directory.0);
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o755))
+            .expect("writable again");
+        assert!(said.contains("sailor flow resume cut-1"), "{said}");
+    }
+
+    #[test]
+    fn a_ledger_that_will_not_open_is_not_read_as_nobody_waiting() {
+        let directory = super::super::test_support::TestDirectory::new();
+        assert_eq!(
+            waiting_report_in(&directory.0),
+            catalogue::say("cli.flow.no_run_is_waiting", &[])
+        );
+        directory.write("state.db", "not a database");
+        directory.write("events.db", "not a database");
+        let said = waiting_report_in(&directory.0);
+        assert_ne!(said, catalogue::say("cli.flow.no_run_is_waiting", &[]));
+        assert!(
+            said.starts_with(&catalogue::say(
+                "cli.flow.waiting_unknown",
+                &[("error", "")]
+            )),
+            "{said}"
+        );
+        let homeless = waiting_report_at(Err("no home to find a ledger in".to_owned()));
+        assert!(homeless.ends_with("no home to find a ledger in"), "{homeless}");
     }
 }
