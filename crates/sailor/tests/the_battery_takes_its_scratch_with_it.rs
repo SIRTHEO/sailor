@@ -65,6 +65,7 @@ fn the_battery_is_handed_a_root_of_the_run_and_not_the_shared_one() {
         parent.display()
     );
     let _ = std::fs::remove_dir_all(&parent);
+    workspace::measured(1, "gates script read for the root it hands the battery");
 }
 
 /// The one that matters: what a test writes into that root is gone afterwards.
@@ -88,4 +89,10 @@ fn what_the_battery_leaves_in_it_goes_when_the_run_goes() {
         parent.display()
     );
     let _ = std::fs::remove_dir_all(&parent);
+    workspace::measured_against(
+        1,
+        "root the gates hand the battery",
+        0,
+        "directories left behind when the run ended",
+    );
 }
