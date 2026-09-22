@@ -1,6 +1,6 @@
 {
   "id": "close-the-work",
-  "description": "Step 10 of docs/the-delivery-loop.md: the holdings of a delivered branch released, every gesture safe to run again. The mandate is one JSON object naming the repo and the branch, with base, forge_repo and issue optional; an unsaid base is the trunk the repository declares, and an unsaid issue means the work closed none: the closing comment is neither written nor judged nor sent, and everything else the branch holds is still released. The proof is the merged pull request of the branch, read from the host so a rerun after the branch is gone still finds it, and the remote trunk must carry both its head and its merge commit before anything is deleted. The closing comment names that commit and passes the publication gate before it leaves; an issue already closed is left as it is. The worktree holding the branch is removed only when it is clean and nobody holds its lock; the local and remote branches are deleted only when the remote trunk carries their tip, and the remote deletion follows the push policy read from the trusted trunk. Before the remote branch comes down the flow pushes the tag refs/tags/archive/<branch> at the head the merged pull request proved, so a squashed head stays reachable once its branch is gone; a tag already there at another commit stops the run instead of being moved. The run is complete only when the issue, where one was named, reads closed, the remote carries the archive tag, and no worktree, local branch or remote branch is left. Every forge call runs as the account in sailor.forgeAs. What this flow defends against: a delivery policy that is missing, is not readable as JSON, or whose merge, push and release fields are not auto or ask, and a remote that cannot be read or has moved. It runs no sailor of its own, so it vouches for none. What it does not defend against: whoever closes a handed step, such as authorize_push, does it with the sailor on their own PATH.",
+  "description": "Step 10 of docs/the-delivery-loop.md: the holdings of a delivered branch released, every gesture safe to run again. The mandate is one JSON object naming the repo and the branch, with base, forge_repo and issue optional; an unsaid base is the trunk the repository declares, and an unsaid issue means the work closed none: the closing comment is neither written nor judged nor sent, and everything else the branch holds is still released. The proof is the merged pull request of the branch, read from the host so a rerun after the branch is gone still finds it, and the remote trunk must carry both its head and its merge commit before anything is deleted. The closing comment names that commit and passes the publication gate before it leaves; an issue already closed is left as it is. The worktree holding the branch is removed only when it is clean and nobody holds its lock; the local and remote branches are deleted only when the remote trunk carries their tip, and the remote deletion follows the push policy read from the trusted trunk. Before the remote branch comes down, archive_tag pushes refs/tags/archive/<branch> at the head the merged pull request proved, so a squashed head stays reachable once its branch is gone; a tag already there at another commit stops the run instead of being moved. The run is complete only when the issue, where one was named, reads closed, the remote carries the archive tag, and no worktree, local branch or remote branch is left. Every forge call runs as the account in sailor.forgeAs. What this flow defends against: a delivery policy that is missing, is not readable as JSON, or whose merge, push and release fields are not auto or ask, and a remote that cannot be read or has moved. It runs no sailor of its own, so it vouches for none. What it does not defend against: whoever closes a handed step, such as authorize_push, does it with the sailor on their own PATH.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -152,7 +152,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\n# An inherited GH_REPO would point a call at another repository: it goes before the first gh call.\nunset GH_REPO\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\nenv -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    token=$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$who\") && [ -n \"$token\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    if [ -n \"${FORGE_REPO:-}\" ]; then\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN GH_REPO=\"$FORGE_REPO\" GH_TOKEN=\"$token\" gh \"$@\"\n    else\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_REPO GH_TOKEN=\"$token\" gh \"$@\"\n    fi\n}\nseen=$(forge pr list --head \"$BRANCH\" --state merged --json number,headRefOid,mergeCommit,closingIssuesReferences --jq '.[0] | select(. != null) | [.number, .headRefOid, .mergeCommit.oid, ([.closingIssuesReferences[].number | tostring] | join(\",\"))] | @tsv')\n[ -n \"$seen\" ] || { echo \"no merged pull request carries $BRANCH: there is no proof to close with\" >&2; exit 1; }\nnumber=$(printf '%s' \"$seen\" | cut -f1); head=$(printf '%s' \"$seen\" | cut -f2); commit=$(printf '%s' \"$seen\" | cut -f3)\ncloses=$(printf '%s' \"$seen\" | cut -f4)\nif [ -n \"$ISSUE\" ]; then\n    case \",$closes,\" in *\",$ISSUE,\"*) ;; *) echo \"pull request #$number does not close issue #$ISSUE (it closes: ${closes:-none}): refusing to close an issue the work never named\" >&2; exit 1 ;; esac\nfi\n[ -n \"$commit\" ] && [ \"$commit\" != null ] || commit=$head\ngit fetch -q --no-tags \"$REMOTE_NAME\"\ntrunk=$(git rev-parse \"refs/remotes/$REMOTE_NAME/$BASE\")\ngit merge-base --is-ancestor \"$commit\" \"$trunk\" || { echo \"the remote $BASE does not carry $commit\" >&2; exit 1; }\nsquashed=false\nif ! git merge-base --is-ancestor \"$head\" \"$trunk\"; then\n    # A squash leaves the head off the trunk: it is proved by content, the head merged onto\n    # the squash's parent must give exactly the squash's tree.\n    parent=$(git rev-parse --verify \"$commit^\") || { echo \"the merge commit $commit has no parent to compare against\" >&2; exit 1; }\n    replayed=$(git merge-tree --write-tree \"$parent\" \"$head\") || { echo \"$head does not merge cleanly onto $parent: not the content of $commit\" >&2; exit 1; }\n    squash_tree=$(git rev-parse --verify \"$commit^{tree}\") || { echo \"cannot read the tree of $commit\" >&2; exit 2; }\n    [ \"$replayed\" = \"$squash_tree\" ] || { echo \"the remote $BASE carries neither $head nor its content in $commit\" >&2; exit 1; }\n    squashed=true\nfi\nprintf '{\"number\":%s,\"head\":\"%s\",\"commit\":\"%s\",\"trunk\":\"%s\",\"squashed\":%s}' \"$number\" \"$head\" \"$commit\" \"$trunk\" \"$squashed\"\n",
+          "command": "set -eu\ncd \"$REPO\"\n# An inherited GH_REPO would point a call at another repository: it goes before the first gh call.\nunset GH_REPO\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\nenv -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    token=$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$who\") && [ -n \"$token\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    if [ -n \"${FORGE_REPO:-}\" ]; then\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN GH_REPO=\"$FORGE_REPO\" GH_TOKEN=\"$token\" gh \"$@\"\n    else\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_REPO GH_TOKEN=\"$token\" gh \"$@\"\n    fi\n}\nseen=$(forge pr list --head \"$BRANCH\" --state merged --json number,headRefOid,mergeCommit,closingIssuesReferences --jq '.[0] | select(. != null) | [.number, .headRefOid, .mergeCommit.oid, ([.closingIssuesReferences[].number | tostring] | join(\",\"))] | @tsv')\n[ -n \"$seen\" ] || { echo \"no merged pull request carries $BRANCH: there is no proof to close with\" >&2; exit 1; }\nnumber=$(printf '%s' \"$seen\" | cut -f1); head=$(printf '%s' \"$seen\" | cut -f2); commit=$(printf '%s' \"$seen\" | cut -f3)\ncloses=$(printf '%s' \"$seen\" | cut -f4)\nif [ -n \"$ISSUE\" ]; then\n    case \",$closes,\" in *\",$ISSUE,\"*) ;; *) echo \"pull request #$number closes ${closes:-none}, not #$ISSUE: the work never named it\" >&2; exit 1 ;; esac\nfi\n[ -n \"$commit\" ] && [ \"$commit\" != null ] || commit=$head\ngit fetch -q --no-tags \"$REMOTE_NAME\"\ntrunk=$(git rev-parse \"refs/remotes/$REMOTE_NAME/$BASE\")\ngit merge-base --is-ancestor \"$commit\" \"$trunk\" || { echo \"the remote $BASE does not carry $commit\" >&2; exit 1; }\nsquashed=false\nif ! git merge-base --is-ancestor \"$head\" \"$trunk\"; then\n    # A squash leaves the head off the trunk: it is proved by content, the head merged onto\n    # the squash's parent must give exactly the squash's tree.\n    parent=$(git rev-parse --verify \"$commit^\") || { echo \"the merge commit $commit has no parent to compare against\" >&2; exit 1; }\n    replayed=$(git merge-tree --write-tree \"$parent\" \"$head\") || { echo \"$head does not merge cleanly onto $parent: not the content of $commit\" >&2; exit 1; }\n    squash_tree=$(git rev-parse --verify \"$commit^{tree}\") || { echo \"cannot read the tree of $commit\" >&2; exit 2; }\n    [ \"$replayed\" = \"$squash_tree\" ] || { echo \"the remote $BASE carries neither $head nor its content in $commit\" >&2; exit 1; }\n    squashed=true\nfi\nprintf '{\"number\":%s,\"head\":\"%s\",\"commit\":\"%s\",\"trunk\":\"%s\",\"squashed\":%s}' \"$number\" \"$head\" \"$commit\" \"$trunk\" \"$squashed\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -721,19 +721,54 @@
         }
       },
       {
-        "id": "remote_branch",
+        "id": "archive_tag",
         "deps": [
           "the_request",
           "the_proof",
           "policy",
-          "remote_tip",
           "ref_gate"
+        ],
+        "action": "archive_the_head",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "repo": {
+            "$from": "/the_request/repo"
+          },
+          "remote": {
+            "$from": "/the_request/remote"
+          },
+          "branch": {
+            "$from": "/the_request/branch"
+          },
+          "head": {
+            "$from": "/the_proof/answer/head"
+          }
+        },
+        "needs": [
+          "git"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "remote_branch",
+        "deps": [
+          "the_request",
+          "policy",
+          "remote_tip",
+          "ref_gate",
+          "archive_tag"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\npolicy_now=$(trusted_policy) || exit 1\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nurl=$(git -C \"$REPO\" remote get-url \"$REMOTE_NAME\") || { echo \"the tree has no remote named $REMOTE_NAME\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"$REMOTE_NAME is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\n# The branch's head outlives its branch: the tag goes up before the ref comes down,\n# so a squashed head is still reachable when the branch is gone.\narchive_ref=\"refs/tags/archive/$BRANCH\"\nlisted=$(git \"$@\" ls-remote \"$REMOTE_NAME\" \"$archive_ref\") || { code=$?; echo \"cannot read $archive_ref on $REMOTE_NAME: git ls-remote exited $code, so nothing is deleted on an empty answer\" >&2; exit 2; }\narchived=$(printf '%s\\n' \"$listed\" | awk -v ref=\"$archive_ref\" '$2 == ref { print $1 }')\npeeled=$(printf '%s\\n' \"$listed\" | awk -v ref=\"$archive_ref^{}\" '$2 == ref { print $1 }')\nif [ -z \"$archived\" ]; then\n    git \"$@\" push \"$REMOTE_NAME\" \"$HEAD_PROVED:$archive_ref\" >&2\n    archived=\"$HEAD_PROVED\"\nelse\n    case \"$HEAD_PROVED\" in\n        \"$archived\"|\"$peeled\") ;;\n        *) echo \"$archive_ref on $REMOTE_NAME names $archived, not the head $HEAD_PROVED this run proved: refusing to move an archive tag\" >&2; exit 1 ;;\n    esac\nfi\nif [ -n \"$TIP\" ]; then\n    git \"$@\" push --force-with-lease=\"refs/heads/$BRANCH:$TIP\" \"$REMOTE_NAME\" \":refs/heads/$BRANCH\" >&2\nfi\nprintf '{\"deleted\":\"%s\",\"archived\":\"%s\"}' \"$TIP\" \"$archived\"\n",
+          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\npolicy_now=$(trusted_policy) || exit 1\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nurl=$(git -C \"$REPO\" remote get-url \"$REMOTE_NAME\") || { echo \"the tree has no remote named $REMOTE_NAME\" >&2; exit 1; }\nset -- -C \"$REPO\"\ncase \"$url\" in\n    /*|file://*) ;;\n    http://*|https://*)\n        push_as=$(git -C \"$REPO\" config --get sailor.pushAs) || { echo \"sailor.pushAs is not declared on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        [ -n \"$push_as\" ] || { echo \"sailor.pushAs is empty on this tree: refusing to push with the machine's own credentials\" >&2; exit 1; }\n        helper='!f() { printf \"%s\\\\n\" username=x-access-token; printf \"password=%s\\\\n\" \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"'\"$push_as\"'\")\"; }; f'\n        set -- -C \"$REPO\" -c credential.helper= -c \"credential.helper=$helper\" ;;\n    *) echo \"$REMOTE_NAME is $url: a push over it cannot be bound to sailor.pushAs, so this flow refuses it\" >&2; exit 1 ;;\nesac\nif [ -n \"$TIP\" ]; then\n    git \"$@\" push --force-with-lease=\"refs/heads/$BRANCH:$TIP\" \"$REMOTE_NAME\" \":refs/heads/$BRANCH\" >&2\nfi\nprintf '{\"deleted\":\"%s\"}' \"$TIP\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -752,9 +787,6 @@
             },
             "REMOTE_NAME": {
               "$from": "/the_request/remote"
-            },
-            "HEAD_PROVED": {
-              "$from": "/the_proof/answer/head"
             }
           },
           "timeout_secs": 120,
@@ -763,14 +795,10 @@
             "properties": {
               "deleted": {
                 "type": "string"
-              },
-              "archived": {
-                "type": "string"
               }
             },
             "required": [
-              "deleted",
-              "archived"
+              "deleted"
             ],
             "allow_extra": false
           }

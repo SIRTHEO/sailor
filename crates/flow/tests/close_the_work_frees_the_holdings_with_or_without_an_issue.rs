@@ -78,6 +78,10 @@ fn registry(issue: &str) -> ActionRegistry {
     );
     actions.register("shell_check", Passes);
     actions.register("close_the_worktree", Answers(json!({"removed": "/tree"})));
+    actions.register(
+        "archive_the_head",
+        Answers(json!({"tag": "refs/tags/archive/work/a-change", "archived": "c0ffee"})),
+    );
     actions.register("handed_to_agent", Answers(json!({"authorized": true})));
     actions.register("the_person_said", Answers(json!({"authorized": true})));
     actions.register(
@@ -141,7 +145,7 @@ fn work_that_named_no_issue_still_reaches_the_deletion_of_its_branch() {
             "«{step}» should be ruled out when no issue was named: {records:?}"
         );
     }
-    for step in ["worktree", "local_branch", "remote_branch", "settled"] {
+    for step in ["worktree", "local_branch", "archive_tag", "remote_branch", "settled"] {
         assert_eq!(
             outcome_of(&records, step),
             Some(Outcome::Went),
@@ -160,6 +164,7 @@ fn work_that_named_an_issue_closes_it_before_the_branch_comes_down() {
         "issue",
         "worktree",
         "local_branch",
+        "archive_tag",
         "remote_branch",
         "settled",
     ] {

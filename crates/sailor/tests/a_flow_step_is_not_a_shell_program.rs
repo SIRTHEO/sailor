@@ -22,7 +22,7 @@ const SHELL_PROGRAMS_TODAY: usize = 31;
 const REDUNDANT_SHELL_COPIES_TODAY: usize = 3;
 
 /// The longest single step. It shrinks or it stays.
-const LONGEST_SHELL_STEP_TODAY: usize = 3992;
+const LONGEST_SHELL_STEP_TODAY: usize = 3982;
 
 /// Bodies shorter than this are one command and repeat legitimately.
 const TOO_SHORT_TO_COUNT: usize = 200;
