@@ -66,11 +66,14 @@ function pretendShell(answers: Record<string, unknown | ((args?: Record<string, 
  *  option carries the hint too, and «Runs» is a place and a view inside it. */
 /* A SECTION IS A DYNAMIC IMPORT AWAY. It is fetched when the place asks for
    it, so a query fired in the same tick as the gesture finds the gap the
-   fallback leaves and concludes the section is not there. */
+   fallback leaves and concludes the section is not there. The default 1000 ms
+   is the fetch's budget, not the machine's: on a cold or loaded runner the
+   chunk is still in flight when it runs out, and the check goes red with
+   nothing wrong in the product. */
 async function theSectionArrives(): Promise<void> {
   await waitFor(() => {
     expect(document.querySelector(".section:not([hidden])")).toBeTruthy();
-  });
+  }, { timeout: 5000 });
 }
 
 async function typeInThePalette(label: string): Promise<void> {
