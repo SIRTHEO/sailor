@@ -340,3 +340,24 @@ fn who_keeps_a_terminal_is_written_and_read_back() {
     assert_eq!(now.keeper, "another-one", "the last arrival wins");
     assert_eq!(now.handle, "pane-9");
 }
+
+/// A session's last compaction is read from its own events only, under any of
+/// the names the command lines give it.
+#[test]
+fn the_last_compaction_of_a_session_is_its_own() {
+    let scratch = Scratch::new("compacted");
+    let store = scratch.store();
+    for (session, name, at) in [
+        ("one", "Compacting", 10),
+        ("one", "Stop", 40),
+        ("one", "Compressing", 30),
+        ("two", "Compacting", 90),
+    ] {
+        store
+            .record_event(&event("ttys001", session, name, at))
+            .expect("the event is recorded");
+    }
+    let names = ["Compacting", "Compressing"];
+    assert_eq!(store.last_event_of("one", &names).expect("read"), Some(30));
+    assert_eq!(store.last_event_of("three", &names).expect("read"), None);
+}
