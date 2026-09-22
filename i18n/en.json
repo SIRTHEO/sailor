@@ -1330,6 +1330,5 @@
   "window.terminals.none": "No terminal is open on this machine.",
   "window.terminals.open_one": "A terminal opened anywhere on this machine is listed here, and the one you choose opens in this field.",
   "window.not_yet.data": "The store is not in this window yet. It holds ten tables and no screen opens them.",
-  "window.not_yet.keys": "The keys are not in this window yet. A workspace cannot own one either: see issue 98.",
-  "window.not_yet.workspaces": "The workspaces are here."
+  "window.not_yet.keys": "The keys are not in this window yet. A workspace cannot own one either: see issue 98."
 }
