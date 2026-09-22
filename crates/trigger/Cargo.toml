@@ -17,5 +17,10 @@ flow = { path = "../flow" }
 # For `Machine`: expanding `~`, `$VAR` and `*` is solved there once, and a
 # second implementation would diverge from the first unnoticed.
 toolbox = { path = "../toolbox" }
+# A sensor's readings are kept in the store, like any fact a flow remembers.
+# No cycle: `ledger` depends on `flow` and `workspace`.
+ledger = { path = "../ledger" }
+# What a sensor says to a person, in both languages.
+catalogue = { path = "../catalogue" }
 serde = { workspace = true }
 serde_json = { workspace = true }
