@@ -1,6 +1,6 @@
 {
   "id": "integrate-on-the-trunk",
-  "description": "Steps 7 and 8 of docs/the-delivery-loop.md: a reviewed branch validated on the real candidate, merged on the forge, and reconciled with its pull request. The mandate is one JSON object naming the repo and the branch, with base and forge_repo optional; an unsaid base is the trunk the repository declares. The latest review recorded by review-a-pinned-commit must be clean, and the flow refuses when the branch head, local or remote, differs from the reviewed commit. The combined tree is built on the current remote trunk in a locked worktree of its own, and scripts/run-gates.sh runs letter A plus every applicable letter of docs/gates.md there with --no-fail-fast; a red line stops the run, and lines that need a person are handed to one. The policy is read from the trusted trunk; `ask` on merge or push hands the step to a person. Just before the merge the trunk is re-read, and a trunk that moved stops the run rather than validating something else; the publication gate runs on the candidate. The private-names check is posted from here, because only this machine holds the list. Nothing is pushed to the trunk: the flow waits for every check the forge requires, asks the forge to merge the pull request, and is complete only when the remote trunk carries the reviewed commit, the tree that landed is the one the gates ran on, and the host reports the pull request MERGED. Every forge call runs as the account in sailor.forgeAs.",
+  "description": "Steps 7 and 8 of docs/the-delivery-loop.md: a reviewed branch validated on the real candidate, merged on the forge, and reconciled with its pull request. The mandate is one JSON object naming the repo and the branch, with base and forge_repo optional; an unsaid base is the trunk the repository declares. The latest review recorded by review-a-pinned-commit must be clean, and the flow refuses when the branch head, local or remote, differs from the reviewed commit. The combined tree is built on the current remote trunk in a locked worktree of its own, and scripts/run-gates.sh runs letter A plus every applicable letter of docs/gates.md there with --no-fail-fast; a red line stops the run, and lines that need a person are handed to one. A person's green is recorded against the reviewed commit, so a run started again after the trunk moved counts those lines as covered and asks only for lines not yet approved. The policy is read from the trusted trunk; `ask` on merge or push hands the step to a person. Just before the merge the trunk is re-read, and a trunk that moved stops the run rather than validating something else; the publication gate runs on the candidate. The private-names check is posted from here, because only this machine holds the list. Nothing is pushed to the trunk: the flow waits for every check the forge requires, asks the forge to merge the pull request, and is complete only when the remote trunk carries the reviewed commit, the tree that landed is the one the gates ran on, and the host reports the pull request MERGED. Every forge call runs as the account in sailor.forgeAs.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -338,10 +338,42 @@
         }
       },
       {
+        "id": "approved_before",
+        "deps": [
+          "the_request",
+          "the_reviewed"
+        ],
+        "action": "store_select",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "manual-gates",
+          "where": {
+            "repo": {
+              "$from": "/the_request/repo"
+            },
+            "branch": {
+              "$from": "/the_request/branch"
+            },
+            "commit": {
+              "$from": "/the_reviewed/answer/commit"
+            }
+          },
+          "limit": 100
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "gates",
         "deps": [
           "the_request",
           "reviews",
+          "approved_before",
           "combined"
         ],
         "action": "shell_check",
@@ -349,7 +381,7 @@
         "weight": "heavy",
         "when": null,
         "with": {
-          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"covered\":0,\"manual_pending\":false,\"green\":true}'\n    exit 0\nfi\n# The resolver and its manifest are the trunk's: a change may not choose the gates that judge it.\nscript=$(mktemp \"${TMPDIR:-/tmp}/sailor-gates.XXXXXX\")\nmanifest=$(mktemp \"${TMPDIR:-/tmp}/sailor-manifest.XXXXXX\")\ncovered=$(mktemp \"${TMPDIR:-/tmp}/sailor-covered.XXXXXX\")\ntrap 'rm -f \"$script\" \"$manifest\" \"$covered\"' EXIT\nprintf '%s' \"$CHECKED\" | python3 -c 'import json,sys; print(\"\\n\".join(str(item) for item in json.load(sys.stdin)))' > \"$covered\"\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:scripts/run-gates.sh\" > \"$script\" || { echo \"the trunk $TRUNK_COMMIT carries no scripts/run-gates.sh\" >&2; exit 2; }\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:docs/gates.md\" > \"$manifest\" || { echo \"the trunk $TRUNK_COMMIT carries no docs/gates.md\" >&2; exit 2; }\ncd \"$TREE\"\nsh \"$script\" --no-fail-fast --base \"$TRUNK_COMMIT\" --manifest \"$manifest\" --covered \"$covered\"\n",
+          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"covered\":0,\"manual_pending\":false,\"green\":true,\"pending\":[],\"pending_digest\":\"\"}'\n    exit 0\nfi\n# The resolver and its manifest are the trunk's: a change may not choose the gates that judge it.\nscript=$(mktemp \"${TMPDIR:-/tmp}/sailor-gates.XXXXXX\")\nmanifest=$(mktemp \"${TMPDIR:-/tmp}/sailor-manifest.XXXXXX\")\ncovered=$(mktemp \"${TMPDIR:-/tmp}/sailor-covered.XXXXXX\")\napproved=$(mktemp \"${TMPDIR:-/tmp}/sailor-approved.XXXXXX\")\npending=$(mktemp \"${TMPDIR:-/tmp}/sailor-pending.XXXXXX\")\ntrap 'rm -f \"$script\" \"$manifest\" \"$covered\" \"$approved\" \"$pending\"' EXIT\nprintf '%s' \"$CHECKED\" | python3 -c 'import json,sys; print(\"\\n\".join(str(item) for item in json.load(sys.stdin)))' > \"$covered\"\n# A person's green holds for the reviewed change it was given for, however far the trunk has moved since.\nprintf '%s' \"$APPROVED\" | python3 -c 'import json,sys; print(\"\\n\".join(str(line) for record in json.load(sys.stdin) for line in record[\"value\"][\"lines\"]))' > \"$approved\"\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:scripts/run-gates.sh\" > \"$script\" || { echo \"the trunk $TRUNK_COMMIT carries no scripts/run-gates.sh\" >&2; exit 2; }\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:docs/gates.md\" > \"$manifest\" || { echo \"the trunk $TRUNK_COMMIT carries no docs/gates.md\" >&2; exit 2; }\ncd \"$TREE\"\ncode=0\nsummary=$(sh \"$script\" --no-fail-fast --base \"$TRUNK_COMMIT\" --manifest \"$manifest\" --covered \"$covered\" --approved \"$approved\" --pending \"$pending\") || code=$?\n[ \"$code\" -ne 2 ] || exit 2\nprintf '%s' \"$summary\" | python3 -c '\nimport hashlib, json, sys\nsummary = json.loads(sys.stdin.read())\nlines = [line for line in open(sys.argv[1]).read().splitlines() if line]\nsummary[\"pending\"] = lines\nsummary[\"pending_digest\"] = hashlib.sha256(\"\\n\".join(lines).encode()).hexdigest()[:16] if lines else \"\"\nprint(json.dumps(summary))\n' \"$pending\"\nexit \"$code\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -362,6 +394,9 @@
             },
             "CHECKED": {
               "$json": "/reviews/records/0/value/checked"
+            },
+            "APPROVED": {
+              "$json": "/approved_before/records"
             },
             "TRUNK_COMMIT": {
               "$from": "/combined/answer/trunk"
@@ -391,6 +426,15 @@
               },
               "green": {
                 "type": "boolean"
+              },
+              "pending": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pending_digest": {
+                "type": "string"
               }
             },
             "required": [
@@ -400,7 +444,9 @@
               "manual",
               "covered",
               "manual_pending",
-              "green"
+              "green",
+              "pending",
+              "pending_digest"
             ],
             "allow_extra": false
           }
@@ -503,11 +549,67 @@
         }
       },
       {
+        "id": "manual_recorded",
+        "deps": [
+          "the_request",
+          "the_reviewed",
+          "gates",
+          "manual_green"
+        ],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/gates/answer/manual_pending",
+          "value": true
+        },
+        "with": {
+          "collection": "manual-gates",
+          "key": {
+            "$join": [
+              {
+                "$from": "/the_request/branch"
+              },
+              "@",
+              {
+                "$from": "/the_reviewed/answer/commit"
+              },
+              "@",
+              {
+                "$from": "/gates/answer/pending_digest"
+              }
+            ]
+          },
+          "value": {
+            "repo": {
+              "$from": "/the_request/repo"
+            },
+            "branch": {
+              "$from": "/the_request/branch"
+            },
+            "commit": {
+              "$from": "/the_reviewed/answer/commit"
+            },
+            "lines": {
+              "$from": "/gates/answer/pending"
+            }
+          },
+          "written_by": "integrate-on-the-trunk"
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "policy",
         "deps": [
           "the_request",
           "gates",
-          "manual_green"
+          "manual_green",
+          "manual_recorded"
         ],
         "action": "delivery_policy",
         "max_attempts": 1,
