@@ -153,9 +153,8 @@ impl Action for ArchiveTheHeadAction {
                 "no head was proved, so there is nothing to keep the branch under".to_owned(),
             ));
         }
-        let url = read_config(&spec.repo, &format!("remote.{}.url", spec.remote)).ok_or_else(
-            || not_archived(format!("the tree has no remote named {}", spec.remote)),
-        )?;
+        let url = read_config(&spec.repo, &format!("remote.{}.url", spec.remote))
+            .ok_or_else(|| not_archived(format!("the tree has no remote named {}", spec.remote)))?;
         let bound = how_it_is_bound(
             &url,
             read_config(&spec.repo, "sailor.pushAs").as_deref(),

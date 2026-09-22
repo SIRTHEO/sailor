@@ -84,7 +84,11 @@ fn only_a_remote_that_can_be_bound_to_an_account_is_pushed_to() {
     }
     // A transport this action cannot bind at all, however it is declared.
     assert_eq!(
-        how_it_is_bound("ssh://a-host.example/owner/repo.git", Some("someone"), Some(TOKEN_COMMAND)),
+        how_it_is_bound(
+            "ssh://a-host.example/owner/repo.git",
+            Some("someone"),
+            Some(TOKEN_COMMAND)
+        ),
         HowItIsBound::Unbindable("ssh://a-host.example/owner/repo.git".to_owned())
     );
 }

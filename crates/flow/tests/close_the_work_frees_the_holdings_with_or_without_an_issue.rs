@@ -145,7 +145,13 @@ fn work_that_named_no_issue_still_reaches_the_deletion_of_its_branch() {
             "«{step}» should be ruled out when no issue was named: {records:?}"
         );
     }
-    for step in ["worktree", "local_branch", "archive_tag", "remote_branch", "settled"] {
+    for step in [
+        "worktree",
+        "local_branch",
+        "archive_tag",
+        "remote_branch",
+        "settled",
+    ] {
         assert_eq!(
             outcome_of(&records, step),
             Some(Outcome::Went),
