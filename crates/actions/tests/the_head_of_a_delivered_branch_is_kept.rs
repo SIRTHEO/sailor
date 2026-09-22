@@ -3,7 +3,8 @@
 //! this disk — it goes up, it goes up only once, and it is never moved.
 
 use actions::archive::{
-    how_it_is_bound, tag_for, what_becomes_of_the_tag, HowItIsBound, WhatBecomesOfTheTag,
+    credential_helper, how_it_is_bound, tag_for, what_becomes_of_the_tag, HowItIsBound,
+    WhatBecomesOfTheTag,
 };
 use flow::{ActionRegistry, SharedState};
 use serde_json::json;
@@ -90,6 +91,32 @@ fn only_a_remote_that_can_be_bound_to_an_account_is_pushed_to() {
             Some(TOKEN_COMMAND)
         ),
         HowItIsBound::Unbindable("ssh://a-host.example/owner/repo.git".to_owned())
+    );
+}
+
+/// **FOUND BY RUNNING IT, NOT BY THE TESTS ABOVE**: a remote on this disk asks
+/// for no credentials, so the push that proves the tag never exercised the
+/// helper. git runs it as `<helper> get`, and the first version — a bare
+/// `printf` — took that `get` for a second argument, repeated its format around
+/// it and left `password=get` as the last line git read. The real push answered
+/// «Invalid username or token».
+#[test]
+fn the_helper_ignores_the_word_git_hands_it() {
+    let body = credential_helper()
+        .strip_prefix('!')
+        .expect("the helper is a shell body");
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{body} \"$@\""))
+        .arg("sh")
+        .arg("get")
+        .env("SAILOR_PUSH_TOKEN", "a-token")
+        .output()
+        .expect("the helper runs");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "username=x-access-token\npassword=a-token\n",
+        "the helper must say the token once and nothing else"
     );
 }
 
