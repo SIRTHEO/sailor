@@ -598,6 +598,7 @@ mod tests {
         std::fs::write(
             &fake,
             "#!/bin/sh\necho 'sailor terminal: «host» is not a form of this command' >&2\n\
+             touch \"$0.said\"\n\
              sleep 30\n",
         )
         .expect("write the fake sailor");
@@ -609,15 +610,16 @@ mod tests {
         }
 
         let host = start_host(&fake, &scratch).expect("the fake starts");
-        // Long enough for the host to complain even under load, and far short of
-        // its thirty seconds of life: alive with something to say is the shape a
-        // loaded machine puts a healthy reader in.
+        // The time is up only once the complaint is written: how long a loaded
+        // machine takes to start a shell is not what is measured here.
+        let said = scratch.join("sailor.said");
+        let written_by = Instant::now() + Duration::from_secs(20);
+        while !said.exists() {
+            assert!(Instant::now() < written_by, "the fake never complained");
+            std::thread::sleep(Duration::from_millis(10));
+        }
         let asked_at = Instant::now();
-        let refused = await_host(
-            Client::in_store(&scratch),
-            host,
-            Instant::now() + Duration::from_secs(2),
-        )
+        let refused = await_host(Client::in_store(&scratch), host, asked_at)
         .expect_err("a host that never answers is not a client");
         assert!(
             refused.contains("is not a form of this command"),
