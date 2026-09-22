@@ -7619,6 +7619,27 @@ tr[data-followable]:hover {
   overflow: auto;
 }
 
+/* THE TERMINAL IS THE FIELD, not a card inside it: it takes the whole body
+   and the body's own edges are its frame. */
+.window-field__body:has(> .pane) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.window-field__body > .pane {
+  border: 0;
+  border-radius: 0;
+}
+
+.window-field__trouble {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-small);
+  color: var(--danger);
+}
+
 .window-panel__empty {
   margin: 0;
   padding: 4px 20px 16px;

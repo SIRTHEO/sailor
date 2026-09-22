@@ -1299,7 +1299,8 @@
   "window.workspace.no_equipment": "nessuna dichiarata",
   "window.field.pick_one": "Scegline uno a sinistra, e si apre qui.",
   "window.field.standing_here": "la finestra sta qui",
-  "window.not_yet.terminals": "I terminali non sono ancora in questa finestra: stanno ancora al loro posto.",
+  "window.terminals.none": "Su questa macchina non è aperto nessun terminale.",
+  "window.terminals.open_one": "Un terminale aperto ovunque su questa macchina compare qui, e quello che scegli si apre in questo campo.",
   "window.not_yet.data": "Il deposito non è ancora in questa finestra. Tiene dieci tabelle e nessuna schermata le apre.",
   "window.not_yet.keys": "Le chiavi non sono ancora in questa finestra. E un workspace non può possederne una: vedi la richiesta 98.",
   "window.not_yet.workspaces": "I workspace sono qui."

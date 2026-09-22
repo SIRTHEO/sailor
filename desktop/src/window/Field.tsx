@@ -30,6 +30,19 @@ export function Field({
 }
 
 /**
+ * **A THING THAT CARRIES ITS OWN HEAD IS NOT GIVEN A SECOND ONE.** A terminal
+ * names its tree, its tty and its state, and holds what acts on it: a head
+ * above that would say the same three words again.
+ */
+export function FieldHeld({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <section className="window-field" aria-label={name}>
+      <div className="window-field__body">{children}</div>
+    </section>
+  );
+}
+
+/**
  * **NOTHING OPEN IS NOT A THING CALLED «NOTHING OPEN».** A head over an empty
  * field names something that is not there, and then the body repeats it: the
  * field says once what fills it, and carries no head until it holds one.

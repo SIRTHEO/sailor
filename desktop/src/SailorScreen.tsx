@@ -20,11 +20,14 @@ import { TheWindow } from "./window/TheWindow";
 export function SailorScreen({
   native,
   tab,
+  ceiling = null,
   onTerminalOpened,
   onQuota,
 }: {
   native: boolean;
   tab: SailorTab;
+  /** The ceiling the relay hands on at, for the terminal the window holds. */
+  ceiling?: number | null;
   /** An engine's gesture opened a terminal: whoever holds the places shows it. */
   onTerminalOpened?: () => void;
   /** The quota is another page's question: this is the way to it. */
@@ -48,7 +51,7 @@ export function SailorScreen({
         )}
         {tab === "commands" && <Manual native={native} />}
         {tab === "look" && <LookScreen />}
-        {tab === "window" && <TheWindow native={native} />}
+        {tab === "window" && <TheWindow native={native} ceiling={ceiling} />}
       </div>
     </div>
   );
