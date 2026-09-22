@@ -220,7 +220,7 @@
         "with": {
           "command": "./check.sh",
           "workdir": { "$from": "/worker_tree/records/0/value/path" },
-          "accept": ["failed"],
+          "accept": ["failed", "timed_out"],
           "timeout_secs": 90
         },
         "input_schema": { "type": "any" },
@@ -229,10 +229,9 @@
       },
       {
         "id": "release_tree",
-        "deps": ["select", "worker_tree"],
+        "deps": ["select", "worker_tree", "acceptance"],
         "action": "shell_check",
         "max_attempts": 1,
-        "at_the_end": true,
         "when": null,
         "with": {
           "command": "git -C \"$REPO\" worktree remove --force \"$PATH_TO_RELEASE\"",
@@ -427,7 +426,9 @@
         "output_schema": { "type": "any" }
       }
     ],
-    "skippable_dependencies": []
+    "skippable_dependencies": [
+      { "step": "release_tree", "dependency": "acceptance" }
+    ]
   },
   "inputs": {
     "trigger": {

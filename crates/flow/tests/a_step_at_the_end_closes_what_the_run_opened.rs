@@ -6,7 +6,7 @@
 //! the disk, and only a sweep from outside could find them.
 
 use flow::{
-    Action, ActionError, ActionOutcome, ActionRegistry, Decision, ExecutionRequest, Executor,
+    Action, ActionError, ActionOutcome, ActionRegistry, Clock, Decision, ExecutionRequest, Executor,
     Graph, InMemoryRecordStore, InProcessExecutor, RunStops, SharedState, Step, SystemClock,
     ValueSchema, CURRENT_STEP,
 };
@@ -24,6 +24,10 @@ impl Action for Act {
         match input.get("say").and_then(Value::as_str) {
             Some("break") => Err(ActionError::new("check_failed", "it broke")),
             Some("wait") => Ok(ActionOutcome::Waiting("a person takes it".to_owned())),
+            Some("outlast") => {
+                std::thread::sleep(std::time::Duration::from_millis(2100));
+                Ok(ActionOutcome::Went(json!({})))
+            }
             _ => Ok(ActionOutcome::Went(json!({"tree": "/somewhere"}))),
         }
     }
@@ -164,4 +168,39 @@ fn nothing_is_closed_where_nothing_was_opened() {
 
     assert_eq!(order, ["open"], "{decisions:?}");
     assert_eq!(decisions.last(), Some(&Decision::Failed(vec!["open".to_owned()])));
+}
+
+/// A run that stops short, here on its wall, is a run that ends: it closes
+/// what it opened before it says why it stopped.
+#[test]
+fn a_run_stopped_on_its_wall_still_closes_what_it_opened() {
+    let mut close = step("close", &["open"]);
+    close.at_the_end = true;
+    let graph = Graph::new(vec![step("open", &[]), says("work", &["open"], "outlast"), step("more", &["work"]), close])
+        .expect("a sane graph");
+    let called = Arc::new(Mutex::new(Vec::new()));
+    let mut actions = ActionRegistry::default();
+    actions.register("act", Act(called.clone()));
+    let request = ExecutionRequest {
+        holder: None,
+        run_id: "run".to_owned(),
+        root_inputs: BTreeMap::new(),
+        gates: Vec::new(),
+        shared: SharedState::new(),
+        spend_cap_micros: None,
+        stops: RunStops {
+            wall_deadline_at: Some(SystemClock.now().expect("a clock") + 1),
+            ..RunStops::default()
+        },
+    };
+    let store = InMemoryRecordStore::default();
+    let execution = InProcessExecutor
+        .execute(&graph, request, &store, &actions, &SystemClock)
+        .expect("the run answers");
+
+    assert_eq!(*called.lock().expect("the list"), ["open", "work", "close"]);
+    let Some(Decision::Halted { not_started, .. }) = execution.decisions.last() else {
+        panic!("it should have stopped on its wall: {:?}", execution.decisions);
+    };
+    assert_eq!(not_started, &["more".to_owned()]);
 }

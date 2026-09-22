@@ -85,7 +85,7 @@ fn full_graph() -> Graph {
         .remove("take-the-next-work")
         .expect("the flow is shipped")
         .expect("the shipped flow loads");
-    Graph::new(flow.graph.steps().to_vec()).expect("the shipped graph stays valid")
+    flow.graph
 }
 
 /// **A FLOW RUN END TO END HANDED IN NO RECEIPT.** Passing said the same thing
@@ -781,4 +781,5 @@ fn a_worker_that_never_acknowledges_the_mandate_is_parked_before_acceptance_ever
         "an unacknowledged mandate never gets that field written: {:?}",
         task.value
     );
+    assert!(step_went(&store, "release_tree"), "a task parked on a person still holds its tree");
 }

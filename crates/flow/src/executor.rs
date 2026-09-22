@@ -996,7 +996,7 @@ impl Executor for InProcessExecutor {
             let now = clock.now()?;
             let decision = decision_from(graph, &records, now)?;
             decisions.push(decision.clone());
-            let Decision::Ready(front) = decision else {
+            let Decision::Ready(mut front) = decision else {
                 return Ok(Execution {
                     decisions,
                     shared: request.shared,
@@ -1007,15 +1007,21 @@ impl Executor for InProcessExecutor {
             // moment any of them costs nothing, since a step at work has paid
             // and none of these takes it back. A run over its wall ends after
             // the step in flight, never during it.
+            // What the run opened is closed even so: the reason is met again
+            // on the next pass, with nothing left to close.
+            let closing = due_at_the_end(graph, &records);
             if let Some(reason) = closes_the_run(graph, &request, &records, store, now)? {
-                decisions.push(Decision::Halted {
-                    reason,
-                    not_started: front,
-                });
-                return Ok(Execution {
-                    decisions,
-                    shared: request.shared,
-                });
+                if closing.is_empty() {
+                    decisions.push(Decision::Halted {
+                        reason,
+                        not_started: front,
+                    });
+                    return Ok(Execution {
+                        decisions,
+                        shared: request.shared,
+                    });
+                }
+                front = closing.clone();
             }
 
             // The cap is checked before opening, not after spending: a step
@@ -1027,7 +1033,9 @@ impl Executor for InProcessExecutor {
             let mut at_once = AT_ONCE;
             if let Some(cap) = request.spend_cap_micros {
                 let spent = store.spent(&request.run_id)?;
-                if spent.micros >= cap {
+                if spent.micros >= cap && !closing.is_empty() {
+                    front = closing;
+                } else if spent.micros >= cap {
                     decisions.push(Decision::CapReached(SpendStop {
                         cap_micros: cap,
                         spent,
@@ -1037,8 +1045,9 @@ impl Executor for InProcessExecutor {
                         decisions,
                         shared: request.shared,
                     });
+                } else {
+                    at_once = how_many_fit(cap - spent.micros, spent.dearest_micros);
                 }
-                at_once = how_many_fit(cap - spent.micros, spent.dearest_micros);
             }
 
             // The epoch belongs to the front, not to the step: computed once
@@ -1474,7 +1483,8 @@ fn run_one(
 
     let turn = match (work.action, step.weight) {
         (Some(_), crate::Weight::Heavy) => {
-            match crate::machine_turn::the_machine_for(run_id, &step.id) {
+            let carried = shared.get(crate::MACHINE_TURN).and_then(Value::as_str);
+            match crate::machine_turn::the_machine_for(run_id, &step.id, carried) {
                 Ok(turn) => turn,
                 Err(why) => {
                     let completion = broke(ActionError::new("no_turn_on_the_machine", why), clock.now()?);
@@ -1781,6 +1791,18 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
     } else {
         Ok(Decision::Complete)
     }
+}
+
+/// The closing steps a run that stops here still owes: never started, and
+/// after what they close.
+fn due_at_the_end(graph: &Graph, records: &[StepRecord]) -> Vec<String> {
+    graph
+        .steps()
+        .iter()
+        .filter(|step| step.at_the_end && latest_for(step, records).is_none())
+        .filter(|step| dependencies_satisfied(graph, step, records))
+        .map(|step| step.id.clone())
+        .collect()
 }
 
 fn dependencies_satisfied(graph: &Graph, step: &Step, records: &[StepRecord]) -> bool {

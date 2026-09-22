@@ -31,7 +31,11 @@ impl Drop for Hold {
 struct FakeMachine;
 
 impl MachineTurns for FakeMachine {
-    fn wait_for_the_machine(&self, _run_id: &str, step_id: &str) -> Result<HeldTurn, String> {
+    fn wait_for_the_machine(&self, _run_id: &str, step_id: &str, carried: Option<&str>) -> Result<HeldTurn, String> {
+        if let Some(token) = carried {
+            say(format!("{step_id} runs inside {token}"));
+            return Ok(HeldTurn { token: token.to_owned(), hold: Box::new(()) });
+        }
         say(format!("took {step_id}"));
         if step_id == "refused" {
             return Err("the machine would not say".to_owned());
@@ -77,6 +81,10 @@ fn step(id: &str, deps: &[&str], weight: flow::Weight) -> Step {
 }
 
 fn run(steps: Vec<Step>) -> Vec<String> {
+    run_carrying(steps, SharedState::new())
+}
+
+fn run_carrying(steps: Vec<Step>, shared: SharedState) -> Vec<String> {
     static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
     let _alone = ONE_AT_A_TIME.lock().expect("the tests take turns");
     flow::heavy_steps_wait_on(Box::new(FakeMachine));
@@ -89,7 +97,7 @@ fn run(steps: Vec<Step>) -> Vec<String> {
         run_id: "run".to_owned(),
         root_inputs: BTreeMap::new(),
         gates: Vec::new(),
-        shared: SharedState::new(),
+        shared,
         spend_cap_micros: None,
         stops: RunStops::default(),
     };
@@ -123,4 +131,15 @@ fn a_turn_that_cannot_be_taken_breaks_the_step_without_running_it() {
     let lines = run(vec![step("refused", &[], flow::Weight::Heavy)]);
 
     assert_eq!(lines, ["took refused"]);
+}
+
+/// A run a heavy step started, such as a flow it called, already holds the
+/// machine: its heavy steps run inside that turn, not behind it.
+#[test]
+fn a_heavy_step_of_a_run_inside_a_turn_does_not_wait_for_it() {
+    let mut shared = SharedState::new();
+    shared.insert(MACHINE_TURN.to_owned(), json!("the-callers-turn"));
+    let lines = run_carrying(vec![step("inner", &[], flow::Weight::Heavy)], shared);
+
+    assert_eq!(lines, ["inner runs inside the-callers-turn", "ran inner with the-callers-turn"]);
 }

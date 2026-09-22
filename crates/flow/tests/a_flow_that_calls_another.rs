@@ -459,6 +459,41 @@ fn the_child_works_where_the_parent_works() {
     );
 }
 
+/// A heavy step that calls a flow holds the machine for it: the child's own
+/// heavy steps run inside that turn instead of waiting for their caller.
+#[test]
+fn the_child_runs_inside_the_turn_its_caller_holds() {
+    let scratch = Scratch::new("turno");
+    scratch.put(LEAF);
+    let bench = Bench::new(scratch.place());
+    let graph = Graph::new(vec![calling_step("chiamata", "foglia", json!({}))]).expect("valid graph");
+    let registry = bench.registry();
+    let mut shared = SharedState::new();
+    shared.insert(flow::MACHINE_TURN.to_owned(), json!("the-callers-turn"));
+
+    InProcessExecutor
+        .execute(
+            &graph,
+            ExecutionRequest {
+                holder: None,
+                run_id: "corsa-del-padre".to_owned(),
+                root_inputs: Default::default(),
+                gates: Vec::new(),
+                shared,
+                spend_cap_micros: None,
+                stops: flow::RunStops::default(),
+            },
+            bench.store.as_ref(),
+            &registry,
+            &SystemClock,
+        )
+        .expect("the execution is not an engine fault");
+
+    let seen = bench.watcher.seen.lock().unwrap_or_else(|held| held.into_inner());
+    let (_, shared) = seen.first().expect("the child ran");
+    assert_eq!(shared.get(flow::MACHINE_TURN).and_then(Value::as_str), Some("the-callers-turn"));
+}
+
 /// **AND A PARENT WITHOUT A ROOT INVENTS NONE.** Absent stays absent: the child
 /// will fail saying so, as the parent would have said it. A fallback here would
 /// be fault 25 written twice.

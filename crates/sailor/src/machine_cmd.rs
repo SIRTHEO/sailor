@@ -71,9 +71,12 @@ fn open_ledger() -> Result<Ledger, String> {
 /// Heavy work waits here for the machine: a step the flow declares heavy,
 /// a release, a ratchet, or any command a person runs through `turn`.
 pub fn the_machine_for(purpose: &str) -> Result<machine::turn::Turn, String> {
+    the_machine_carrying(purpose, std::env::var(flow::MACHINE_TURN_VARIABLE).ok())
+}
+
+fn the_machine_carrying(purpose: &str, carried: Option<String>) -> Result<machine::turn::Turn, String> {
     let directory =
         ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
-    let carried = std::env::var(flow::MACHINE_TURN_VARIABLE).ok();
     machine::turn::wait_for_the_machine(
         &machine::turn::turns_under(&directory),
         purpose,
@@ -99,8 +102,16 @@ pub fn the_machine_for(purpose: &str) -> Result<machine::turn::Turn, String> {
 pub struct TheMachine;
 
 impl flow::MachineTurns for TheMachine {
-    fn wait_for_the_machine(&self, run_id: &str, step_id: &str) -> Result<flow::HeldTurn, String> {
-        let turn = the_machine_for(&format!("{run_id} {step_id}"))?;
+    fn wait_for_the_machine(
+        &self,
+        run_id: &str,
+        step_id: &str,
+        carried: Option<&str>,
+    ) -> Result<flow::HeldTurn, String> {
+        let carried = carried
+            .map(str::to_owned)
+            .or_else(|| std::env::var(flow::MACHINE_TURN_VARIABLE).ok());
+        let turn = the_machine_carrying(&format!("{run_id} {step_id}"), carried)?;
         Ok(flow::HeldTurn {
             token: turn.token().to_owned(),
             hold: Box::new(turn),
