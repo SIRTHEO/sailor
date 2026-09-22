@@ -577,6 +577,9 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
             ),
             &announced,
             handed_on(request, &arrival),
+            &ledger::sailor_home()
+                .map(|home| crate::instructions_cmd::standing_under(&home))
+                .unwrap_or(crate::instructions_cmd::Standing::None),
         )));
     }
     Ok(Report::spoken(described(&arrival)))
@@ -611,6 +614,8 @@ fn named(row: &sessions::TerminalRow, here: &str) -> String {
 struct StillOpen {
     waiting: Vec<ledger::WaitingRun>,
     ask_again: Vec<ledger::WaitingRun>,
+    /// How many of either list were born in another tree: counted, not named.
+    elsewhere: usize,
     remembered: Vec<actions::memory::Memory>,
     page: Option<PageOnDisk>,
     page_unseen: Option<PageUnseen>,
@@ -2131,7 +2136,14 @@ mod tests {
     /// The greeting on its own, with no register to ask: these cases are about
     /// what the text says, and the neighbours have their own in `sessions`.
     fn welcome_of(arrival: &Arrival) -> String {
-        welcome(arrival, None, &Ok(None), &Ok(()), None)
+        welcome(
+            arrival,
+            None,
+            &Ok(None),
+            &Ok(()),
+            None,
+            &crate::instructions_cmd::Standing::None,
+        )
     }
 
     /// What Sailor remembers is said at the start, count and the latest labels:
@@ -2220,6 +2232,66 @@ mod tests {
             said.contains("2 ") && !said.contains("of another"),
             "{said}"
         );
+    }
+
+    /// **A RUN WAITS IN THE TREE IT WAS BORN IN.** Every terminal was greeted
+    /// with every tree's waiting runs, 367 times in a week for runs it could not
+    /// take up; the others are counted and pointed at, not named.
+    #[test]
+    fn the_greeting_names_only_the_runs_born_in_this_tree() {
+        let scratch = Scratch::new("corse-dell-albero");
+        let checkout = scratch.directory.join("a-checkout");
+        std::fs::create_dir_all(&checkout).expect("the tree");
+        let init = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&checkout)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("git");
+        assert!(init.success());
+        let real = checkout.canonicalize().expect("real").display().to_string();
+        let ledger = ledger::Ledger::open(scratch.directory.join("ledger")).expect("a ledger");
+        for (run_id, worktree) in [
+            ("born-here-1", Some(real.as_str())),
+            ("born-elsewhere-1", Some("/elsewhere/other")),
+            ("born-nowhere-1", None),
+        ] {
+            ledger
+                .record_run(&ledger::RunRecord {
+                    run_id: run_id.to_owned(),
+                    kind: "flow".to_owned(),
+                    entity: "a-flow".to_owned(),
+                    parent_run_id: None,
+                    started_by: "test".to_owned(),
+                    status: "waiting".to_owned(),
+                    total_cost_micros: 0,
+                    error: None,
+                    started_at: 1,
+                    ended_at: None,
+                    worktree: worktree.map(str::to_owned),
+                    stop_reason: None,
+                })
+                .expect("recorded");
+        }
+        let started = Started {
+            engine: None,
+            profile_home: None,
+            worktree: checkout.clone(),
+            home: None,
+        };
+
+        let found = still_open_in(&ledger, None, &started, "ttysTEST").expect("open");
+        let said = what_is_still_open(&found).expect("something to say");
+
+        let named: Vec<_> = found
+            .waiting
+            .iter()
+            .map(|run| run.run_id.as_str())
+            .collect();
+        assert_eq!(named, vec!["born-here-1", "born-nowhere-1"]);
+        assert_eq!(found.elsewhere, 1);
+        assert!(!said.contains("born-elsewhere-1"), "{said}");
+        assert!(said.contains("sailor flow list"), "{said}");
     }
 
     /// The page's address travels in the greeting **only while the file is
@@ -2637,6 +2709,7 @@ mod tests {
             run_id: run_id.to_owned(),
             entity: flow.to_owned(),
             waiting_since: 1_000,
+            tree: String::new(),
         }
     }
 
@@ -2656,7 +2729,14 @@ mod tests {
             ..Default::default()
         }));
 
-        let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()), None);
+        let said = welcome(
+            &arriving_in(&scratch),
+            None,
+            &open,
+            &Ok(()),
+            None,
+            &crate::instructions_cmd::Standing::None,
+        );
 
         assert!(
             said.contains("un-flusso-1788423534"),
@@ -2751,13 +2831,21 @@ mod tests {
         let scratch = Scratch::new("deposito-cieco");
         let arrival = arriving_in(&scratch);
 
-        let quiet = welcome(&arrival, None, &Ok(None), &Ok(()), None);
+        let quiet = welcome(
+            &arrival,
+            None,
+            &Ok(None),
+            &Ok(()),
+            None,
+            &crate::instructions_cmd::Standing::None,
+        );
         let blind = welcome(
             &arrival,
             None,
             &Err("the file belongs to somebody else".to_owned()),
             &Ok(()),
             None,
+            &crate::instructions_cmd::Standing::None,
         );
 
         assert_ne!(

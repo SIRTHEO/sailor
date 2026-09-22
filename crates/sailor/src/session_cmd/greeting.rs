@@ -162,11 +162,24 @@ pub(super) fn still_open_in(
         .unwrap_or_default();
     let page = page_on_disk(home);
     let tree = workspace::tree_around(&started.worktree).map(|tree| tree.display().to_string());
-    Ok(StillOpen {
-        waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
-        ask_again: deposit
+    let mut elsewhere = 0;
+    let mut born_here = |runs: Vec<ledger::WaitingRun>| {
+        let (here, there): (Vec<_>, Vec<_>) = runs
+            .into_iter()
+            .partition(|run| run.tree.is_empty() || Some(&run.tree) == tree.as_ref());
+        elsewhere += there.len();
+        here
+    };
+    let waiting = born_here(deposit.waiting_runs().map_err(|error| error.to_string())?);
+    let ask_again = born_here(
+        deposit
             .runs_to_ask_again()
             .map_err(|error| error.to_string())?,
+    );
+    Ok(StillOpen {
+        waiting,
+        ask_again,
+        elsewhere,
         remembered: actions::memory::seen_from(
             actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
             tree.as_deref(),
@@ -299,6 +312,12 @@ pub(super) fn what_is_still_open(found: &StillOpen) -> Option<String> {
             ],
         ));
     }
+    if found.elsewhere > 0 {
+        lines.push(catalogue::say(
+            "cli.session.runs_waiting_elsewhere",
+            &[("count", &found.elsewhere.to_string())],
+        ));
+    }
     if !found.remembered.is_empty() {
         let recent: Vec<String> = found
             .remembered
@@ -356,6 +375,7 @@ pub(super) fn welcome(
     open: &Result<Option<StillOpen>, String>,
     announced: &Result<(), String>,
     handed_on: Option<String>,
+    standing: &crate::instructions_cmd::Standing,
 ) -> String {
     let mut text = catalogue::say(
         "cli.session.welcome",
@@ -393,6 +413,29 @@ pub(super) fn welcome(
             "cli.session.rules_gone",
             &[("files", &gone.join(", "))],
         ));
+    }
+    // What the person asks of every session comes right after the tree's own
+    // rules, which it never outranks.
+    match standing {
+        crate::instructions_cmd::Standing::None => {}
+        crate::instructions_cmd::Standing::Words(words) => {
+            text.push('\n');
+            text.push_str(&catalogue::say("cli.session.standing", &[("words", words)]));
+        }
+        crate::instructions_cmd::Standing::TooLong { chars, path } => {
+            text.push('\n');
+            text.push_str(&catalogue::say(
+                "cli.session.standing_too_long",
+                &[
+                    ("chars", &chars.to_string()),
+                    (
+                        "most",
+                        &crate::instructions_cmd::THE_MOST_A_SESSION_IS_HANDED.to_string(),
+                    ),
+                    ("path", &path.display().to_string()),
+                ],
+            ));
+        }
     }
     if let Some(said) = store.and_then(|store| neighbours(arrival, store)) {
         text.push('\n');
