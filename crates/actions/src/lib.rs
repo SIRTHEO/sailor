@@ -26,6 +26,7 @@
 pub mod apply;
 pub mod bench;
 pub mod budget;
+pub mod candidate_gate;
 pub mod cooldown;
 pub mod delivery;
 pub mod digest;
@@ -44,12 +45,14 @@ pub mod notes;
 pub mod presence;
 pub mod price_every_call;
 pub mod reserve;
+pub mod review_verdict;
 pub mod search;
 pub mod session_fill;
 pub mod store;
 pub mod terminals;
 pub mod topic_drift;
 pub mod unused_actions;
+pub mod worktree;
 
 mod answer;
 mod candidates;

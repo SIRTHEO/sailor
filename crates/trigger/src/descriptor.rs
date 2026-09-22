@@ -26,7 +26,7 @@ pub enum Source {
     Dir(PathBuf),
 }
 
-/// The shape of a signal source. **Three, and the code knows no others**: which
+/// The shape of a signal source. **The code knows no others**: which
 /// terminal, which window, which product is what the descriptors say.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -45,6 +45,10 @@ pub enum Kind {
     /// like a manual one, and what is listened to is not a file but the call
     /// `sailor session event`, which every command line already makes.
     SessionEvent,
+    /// The flow watches a reading of its own: one read-only node the beat runs,
+    /// and a run starts when what it reads has changed. What it reads is the
+    /// trigger step's `sensor`, see `crate::sensor`.
+    Sensor,
 }
 
 /// What a flow asks of a session event before it will start. **THE PHRASE IS
@@ -398,6 +402,10 @@ fn coherent(descriptor: &TriggerDescriptor) -> Result<(), String> {
             "a session event arrives with the run: there is no file to watch, so it cannot declare where to listen"
                 .to_string(),
         ),
+        (Kind::Sensor, true) => return Err(
+            "a sensor reads what the flow's own trigger step declares, so it cannot declare where to listen"
+                .to_string(),
+        ),
         _ => {}
     }
     match (descriptor.kind, descriptor.periodic.as_ref()) {
@@ -411,7 +419,7 @@ fn coherent(descriptor: &TriggerDescriptor) -> Result<(), String> {
              `disabled` instead"
                 .to_string(),
         ),
-        (Kind::Manual | Kind::Terminal | Kind::SessionEvent, Some(_)) => Err(
+        (Kind::Manual | Kind::Terminal | Kind::SessionEvent | Kind::Sensor, Some(_)) => Err(
             "only a periodic trigger declares `periodic`: this one is fired by something else"
                 .to_string(),
         ),

@@ -156,6 +156,7 @@ struct Place {
 }
 
 fn main() {
+    flow::heavy_steps_wait_on(Box::new(sailor::machine_cmd::TheMachine));
     tauri::Builder::default()
         // THE RUNS LIVE IN THE SHELL, NOT IN THE PAGE. Closing the view panel
         // or reloading the canvas must not stop a flow that is running: the

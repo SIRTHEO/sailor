@@ -127,6 +127,8 @@ pub(crate) struct Caller {
     pub wall_deadline_at: Option<i64>,
     pub root: Option<Value>,
     pub holder: Option<HolderIdentity>,
+    /// The machine's turn the calling step holds: the child runs inside it.
+    pub turn: Option<Value>,
 }
 
 /// The flow a step asked for, and where it was found.
@@ -239,6 +241,7 @@ pub(crate) fn prepare(
             holder: shared
                 .get(CURRENT_HOLDER)
                 .and_then(|said| serde_json::from_value(said.clone()).ok()),
+            turn: shared.get(crate::MACHINE_TURN).cloned(),
         },
         located: Located {
             name: flow_name.to_owned(),
@@ -286,6 +289,9 @@ pub(crate) fn run_child(
     // in the wrong place without failing. A parent with no root invents none.
     if let Some(root) = &caller.root {
         child_shared.insert(WORKSPACE_ROOT.to_owned(), root.clone());
+    }
+    if let Some(turn) = &caller.turn {
+        child_shared.insert(crate::MACHINE_TURN.to_owned(), turn.clone());
     }
 
     let actions = host.actions()?;
@@ -708,7 +714,9 @@ mod tests {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
                 needs: Vec::new(),
+                weight: crate::Weight::Light,
             })
             .collect();
         FlowFile {

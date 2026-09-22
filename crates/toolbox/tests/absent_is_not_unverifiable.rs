@@ -10,7 +10,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, TryLockError};
+use std::time::{Duration, Instant};
 use toolbox::{descriptor::Source, Catalog, Machine, Presence, VersionReading};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -109,11 +110,19 @@ fn a_case_holds_the_others_off_for_as_long_as_it_has_a_directory() {
         ONE_AT_A_TIME.try_lock().is_err(),
         "a second case could have started while this one still had its directory"
     );
+    let root = sandbox.root.clone();
     drop(sandbox);
-    assert!(
-        ONE_AT_A_TIME.try_lock().is_ok(),
-        "the lock outlived the directory it was taken for"
-    );
+    assert!(!root.exists(), "the directory outlived its case");
+    // The other cases of this binary run beside this one, and any of them may
+    // take the lock the moment it is freed: it is waited for, not read once.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while matches!(ONE_AT_A_TIME.try_lock(), Err(TryLockError::WouldBlock)) {
+        assert!(
+            Instant::now() < deadline,
+            "the lock outlived the directory it was taken for"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
 }
 
 // ── a present tool, recognised by the descriptor that named it ──────────

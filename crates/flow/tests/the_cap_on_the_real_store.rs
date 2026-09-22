@@ -149,6 +149,8 @@ fn step(id: &str, deps: Vec<String>) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        weight: flow::Weight::Light,
+        even_after_a_break: false,
         with: None,
         needs: Vec::new(),
     }

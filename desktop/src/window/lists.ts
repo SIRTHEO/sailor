@@ -2,7 +2,7 @@
  * **THE COLUMN PICKS WHICH LIST, AND NOTHING ELSE.** The panel picks which
  * thing, and the field holds what is open. Five entries against the three of
  * `PLACES`: a row of words becomes a list at the fourth, a column of icons is
- * scanned — ADR-023.
+ * scanned — ADR-026.
  */
 import { Database, Folder, KeyRound, Route, SquareTerminal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";

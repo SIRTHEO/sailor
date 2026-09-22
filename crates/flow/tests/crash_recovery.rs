@@ -161,7 +161,9 @@ fn opaque_graph() -> Graph {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
         needs: Vec::new(),
+        weight: flow::Weight::Light,
     }])
     .expect("valid test graph")
 }
@@ -422,7 +424,9 @@ fn recovery_graph() -> Graph {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
             needs: Vec::new(),
+            weight: flow::Weight::Light,
         },
         Step {
             id: "next".to_owned(),
@@ -442,7 +446,9 @@ fn recovery_graph() -> Graph {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
             needs: Vec::new(),
+            weight: flow::Weight::Light,
         },
     ])
     .expect("valid test graph")

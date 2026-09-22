@@ -6,3 +6,7 @@ edition = "2021"
 [dependencies]
 ledger = { path = "../ledger" }
 libc = "0.2"
+# The terminals Sailor tracks: who is standing in a tree is a reading of this
+# machine, like the working directories below it, and a flow needs the same
+# answer the command line gets. No cycle: `sessions` depends only on `ledger`.
+sessions = { path = "../sessions" }

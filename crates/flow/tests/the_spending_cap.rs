@@ -129,6 +129,8 @@ fn step(id: &str, action: &str, deps: Vec<String>) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        weight: flow::Weight::Light,
+        even_after_a_break: false,
         with: None,
         needs: Vec::new(),
     }
@@ -483,4 +485,74 @@ fn the_step_that_ran_is_closed_in_the_store() {
     assert_eq!(records.len(), 1, "the second was never opened");
     assert_eq!(records[0].step_id, "first");
     assert_eq!(records[0].outcome, Some(Outcome::Went));
+}
+
+/// The cap stops what would spend, not what closes: a closing step the run
+/// owes still runs, and the run then stops where it would have.
+#[test]
+fn a_run_stopped_by_the_cap_still_closes_what_it_opened() {
+    let store = Arc::new(StoreThatCounts::new());
+    let paid = Arc::new(AtomicUsize::new(0));
+    let closed = Arc::new(AtomicUsize::new(0));
+    let mut actions = flow::ActionRegistry::default();
+    actions.register(
+        "costs",
+        CostsMoney {
+            store: Arc::clone(&store),
+            micros: 150,
+            times: Arc::clone(&paid),
+        },
+    );
+    actions.register(
+        "free",
+        CostsMoney {
+            store: Arc::clone(&store),
+            micros: 0,
+            times: Arc::clone(&closed),
+        },
+    );
+    let mut close = step("close", "free", vec!["open".to_owned(), "more".to_owned()]);
+    close.even_after_a_break = true;
+    let graph = Graph::new(vec![
+        step("open", "costs", vec![]),
+        step("more", "costs", vec!["open".to_owned()]),
+        close,
+    ])
+    .expect("valid graph");
+
+    let execution = InProcessExecutor
+        .execute(
+            &graph,
+            ExecutionRequest {
+                holder: None,
+                run_id: "run".to_owned(),
+                root_inputs: Default::default(),
+                gates: vec![],
+                shared: SharedState::new(),
+                spend_cap_micros: Some(100),
+                stops: flow::RunStops::default(),
+            },
+            store.as_ref(),
+            &actions,
+            &Ticking(AtomicI64::new(0)),
+        )
+        .expect("the execution is not a fault");
+
+    assert_eq!(
+        paid.load(Ordering::SeqCst),
+        1,
+        "only the first paid step ran"
+    );
+    assert_eq!(
+        closed.load(Ordering::SeqCst),
+        1,
+        "the close was skipped at the cap"
+    );
+    let Some(Decision::CapReached(stop)) = execution.decisions.last() else {
+        panic!(
+            "it should have stopped at the cap: {:?}",
+            execution.decisions
+        );
+    };
+    assert_eq!(stop.not_started, ["more"]);
 }

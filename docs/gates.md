@@ -26,12 +26,15 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p sailor -j 1 --test a_flow_never_grows_what_it_sends_in_silence --test every_flow_path_the_code_names_exists --test take_the_next_fault --test take_the_next_work`
 - `cargo test -p sailor -j 1 --test a_flow_step_is_not_a_shell_program` — the seed counts the steps that still reach for a shell
 - `cargo test -p sailor -j 1 --test a_shipped_flow_calls_the_functions_it_defines --test a_step_may_not_name_a_field_after_what_it_points_at` — a step that defines shell it never runs, and a `with` field that covers the value its own pointer reaches for
+- `cargo test -p sailor -j 1 --test a_check_that_failed_before_the_attestation_is_asked_again` — integration's merge step, run against a forge that answers from a file
 - `cargo test -p flow -j 1`
 
 ## C. When `crates/actions` or a brake changes
 
 - `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` (both suites, always both)
 - A first-execution timeout (`engine_timed_out` on a fresh temp-file engine) is rerun once and said aloud
+- `cargo test -p actions -j 1 --test a_candidate_leaves_only_through_the_gate` — the last gate before a draft, integration, a release (before its build and before its push) or closing the work lets a candidate leave, proved without a forge or a binary in service
+- `cargo test -p actions -j 1 --test a_verdict_binds_only_the_pinned_commit` — a review is recorded only when its verdict names the pinned commit, says clean or findings, lists what it checked, and was closed with the sailor the flow verified
 
 ## D. When `crates/profiles`, the login probe or a launch changes
 
@@ -42,6 +45,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 - `cargo test -p sailor -j 1 --test a_tree_somebody_is_in_is_never_closed --test a_closed_tree_takes_its_index_identity_with_it` — a tree somebody is in is kept, whoever asks
 - `cargo test -p workspace -j 1`
+- `cargo test -p actions -j 1 --test a_tree_the_flow_closes_is_one_nobody_is_in` — the same decision a delivery flow makes, proved without a machine that has trees on it
 
 ## E. When `desktop/` changes
 
