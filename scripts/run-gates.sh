@@ -6,6 +6,8 @@
 # Exit: 0 no line red, 1 a line red, 2 cannot run. "manual" counts what nobody ran:
 # a command of no known shape, a value only a person has, or a bullet with no command
 # that the review did not check by its exact text (--covered). Manual is never green.
+# A line a person already approved for this change (--approved) counts as covered, and
+# every line still left to a person is written, one per line, to --pending.
 
 set -u
 
@@ -14,6 +16,8 @@ list_only=0
 base=""
 manifest=""
 covered=""
+approved=""
+pending=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-fail-fast) no_fail_fast=1 ;;
@@ -21,6 +25,8 @@ while [ $# -gt 0 ]; do
         --base) base=${2:-}; [ -n "$base" ] || { echo "gates: --base needs a commit" >&2; exit 2; }; shift ;;
         --manifest) manifest=${2:-}; [ -n "$manifest" ] || { echo "gates: --manifest needs a file" >&2; exit 2; }; shift ;;
         --covered) covered=${2:-}; [ -r "$covered" ] || { echo "gates: --covered needs a readable file" >&2; exit 2; }; shift ;;
+        --approved) approved=${2:-}; [ -r "$approved" ] || { echo "gates: --approved needs a readable file" >&2; exit 2; }; shift ;;
+        --pending) pending=${2:-}; [ -n "$pending" ] || { echo "gates: --pending needs a file" >&2; exit 2; }; : > "$pending" || exit 2; shift ;;
         *) echo "gates: unknown argument $1" >&2; exit 2 ;;
     esac
     shift
@@ -79,6 +85,16 @@ covered_count=0
 tab=$(printf '\t')
 
 say() { echo "gates[$letter] $*" >&2; }
+left_to_a_person() {
+    if [ -n "$approved" ] && grep -F -x -q -- "$1" "$approved"; then
+        say "approved by a person for this change: $1"
+        covered_count=$((covered_count + 1))
+        return
+    fi
+    say "$2: $1"
+    manual=$((manual + 1))
+    [ -z "$pending" ] || printf '%s\n' "$1" >> "$pending"
+}
 count_red() { say "red: $1"; red=$((red + 1)); }
 run_argv() {
     # The shape was matched first, so every word is from a closed alphabet: no quote,
@@ -103,8 +119,7 @@ while IFS="$tab" read -r letter kind text; do
             say "checked by the review: $text"
             covered_count=$((covered_count + 1))
         else
-            say "needs a person, the review did not check it: $text"
-            manual=$((manual + 1))
+            left_to_a_person "$text" "needs a person, the review did not check it"
         fi
         continue
     fi
@@ -149,8 +164,7 @@ while IFS="$tab" read -r letter kind text; do
             set +f
             continue ;;
     esac
-    say "needs a person, no known shape runs it: $text"
-    manual=$((manual + 1))
+    left_to_a_person "$text" "needs a person, no known shape runs it"
 done <<PLAN
 $plan
 PLAN
