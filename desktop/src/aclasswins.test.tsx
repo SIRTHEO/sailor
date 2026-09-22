@@ -8,10 +8,9 @@ import { parseStylesheet, type CssRule, type Stylesheet } from "./contrast";
 
 /**
  * **A CLASS ON A BUTTON WINS OVER THE PAINT UNDER IT**, measured on the drawn
- * DOM: for each button, what its own classes ask for is what it gets. No rule
- * of the sheet had to be wrong for this to break — a guard on the bare
- * `button` rule outweighed them all, and thirty of the window's thirty-two
- * buttons were boxes over rules that said `border: none`.
+ * DOM. No rule of the sheet had to be wrong for this to break: a guard on the
+ * bare `button` rule outweighed them all, and thirty of the window's
+ * thirty-two buttons were boxes over rules that said `border: none`.
  */
 
 afterEach(cleanup);
