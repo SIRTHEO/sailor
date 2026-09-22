@@ -359,7 +359,7 @@ fn read_here(spec: &GateSpec) -> Result<Readings, ActionError> {
 fn read_the_remote(spec: &GateSpec, here: Readings) -> Result<Readings, ActionError> {
     git(
         &spec.repo,
-        &["fetch", "--quiet", &spec.remote],
+        &["fetch", "--quiet", "--no-tags", &spec.remote],
         A_REMOTE_ANSWERS_WITHIN,
     )
     .map_err(|why| held(format!("cannot read {}: {why}", spec.remote)))?;

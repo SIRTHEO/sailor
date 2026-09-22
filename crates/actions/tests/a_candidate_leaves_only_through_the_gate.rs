@@ -351,6 +351,19 @@ mod on_a_real_repository {
         );
     }
 
+    /// The gate reads the trunk and nothing else: a tag the remote carries is
+    /// not written into the repository the delivery runs from.
+    #[test]
+    fn the_gate_brings_home_no_tag_of_the_remote() {
+        let (repo, trunk, reviewed) = a_delivery("tag", "src/change");
+        git(&repo, &["push", "-q", "origin", &format!("{reviewed}:refs/tags/archive")]);
+        assert_eq!(
+            the_gate(integrating(&repo, &trunk, &reviewed)),
+            Ok(json!({ "ref": reviewed, "privacy_exit": 0 }))
+        );
+        assert_eq!(git(&repo, &["tag", "--list"]), "");
+    }
+
     #[test]
     fn a_candidate_the_scan_refuses_stays_with_what_the_scan_said() {
         let (repo, trunk, reviewed) = a_delivery("refused", "forbidden");
