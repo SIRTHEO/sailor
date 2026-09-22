@@ -16,6 +16,9 @@ use std::time::Duration;
 /// The id of the shipped source a sensor flow names in its trigger step.
 pub const SENSOR_SOURCE: &str = "sensor";
 
+/// A sensor's pointer names a part of its reading, not a command.
+pub const SENSOR_POINTER_FIELD: &str = "sensor.pointer";
+
 /// The store collection the readings are kept in, one entry per flow id.
 pub const SENSOR_READINGS: &str = "sensor_readings";
 
