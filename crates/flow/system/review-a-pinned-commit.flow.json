@@ -357,7 +357,10 @@
           "type": "object",
           "properties": {
             "status": {
-              "type": "string"
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
             },
             "commit": {
               "type": "string"
