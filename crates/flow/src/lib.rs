@@ -9,6 +9,7 @@ mod executor;
 mod file;
 pub mod for_each;
 mod graph;
+mod machine_turn;
 mod record;
 pub mod reference;
 mod schedule;
@@ -33,6 +34,9 @@ pub use executor::{
 };
 pub use file::{CapKind, FlowFile, Provenance};
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step, BROKEN_FIELD};
+pub use machine_turn::{
+    heavy_steps_wait_on, HeldTurn, MachineTurns, MACHINE_TURN, MACHINE_TURN_VARIABLE,
+};
 pub use record::{
     canonical_text, digest_input, truncate_said, AttemptRelation, Holder, HolderIdentity, Outcome,
     Ran, Refusal, RefusalRule, StepRecord, StepSpecies, Why, ANSWER_SHAPE_CHECK, MAX_SAID_BYTES,
