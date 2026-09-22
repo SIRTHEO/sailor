@@ -1663,6 +1663,7 @@ export default function App() {
         <SailorScreen
           native={NATIVE}
           tab={sailorTab}
+          ceiling={ceilingOf(flows)}
           onTerminalOpened={() => {
             setPlace("terminals");
             setTerminalsTab("live");

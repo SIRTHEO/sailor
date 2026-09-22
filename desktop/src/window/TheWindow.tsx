@@ -4,12 +4,17 @@ import { flowsHere, resolvedIn, standingContext } from "../flowsbyworkspace";
 import { projects } from "../workspaces";
 import type { Project } from "../workspaces";
 import { t } from "../i18n";
-import { Field, FieldEmpty } from "./Field";
+import { closeTerminal, livenessOf, pressKeys, progressOf, resizeTerminal, submitLine } from "../terminal";
+import { TerminalPane, useStir } from "../TerminalPane";
+import { Field, FieldEmpty, FieldHeld } from "./Field";
 import { FlowPage } from "./FlowPage";
 import { FlowRows } from "./FlowRows";
 import { LISTS, listEntry } from "./lists";
 import type { ListName } from "./lists";
 import { Panel } from "./Panel";
+import { heldTerminal } from "./terminalgroups";
+import { TerminalRows } from "./TerminalRows";
+import { useTerminals } from "./useTerminals";
 import { Window } from "./Window";
 import { WorkspacePage } from "./WorkspacePage";
 import { WorkspaceRows } from "./WorkspaceRows";
@@ -22,10 +27,9 @@ const ONCE = null;
  * panel: the panel is scanned for a row, and there is no row. Icons that answer
  * nothing teach that the window is broken rather than unfinished.
  */
-type NotHere = "terminals" | "data" | "keys";
+type NotHere = "data" | "keys";
 
 const NOT_YET: Record<NotHere, string> = {
-  terminals: "window.not_yet.terminals",
   data: "window.not_yet.data",
   keys: "window.not_yet.keys",
 };
@@ -45,7 +49,14 @@ interface At {
  * rendered together would read the disk five times to draw one column, and four
  * of the five readings would be thrown away.
  */
-export function TheWindow({ native }: { native: boolean }) {
+export function TheWindow({
+  native,
+  ceiling = null,
+}: {
+  native: boolean;
+  /** The ceiling the relay hands on at, from the flow that declares it. */
+  ceiling?: number | null;
+}) {
   const [place, setPlace] = useState<ListName>("workspaces");
   const [chosen, setChosen] = useState<Partial<Record<ListName, string>>>({});
   const at: At = {
@@ -57,6 +68,7 @@ export function TheWindow({ native }: { native: boolean }) {
 
   if (place === "workspaces") return <Workspaces native={native} at={at} />;
   if (place === "flows") return <Flows native={native} at={at} />;
+  if (place === "terminals") return <Terminals native={native} ceiling={ceiling} at={at} />;
   return <NotHereYet list={place} at={at} />;
 }
 
@@ -127,6 +139,75 @@ function Flows({ native, at }: { native: boolean; at: At }) {
           </Field>
         )
       }
+    />
+  );
+}
+
+/**
+ * **ONE TERMINAL IN THE FIELD, AND NO TABS.** The panel is the list, so a
+ * strip of tabs over the pane would be a second navigation; and the field
+ * shows what is open, whole, rather than a card of facts about it.
+ */
+function Terminals({ native, ceiling, at }: { native: boolean; ceiling: number | null; at: At }) {
+  const { asked, again, bus, closed, channel, speaking, now, lines } = useTerminals(native);
+  const [trouble, setTrouble] = useState<string | null>(null);
+  const all = asked.state === "answered" ? asked.value : [];
+  const held = heldTerminal(all, at.chosen);
+  const stirred = useStir(held?.workspaceRoot ?? null);
+  const refused = (error: unknown) => { setTrouble(String(error)); };
+
+  let field;
+  if (held === null) {
+    field = <FieldEmpty say={t(asked.state === "answered" ? "window.terminals.open_one" : "window.looking")} />;
+  } else {
+    const liveness = livenessOf(held, closed, channel.on);
+    field = (
+      <FieldHeld name={`${held.program === "" ? held.device : held.program} · ${held.workspaceName}`}>
+        {trouble === null ? null : <p className="window-field__trouble">{trouble}</p>}
+        {channel.why === null ? null : <p className="window-field__trouble">{channel.why}</p>}
+        <TerminalPane
+          key={held.id}
+          summary={held}
+          known={lines}
+          ceiling={ceiling}
+          liveness={liveness}
+          progress={progressOf(liveness, bus.spokenAt(held.id), now)}
+          stirred={stirred}
+          speaking={speaking.has(held.id)}
+          bus={bus}
+          visible
+          focused
+          onFocus={() => {}}
+          onSubmit={(line) => submitLine(held.id, line)}
+          onClose={() => { void closeTerminal(held.id).then(() => { again(); }).catch(refused); }}
+          onPress={(bytes) => { void pressKeys(held.id, bytes).catch(refused); }}
+          onResize={(cols, rows) => { void resizeTerminal(held.id, cols, rows).catch(refused); }}
+        />
+      </FieldHeld>
+    );
+  }
+
+  return (
+    <Window
+      place={at.place}
+      onPlace={at.onPlace}
+      panel={
+        <Panel title={listEntry(at.place).name}>
+          {asked.state === "answered" ? (
+            <TerminalRows
+              terminals={all}
+              held={held?.id ?? null}
+              closed={closed}
+              watching={channel.on}
+              speaking={speaking}
+              onChoose={(id) => { setTrouble(null); at.onChoose(id); }}
+            />
+          ) : (
+            <Waiting asked={asked} />
+          )}
+        </Panel>
+      }
+      field={field}
     />
   );
 }

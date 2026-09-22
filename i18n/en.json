@@ -1299,7 +1299,8 @@
   "window.workspace.no_equipment": "none declared",
   "window.field.pick_one": "Pick one on the left, and it opens here.",
   "window.field.standing_here": "the window is standing here",
-  "window.not_yet.terminals": "The terminals are not in this window yet: they are still in their own place.",
+  "window.terminals.none": "No terminal is open on this machine.",
+  "window.terminals.open_one": "A terminal opened anywhere on this machine is listed here, and the one you choose opens in this field.",
   "window.not_yet.data": "The store is not in this window yet. It holds ten tables and no screen opens them.",
   "window.not_yet.keys": "The keys are not in this window yet. A workspace cannot own one either: see issue 98.",
   "window.not_yet.workspaces": "The workspaces are here."
