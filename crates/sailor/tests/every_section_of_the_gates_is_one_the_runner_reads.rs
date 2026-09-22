@@ -83,21 +83,50 @@ fn the_runner_reads_every_section_the_manifest_declares() {
     }
 }
 
-/// The road every real run takes, which the checks above never walk: they all
+/// The road every real run takes, which the plan never walks: those checks all
 /// hand the runner `--plan`, and a flag declared there and nowhere else once
 /// stopped every other invocation at its first line while they stayed green.
+/// Saying something is not enough — a runner that answered «no crate touched»
+/// and listed nothing would pass that — so what is demanded here is that a line
+/// the plan holds is named back. What runs the lines is walked by every real
+/// gate run and by nothing cheap enough to live in a battery; that is the gap
+/// this check narrows rather than closes.
 #[test]
 fn the_runner_still_answers_without_being_asked_for_its_plan() {
+    let root = root();
     let said = Command::new("sh")
         .arg(THE_RUNNER)
         .args(["--list", "--base", "HEAD"])
-        .current_dir(root())
+        .current_dir(&root)
         .output()
         .expect("the runner answers");
     assert!(
-        said.status.success() && !said.stderr.is_empty(),
-        "the runner did not say what it would run: {}",
+        said.status.success(),
+        "the runner refused the road every run takes: {}",
         String::from_utf8_lossy(&said.stderr)
+    );
+    let listed = String::from_utf8_lossy(&said.stderr).into_owned();
+    let planned = Command::new("sh")
+        .arg(THE_RUNNER)
+        .args(["--plan", "--base", "HEAD"])
+        .current_dir(&root)
+        .output()
+        .expect("the runner answers");
+    let planned = String::from_utf8_lossy(&planned.stdout).into_owned();
+    let first = planned
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let letter = fields.next()?;
+            let (kind, text) = (fields.next()?, fields.next()?);
+            (letter == "A" && kind == "command").then(|| text.to_owned())
+        })
+        .next()
+        .expect("letter A holds a command to run");
+    assert!(
+        listed.contains(&first),
+        "the runner said something without naming «{first}», which its own plan holds: it \
+         answered the road every run takes and listed nothing"
     );
 }
 
@@ -112,22 +141,30 @@ fn decides(runner: &str) -> String {
         .expect("the runner says which letters apply")
 }
 
-/// What each letter is decided by: the case arm's own pattern, read out of the
-/// runner rather than restated here.
-fn the_matches(runner: &str) -> Vec<(String, String)> {
+/// Every quoted word a letter's own arm holds, whatever command it is spelled
+/// with. Reading the arm by the exact words `grep -E -q` made the check blind
+/// to `grep -Eq`, and narrowing the words by how a pattern tends to look would
+/// go blind again at the first plain one: nothing here is told what a pattern
+/// is, and it is enough that one of them names something real.
+fn the_matches(runner: &str) -> Vec<(String, Vec<String>)> {
     decides(runner)
         .lines()
         .filter_map(|line| {
             let (letter, rest) = line.trim().split_once(')')?;
-            let (_, quoted) = rest.split_once("grep -E -q '")?;
-            let (pattern, _) = quoted.split_once('\'')?;
-            Some((letter.to_owned(), pattern.to_owned()))
+            let quoted = rest
+                .split('\'')
+                .skip(1)
+                .step_by(2)
+                .map(str::to_owned)
+                .collect();
+            Some((letter.to_owned(), quoted))
         })
         .collect()
 }
 
-/// A letter is dead when nothing in the tree could ever make it apply. `A`
-/// answers to everything and names no pattern, so it is not among these.
+/// A letter is dead when nothing in the tree could ever make it apply, and as
+/// dead when its arm names nothing to look for. `A` answers to everything and
+/// is written with no word of its own, so it is the one letter exempt.
 #[test]
 fn every_letter_the_runner_decides_could_be_reached_by_this_tree() {
     let root = root();
@@ -137,29 +174,47 @@ fn every_letter_the_runner_decides_could_be_reached_by_this_tree() {
         .current_dir(&root)
         .output()
         .expect("git lists the tree");
-    let tracked = String::from_utf8_lossy(&tracked.stdout);
-    for (letter, pattern) in the_matches(&runner) {
-        let matched = Command::new("grep")
-            .args(["-E", "-q", &pattern])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                child
-                    .stdin
-                    .take()
-                    .expect("the file list goes in")
-                    .write_all(tracked.as_bytes())?;
-                child.wait()
-            })
-            .expect("grep answers");
+    let tracked = String::from_utf8_lossy(&tracked.stdout).into_owned();
+    let arms = the_matches(&runner);
+    for letter in the_plan(&root) {
+        // `A` is every run's, written with no word of its own, and the letters
+        // decided elsewhere are held by the check that names them.
+        if letter == "A" || DECIDED_ELSEWHERE.iter().any(|(named, _)| *named == letter) {
+            continue;
+        }
+        let words = arms
+            .iter()
+            .find(|(named, _)| *named == letter)
+            .map(|(_, words)| words.clone())
+            .unwrap_or_default();
         assert!(
-            matched.success(),
-            "«{letter}» applies to «{pattern}», which no file in this tree matches: its lines \
-             are read and then never run"
+            words.iter().any(|word| matches_a_file(word, &tracked)),
+            "«{letter}» is decided by {words:?}, and no file this tree tracks answers to any of \
+             them: its lines are read and then run for nobody"
         );
     }
+}
+
+/// Whether the runner's own word, read by the tool the runner reads it with,
+/// names a file this tree holds.
+fn matches_a_file(word: &str, tracked: &str) -> bool {
+    use std::io::Write;
+    let Ok(mut child) = Command::new("grep")
+        .args(["-E", "-q", word])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let wrote = child
+        .stdin
+        .take()
+        .expect("the file list goes in")
+        .write_all(tracked.as_bytes());
+    let ended = child.wait().expect("grep answers");
+    wrote.is_ok() && ended.success()
 }
 
 #[test]
