@@ -1305,5 +1305,17 @@
   "flow.sensor.unchanged": "the sensor reads what it read last time",
   "flow.sensor.cooling": "the sensor reads a change, and the cooldown holds it for {seconds} more seconds",
   "flow.sensor.absolute_workdir": "the sensor's workdir «{workdir}» is absolute: a flow that works in one fixed place works in the wrong one elsewhere. Write it relative to the project root",
-  "flow.sensor.no_root": "the sensor's workdir «{workdir}» hangs off the project root, and the beat found none walking up from where it runs"
+  "flow.sensor.no_root": "the sensor's workdir «{workdir}» hangs off the project root, and the beat found none walking up from where it runs",
+  "cli.command.instructions": "what you ask of every session you open, handed to each as it starts",
+  "cli.instructions.says": "shows the standing instructions every session is handed, and where they are kept",
+  "cli.instructions.form.set": "keeps the text of a file, or of the standard input with -, as the standing instructions",
+  "cli.instructions.form.clear": "removes the standing instructions: sessions start without them",
+  "cli.instructions.none": "no standing instructions: sessions start without them. They would be kept in {path}",
+  "cli.instructions.held": "every session you open is handed these {chars} characters as it starts, kept in {path}. They reach the sessions Sailor greets, not the steps of a flow:",
+  "cli.instructions.set": "kept in {path}: {chars} characters, handed to every session you open from its next start",
+  "cli.instructions.cleared": "removed {path}: sessions start without standing instructions",
+  "cli.instructions.empty": "the text is empty: nothing was kept. `sailor instructions clear` removes them",
+  "cli.instructions.too_long": "{chars} characters, over the {most} a session is handed: nothing reaches a session until they are shorter ({path})",
+  "cli.session.standing": "The person you work for set standing instructions for every session they open, through `sailor instructions`. Follow them in how you answer and how you work with them; where they disagree with the rules of this tree, the tree's rules win.\n--- standing instructions ---\n{words}\n--- end of standing instructions ---",
+  "cli.session.standing_too_long": "Standing instructions are kept in {path} but hold {chars} characters, over the {most} a session is handed: none of them reached you. Tell the person, since `sailor instructions` is where they shorten them."
 }

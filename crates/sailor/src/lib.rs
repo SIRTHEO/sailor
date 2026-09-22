@@ -29,6 +29,7 @@ pub mod board_cmd;
 pub mod faults_cmd;
 pub mod flow_cmd;
 pub mod inventory_cmd;
+pub mod instructions_cmd;
 pub mod machine_cmd;
 pub mod space_cmd;
 pub mod memory_cmd;
@@ -180,6 +181,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.memory",
         usage: memory_cmd::USAGE,
         run: memory_cmd::run,
+    },
+    Command {
+        name: "instructions",
+        description_key: "cli.command.instructions",
+        usage: instructions_cmd::USAGE,
+        run: instructions_cmd::run,
     },
     Command {
         name: "machine",
