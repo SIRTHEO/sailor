@@ -162,11 +162,24 @@ pub(super) fn still_open_in(
         .unwrap_or_default();
     let page = page_on_disk(home);
     let tree = workspace::tree_around(&started.worktree).map(|tree| tree.display().to_string());
-    Ok(StillOpen {
-        waiting: deposit.waiting_runs().map_err(|error| error.to_string())?,
-        ask_again: deposit
+    let mut elsewhere = 0;
+    let mut born_here = |runs: Vec<ledger::WaitingRun>| {
+        let (here, there): (Vec<_>, Vec<_>) = runs
+            .into_iter()
+            .partition(|run| run.tree.is_empty() || Some(&run.tree) == tree.as_ref());
+        elsewhere += there.len();
+        here
+    };
+    let waiting = born_here(deposit.waiting_runs().map_err(|error| error.to_string())?);
+    let ask_again = born_here(
+        deposit
             .runs_to_ask_again()
             .map_err(|error| error.to_string())?,
+    );
+    Ok(StillOpen {
+        waiting,
+        ask_again,
+        elsewhere,
         remembered: actions::memory::seen_from(
             actions::memory::remembered(deposit, now).map_err(|error| error.to_string())?,
             tree.as_deref(),
@@ -297,6 +310,12 @@ pub(super) fn what_is_still_open(found: &StillOpen) -> Option<String> {
                 ("which", &which.join(", ")),
                 ("first", &runs[0].run_id),
             ],
+        ));
+    }
+    if found.elsewhere > 0 {
+        lines.push(catalogue::say(
+            "cli.session.runs_waiting_elsewhere",
+            &[("count", &found.elsewhere.to_string())],
         ));
     }
     if !found.remembered.is_empty() {

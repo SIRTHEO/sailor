@@ -82,6 +82,8 @@ pub struct WaitingRun {
     /// Since when it has been waiting: the instant the run stopped, or the
     /// instant it started if it has not stopped yet.
     pub waiting_since: i64,
+    /// The tree the run was born in. Empty if nobody recorded one.
+    pub tree: String,
 }
 
 /// One table of the projection, and how many rows it holds right now.

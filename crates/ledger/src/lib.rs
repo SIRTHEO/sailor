@@ -977,7 +977,7 @@ impl Ledger {
         // `runs.status` is free text, and `waiting` is already written there
         // by `execution_status`.
         let mut statement = connection.prepare(
-            "SELECT run_id, entity, COALESCE(ended_at, started_at)
+            "SELECT run_id, entity, COALESCE(ended_at, started_at), COALESCE(worktree, '')
              FROM runs WHERE status = 'waiting'
              ORDER BY COALESCE(ended_at, started_at), run_id",
         )?;
@@ -986,6 +986,7 @@ impl Ledger {
                 run_id: row.get(0)?,
                 entity: row.get(1)?,
                 waiting_since: row.get(2)?,
+                tree: row.get(3)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
@@ -1000,7 +1001,7 @@ impl Ledger {
     pub fn runs_to_ask_again(&self) -> Result<Vec<WaitingRun>, LedgerError> {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
-            "SELECT run_id, entity, COALESCE(ended_at, started_at)
+            "SELECT run_id, entity, COALESCE(ended_at, started_at), COALESCE(worktree, '')
              FROM runs WHERE status = 'not_yet'
              ORDER BY COALESCE(ended_at, started_at), run_id",
         )?;
@@ -1009,6 +1010,7 @@ impl Ledger {
                 run_id: row.get(0)?,
                 entity: row.get(1)?,
                 waiting_since: row.get(2)?,
+                tree: row.get(3)?,
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
