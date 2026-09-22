@@ -177,9 +177,13 @@ fn a_version_tag_that_disagrees_stops_the_release_and_says_why() {
 }
 
 /// A git call that talks to a remote, and the first word after its verb and
-/// its flags: the remote it reaches.
+/// its flags: the remote it reaches. Words part at shell punctuation too, so a
+/// call inside `$(...)` or quotes is seen: `listed=$(git` hid one (fault 273).
 fn remote_named_in(line: &str) -> Option<&str> {
-    let words: Vec<&str> = line.split_whitespace().collect();
+    let words: Vec<&str> = line
+        .split(|c: char| c.is_whitespace() || "$()`\"';|&=".contains(c))
+        .filter(|word| !word.is_empty())
+        .collect();
     let verb = words
         .iter()
         .position(|word| matches!(*word, "fetch" | "ls-remote" | "push"))?;
@@ -220,6 +224,10 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
         "steps that name the remote instead of reading it: {named:#?}"
     );
     assert_eq!(remote_named_in("git fetch --quiet origin"), Some("origin"));
+    assert_eq!(
+        remote_named_in(r#"listed=$(git -C "$REPO" ls-remote origin "$1") || exit 2"#),
+        Some("origin")
+    );
 }
 
 /// No step reads a tag it fetches whole, yet whether such a fetch takes the
