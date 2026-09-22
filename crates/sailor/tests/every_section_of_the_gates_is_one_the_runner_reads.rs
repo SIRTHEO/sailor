@@ -83,14 +83,10 @@ fn the_runner_reads_every_section_the_manifest_declares() {
     }
 }
 
-/// The road every real run takes, which the plan never walks: those checks all
-/// hand the runner `--plan`, and a flag declared there and nowhere else once
-/// stopped every other invocation at its first line while they stayed green.
-/// Saying something is not enough — a runner that answered «no crate touched»
-/// and listed nothing would pass that — so what is demanded here is that a line
-/// the plan holds is named back. What runs the lines is walked by every real
-/// gate run and by nothing cheap enough to live in a battery; that is the gap
-/// this check narrows rather than closes.
+/// The road every real run takes, which the plan never walks: a flag declared
+/// only there once stopped every other invocation while these stayed green.
+/// Saying something is not enough — a runner that listed nothing still would —
+/// so a line the plan holds has to be named back.
 #[test]
 fn the_runner_still_answers_without_being_asked_for_its_plan() {
     let root = root();
