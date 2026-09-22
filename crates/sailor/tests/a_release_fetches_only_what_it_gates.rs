@@ -176,22 +176,32 @@ fn a_version_tag_that_disagrees_stops_the_release_and_says_why() {
     );
 }
 
-/// A git call that talks to a remote, and the first word after its verb and
-/// its flags: the remote it reaches. Words part at shell punctuation too, so a
-/// call inside `$(...)` or quotes is seen: `listed=$(git` hid one (fault 273).
-fn remote_named_in(line: &str) -> Option<&str> {
-    let words: Vec<&str> = line
-        .split(|c: char| c.is_whitespace() || "$()`\"';|&=".contains(c))
-        .filter(|word| !word.is_empty())
-        .collect();
-    let verb = words
-        .iter()
-        .position(|word| matches!(*word, "fetch" | "ls-remote" | "push"))?;
-    words[..verb].contains(&"git").then_some(())?;
-    words[verb + 1..]
-        .iter()
-        .copied()
-        .find(|word| !word.starts_with('-'))
+/// A git call that talks to a remote: its verb, and the first word after the
+/// verb and its flags, the remote it reaches. A line parts into commands at
+/// shell punctuation, so a call inside `$(...)` is seen (fault 273), and quotes
+/// are dropped rather than parted at, so `--force-with-lease="a:b"` stays a flag.
+fn git_call_in(line: &str) -> Option<(String, String)> {
+    if line.trim_start().starts_with('#') {
+        return None;
+    }
+    line.split(|c: char| "()`;|&".contains(c)).find_map(|command| {
+        let words: Vec<String> = command
+            .split_whitespace()
+            .map(|word| word.replace(['"', '\''], ""))
+            .collect();
+        let git = words.iter().position(|word| word == "git")?;
+        let verb = git
+            + 1
+            + words[git + 1..]
+                .iter()
+                .position(|word| matches!(word.as_str(), "fetch" | "ls-remote" | "push"))?;
+        let remote = words[verb + 1..].iter().find(|word| !word.starts_with('-'))?;
+        Some((words[verb].clone(), remote.clone()))
+    })
+}
+
+fn remote_named_in(line: &str) -> Option<String> {
+    git_call_in(line).map(|(_, remote)| remote)
 }
 
 #[test]
@@ -211,7 +221,7 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
             let command = step["with"]["command"].as_str().unwrap_or_default();
             read += usize::from(!command.is_empty());
             let literal = command.lines().any(|line| {
-                remote_named_in(line) == Some("origin") || line.contains("refs/remotes/origin/")
+                remote_named_in(line).as_deref() == Some("origin") || line.contains("refs/remotes/origin/")
             });
             if literal {
                 named.push(format!("{}: {}", path.display(), step["id"]));
@@ -223,11 +233,24 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
         named.is_empty(),
         "steps that name the remote instead of reading it: {named:#?}"
     );
-    assert_eq!(remote_named_in("git fetch --quiet origin"), Some("origin"));
-    assert_eq!(
-        remote_named_in(r#"listed=$(git -C "$REPO" ls-remote origin "$1") || exit 2"#),
-        Some("origin")
-    );
+    for (line, remote) in [
+        ("git fetch --quiet origin", Some("origin")),
+        (r#"listed=$(git -C "$REPO" ls-remote origin "$1") || exit 2"#, Some("origin")),
+        (r#"echo "fetch failed"; git -C "$REPO" fetch -q origin"#, Some("origin")),
+        ("git push --push-option=ci.skip origin main", Some("origin")),
+        (
+            r#"git "$@" push --force-with-lease="refs/heads/$BRANCH:$remote" origin"#,
+            Some("origin"),
+        ),
+        (
+            r#"git "$@" push --force-with-lease="refs/heads/$BRANCH:$remote" "$REMOTE_NAME""#,
+            Some("$REMOTE_NAME"),
+        ),
+        (r#"git fetch -q x || { echo "cannot push origin by hand"; }"#, Some("x")),
+        ("# git fetch origin, as a comment", None),
+    ] {
+        assert_eq!(remote_named_in(line).as_deref(), remote, "{line}");
+    }
 }
 
 /// No step reads a tag it fetches whole, yet whether such a fetch takes the
@@ -250,9 +273,9 @@ fn no_shipped_fetch_follows_the_remote_tags() {
         for step in flow["graph"]["steps"].as_array().into_iter().flatten() {
             let command = step["with"]["command"].as_str().unwrap_or_default();
             for line in command.lines() {
-                let fetch = line.split_whitespace().any(|word| word == "fetch");
-                fetches += usize::from(fetch && remote_named_in(line).is_some());
-                if fetch && remote_named_in(line).is_some() && !line.contains("--no-tags") {
+                let fetch = git_call_in(line).is_some_and(|(verb, _)| verb == "fetch");
+                fetches += usize::from(fetch);
+                if fetch && !line.contains("--no-tags") {
                     following.push(format!("{}: {}", path.display(), step["id"]));
                 }
             }
