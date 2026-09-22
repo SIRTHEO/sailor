@@ -19,10 +19,8 @@ const ONCE = null;
 
 /**
  * **A LIST THAT IS NOT HERE YET SAYS WHERE IT IS**, in the field and not in the
- * panel: the panel is scanned for a row, and there is no row — the sentence is
- * an explanation, and an explanation is read. The alternative is a column with
- * icons that answer nothing, which teaches that the window is broken rather
- * than unfinished.
+ * panel: the panel is scanned for a row, and there is no row. Icons that answer
+ * nothing teach that the window is broken rather than unfinished.
  */
 type NotHere = "terminals" | "data" | "keys";
 
