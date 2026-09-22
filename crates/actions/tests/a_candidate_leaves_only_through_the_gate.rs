@@ -483,6 +483,19 @@ mod on_a_real_repository {
         assert!(said.contains("a forbidden file"), "{said}");
     }
 
+    /// What `cut-a-release` hands the gate before it builds: a candidate and
+    /// no branch, with the remote read by the candidate step already.
+    #[test]
+    fn a_release_before_its_build_asks_the_remote_nothing() {
+        let (repo, trunk, candidate) = a_delivery("release-early", "src/change");
+        std::fs::remove_dir_all(repo.parent().expect("the scratch").join("remote.git"))
+            .expect("the remote goes");
+        assert_eq!(
+            the_gate(closing(&repo, &trunk, &candidate)),
+            Ok(json!({ "ref": candidate, "privacy_exit": 0 }))
+        );
+    }
+
     #[test]
     fn closing_scans_the_tip_the_remote_carries() {
         let (repo, trunk, tip) = a_delivery("closing", "forbidden");
