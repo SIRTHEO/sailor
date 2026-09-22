@@ -356,6 +356,9 @@
         "output_schema": {
           "type": "object",
           "properties": {
+            "status": {
+              "type": "string"
+            },
             "commit": {
               "type": "string"
             },
@@ -370,6 +373,7 @@
             }
           },
           "required": [
+            "status",
             "commit",
             "verdict",
             "findings",

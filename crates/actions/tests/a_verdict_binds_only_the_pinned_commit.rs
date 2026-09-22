@@ -3,6 +3,7 @@
 //! was closed with is the one the flow verified.
 
 use actions::review_verdict::{what_the_verdict_binds, Bound, Refusal};
+use flow::Executor;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -147,8 +148,72 @@ fn the_step_answers_with_the_counts_the_record_keeps() {
         the_step(
             json!({ "verdict": clean(), "commit": PINNED, "sailor": sailor.0, "sha256": sha256 })
         ),
-        Ok(json!({ "commit": PINNED, "verdict": "clean", "findings": 0, "checked": 1 }))
+        Ok(json!({ "status": "passed", "commit": PINNED, "verdict": "clean", "findings": 0, "checked": 1 }))
     );
+}
+
+/// The shipped review declares this step `required`, and the executor counts a
+/// required step as passed only by the word it reads in the step's answer: a
+/// bound verdict, clean or with findings, must leave the run complete.
+#[test]
+fn a_required_step_that_binds_a_verdict_lets_the_run_complete() {
+    for verdict in [
+        clean(),
+        json!({ "commit": PINNED, "verdict": "findings", "findings": ["a defect"], "checked": ["the gates"] }),
+    ] {
+        let (sailor, sha256) = a_sailor(verdict["verdict"].as_str().expect("a word"));
+        let step = flow::Step {
+            id: "verdict_bound".to_owned(),
+            deps: Vec::new(),
+            input_schema: flow::ValueSchema::Any,
+            output_schema: flow::ValueSchema::Any,
+            with: None,
+            when: None,
+            action: "review_verdict".to_owned(),
+            max_attempts: 1,
+            ask_again_after_secs: None,
+            retry_after_secs: None,
+            phase: None,
+            stops_when: None,
+            decides_done: false,
+            required: true,
+            even_after_a_break: false,
+            needs: Vec::new(),
+            weight: flow::Weight::Light,
+        };
+        let graph = flow::Graph::new(vec![step]).expect("a one-step graph");
+        let mut registry = flow::ActionRegistry::default();
+        actions::review_verdict::register_review_verdict(&mut registry);
+        let roots = [(
+            "verdict_bound".to_owned(),
+            json!({ "verdict": verdict, "commit": PINNED, "sailor": sailor.0, "sha256": sha256 }),
+        )]
+        .into_iter()
+        .collect();
+        let execution = flow::InProcessExecutor
+            .execute(
+                &graph,
+                flow::ExecutionRequest {
+                    holder: None,
+                    run_id: "run".to_owned(),
+                    root_inputs: roots,
+                    gates: Vec::new(),
+                    shared: flow::SharedState::new(),
+                    spend_cap_micros: None,
+                    stops: flow::RunStops::default(),
+                },
+                &flow::InMemoryRecordStore::default(),
+                &registry,
+                &flow::SystemClock,
+            )
+            .expect("the run answers");
+        assert_eq!(
+            execution.decisions.last(),
+            Some(&flow::Decision::Complete),
+            "a bound verdict left the run short: {:?}",
+            execution.decisions
+        );
+    }
 }
 
 #[test]

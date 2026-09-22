@@ -124,6 +124,7 @@ impl Action for ReviewVerdictAction {
             ActionError::new("the_verdict_is_not_bound", said(refusal, &spec.commit))
         })?;
         Ok(ActionOutcome::Went(json!({
+            "status": "passed",
             "commit": bound.commit,
             "verdict": bound.verdict,
             "findings": bound.findings,
