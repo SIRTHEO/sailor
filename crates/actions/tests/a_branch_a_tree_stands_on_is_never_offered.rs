@@ -41,7 +41,10 @@ fn a_branch_a_worktree_names_is_found_without_the_marker() {
          worktree /somewhere/other\nHEAD def\nbranch refs/heads/work/held-elsewhere\n\n\
          worktree /somewhere/detached\nHEAD 012\ndetached\n",
     );
-    assert!(held.contains("work/held-elsewhere"), "a held branch: {held:?}");
+    assert!(
+        held.contains("work/held-elsewhere"),
+        "a held branch: {held:?}"
+    );
     assert!(held.contains("main"), "the trunk's own checkout: {held:?}");
     assert_eq!(held.len(), 2, "a detached tree holds no branch: {held:?}");
 }
@@ -53,7 +56,9 @@ fn an_item_carries_the_mandate_close_the_work_reads() {
     let item = as_an_item(Path::new("/a/tree"), "work/a-change");
     assert_eq!(item["source"], "manual");
     let mandate: serde_json::Value = serde_json::from_str(
-        item["text"].as_str().expect("the mandate is text, not an object"),
+        item["text"]
+            .as_str()
+            .expect("the mandate is text, not an object"),
     )
     .expect("the text parses as the mandate close-the-work reads");
     assert_eq!(mandate["repo"], "/a/tree");
@@ -73,7 +78,12 @@ impl Drop for Scratch {
 }
 
 fn git(at: &Path, args: &[&str]) -> String {
-    let out = Command::new("git").arg("-C").arg(at).args(args).output().expect("git runs");
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(at)
+        .args(args)
+        .output()
+        .expect("git runs");
     assert!(
         out.status.success(),
         "git {args:?} in {}: {}",
@@ -103,13 +113,25 @@ fn a_tree_with_finished_work() -> (Scratch, PathBuf) {
     std::fs::write(tree.join("a-file"), "the work\n").expect("a file");
     git(&tree, &["add", "-A"]);
     git(&tree, &["commit", "-q", "-m", "the work"]);
-    git(&tree, &["remote", "add", "origin", &remote.to_string_lossy()]);
+    git(
+        &tree,
+        &["remote", "add", "origin", &remote.to_string_lossy()],
+    );
     git(&tree, &["push", "-q", "origin", "main"]);
     // Two branches finished at the trunk: one free, one a second tree stands on.
     for branch in ["work/free-to-close", "work/a-tree-stands-on-it"] {
         git(&tree, &["branch", branch, "main"]);
     }
-    git(&tree, &["worktree", "add", "-q", &at.join("second").to_string_lossy(), "work/a-tree-stands-on-it"]);
+    git(
+        &tree,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            &at.join("second").to_string_lossy(),
+            "work/a-tree-stands-on-it",
+        ],
+    );
     (scratch, tree)
 }
 
@@ -143,5 +165,10 @@ fn against_a_real_repository_a_held_branch_is_kept_back_and_a_free_one_offered()
         "the branch a worktree stands on is named and kept back: {said}"
     );
     assert_eq!(said["items"].as_array().map_or(0, Vec::len), 1);
-    workspace::measured_against(1, "finished branch offered", 1, "held by a tree and kept back");
+    workspace::measured_against(
+        1,
+        "finished branch offered",
+        1,
+        "held by a tree and kept back",
+    );
 }

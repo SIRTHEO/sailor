@@ -39,8 +39,7 @@ fn under_a_root(label: &str, body: &str, trailing_slash: bool) -> (String, PathB
     let text = std::fs::read_to_string(gates_script()).expect("the gates script is readable");
     // The name carries the run *and* the test: these two run side by side, and
     // a shared name would have each sweeping the other's parent away.
-    let parent =
-        std::env::temp_dir().join(format!("gates-root-{label}-{}", std::process::id()));
+    let parent = std::env::temp_dir().join(format!("gates-root-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&parent);
     std::fs::create_dir_all(&parent).expect("a parent for the root");
     let handed = if trailing_slash {
