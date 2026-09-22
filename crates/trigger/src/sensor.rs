@@ -130,10 +130,7 @@ pub fn declared_by(flow: &FlowFile) -> Option<Result<Sensor, String>> {
         .steps()
         .iter()
         .find(|step| step.action == crate::TRIGGER_ACTION)?;
-    let declared = step
-        .with
-        .as_ref()
-        .or_else(|| flow.inputs.get(&step.id))?;
+    let declared = step.with.as_ref().or_else(|| flow.inputs.get(&step.id))?;
     if declared.get("source").and_then(Value::as_str) != Some(SENSOR_SOURCE) {
         return None;
     }
@@ -180,7 +177,10 @@ fn positioned(action: &dyn Action, with: &Value, root: Option<&Path>) -> Result<
                 ));
             }
             let Some(root) = root else {
-                return Err(catalogue::say("flow.sensor.no_root", &[("workdir", declared)]));
+                return Err(catalogue::say(
+                    "flow.sensor.no_root",
+                    &[("workdir", declared)],
+                ));
             };
             let placed = root.join(declared).display().to_string();
             fields.insert(WORKDIR_FIELD.to_owned(), placed.into());
@@ -191,7 +191,11 @@ fn positioned(action: &dyn Action, with: &Value, root: Option<&Path>) -> Result<
                 let mut offered = fields.clone();
                 offered.insert(WORKDIR_FIELD.to_owned(), root.display().to_string().into());
                 let offered = Value::Object(offered);
-                if !action.unknown_fields(&offered).iter().any(|field| field == WORKDIR_FIELD) {
+                if !action
+                    .unknown_fields(&offered)
+                    .iter()
+                    .any(|field| field == WORKDIR_FIELD)
+                {
                     return Ok(offered);
                 }
             }
@@ -239,13 +243,19 @@ pub fn read(sensor: &Sensor, eyes: &Eyes) -> Result<Value, String> {
         }
         Ok(Ok(ActionOutcome::Went(output))) => output,
         Ok(Ok(ActionOutcome::Waiting(why) | ActionOutcome::NotYet(why))) => {
-            return Err(catalogue::say("flow.sensor.did_not_answer", &[("why", &why)]))
+            return Err(catalogue::say(
+                "flow.sensor.did_not_answer",
+                &[("why", &why)],
+            ))
         }
     };
     match &sensor.pointer {
         None => Ok(output),
         Some(pointer) => output.pointer(pointer).cloned().ok_or_else(|| {
-            catalogue::say("flow.sensor.pointer_reaches_nothing", &[("pointer", pointer)])
+            catalogue::say(
+                "flow.sensor.pointer_reaches_nothing",
+                &[("pointer", pointer)],
+            )
         }),
     }
 }
@@ -271,7 +281,10 @@ pub enum Verdict {
     /// Changed, and the cooldown still holds for this many seconds.
     Cooling(u64),
     /// Changed: start with this text, then keep `Kept`.
-    Start { text: String, kept: Kept },
+    Start {
+        text: String,
+        kept: Kept,
+    },
     /// The sensor could not read: nothing starts and nothing is kept.
     Blind(String),
 }
@@ -398,7 +411,10 @@ pub fn sense(
         Err(error) => catalogue::say("flow.sensor.could_not_remember", &[("error", &error)]),
     };
     match decide(kept.as_ref(), reading, sensor.cooldown_secs, now) {
-        Verdict::Blind(why) => Sensed { word: "blind", said: why },
+        Verdict::Blind(why) => Sensed {
+            word: "blind",
+            said: why,
+        },
         Verdict::Unchanged => hold(catalogue::say("flow.sensor.unchanged", &[])),
         Verdict::Cooling(seconds) => hold(catalogue::say(
             "flow.sensor.cooling",

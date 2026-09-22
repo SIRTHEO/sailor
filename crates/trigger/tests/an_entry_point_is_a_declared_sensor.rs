@@ -14,7 +14,9 @@ struct Reading(Arc<Mutex<Value>>);
 
 impl Action for Reading {
     fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        Ok(ActionOutcome::Went(self.0.lock().expect("the reading").clone()))
+        Ok(ActionOutcome::Went(
+            self.0.lock().expect("the reading").clone(),
+        ))
     }
     fn may_spend(&self, _declared: Option<&Value>) -> bool {
         false
@@ -28,7 +30,10 @@ struct Breaking;
 
 impl Action for Breaking {
     fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        Err(ActionError::new("unreadable", "the thing watched is not there"))
+        Err(ActionError::new(
+            "unreadable",
+            "the thing watched is not there",
+        ))
     }
     fn may_spend(&self, _declared: Option<&Value>) -> bool {
         false
@@ -102,7 +107,13 @@ impl Action for Closed {
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         declared
             .as_object()
-            .map(|fields| fields.keys().filter(|key| *key != "collection").cloned().collect())
+            .map(|fields| {
+                fields
+                    .keys()
+                    .filter(|key| *key != "collection")
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default()
     }
     fn may_spend(&self, _declared: Option<&Value>) -> bool {
@@ -217,11 +228,21 @@ fn a_change_starts_one_run_that_carries_the_reading_before_and_after() {
     let text: Value = serde_json::from_str(&world.started[0]).expect("the text is one JSON object");
     assert_eq!(text["before"], json!("a1"));
     assert_eq!(text["after"], json!("c3"));
-    assert_eq!(text["fingerprint_before"], json!(flow::digest_input(&json!("a1"))));
-    assert_eq!(text["fingerprint_after"], json!(flow::digest_input(&json!("c3"))));
+    assert_eq!(
+        text["fingerprint_before"],
+        json!(flow::digest_input(&json!("a1")))
+    );
+    assert_eq!(
+        text["fingerprint_after"],
+        json!(flow::digest_input(&json!("c3")))
+    );
 
     world.beat(&sensor("reading", 0), 1_120);
-    assert_eq!(world.started.len(), 1, "the change was consumed by the run it started");
+    assert_eq!(
+        world.started.len(),
+        1,
+        "the change was consumed by the run it started"
+    );
 }
 
 #[test]
@@ -247,14 +268,23 @@ fn a_change_inside_the_cooldown_waits_and_fires_once_it_ends() {
     let held = world.beat(&cooling, 1_100);
     assert_eq!(held.word, "hold", "{held:?}");
     assert_eq!(world.started.len(), 1, "inside the cooldown nothing starts");
-    let kept = kept_for(&world.ledger, "watching-flow").expect("reads").expect("kept");
-    assert_eq!(kept.value, json!("b2"), "and nothing is recorded, so the change is not lost");
+    let kept = kept_for(&world.ledger, "watching-flow")
+        .expect("reads")
+        .expect("kept");
+    assert_eq!(
+        kept.value,
+        json!("b2"),
+        "and nothing is recorded, so the change is not lost"
+    );
 
     let fired = world.beat(&cooling, 1_360);
     assert_eq!(fired.word, "ran", "{fired:?}");
     assert_eq!(world.started.len(), 2);
     let text: Value = serde_json::from_str(&world.started[1]).expect("JSON");
-    assert_eq!((text["before"].clone(), text["after"].clone()), (json!("b2"), json!("c3")));
+    assert_eq!(
+        (text["before"].clone(), text["after"].clone()),
+        (json!("b2"), json!("c3"))
+    );
 }
 
 #[test]
@@ -262,7 +292,10 @@ fn a_sensor_that_fails_or_hangs_starts_nothing_and_keeps_nothing() {
     let mut world = World::new("blind");
     let failed = world.beat(&sensor("breaking", 0), 1_000);
     assert_eq!(failed.word, "blind", "{failed:?}");
-    assert!(failed.said.contains("the thing watched is not there"), "{failed:?}");
+    assert!(
+        failed.said.contains("the thing watched is not there"),
+        "{failed:?}"
+    );
 
     let hung = world.beat(&sensor("hanging", 0), 1_060);
     assert_eq!(hung.word, "blind", "{hung:?}");
@@ -275,7 +308,10 @@ fn a_sensor_that_fails_or_hangs_starts_nothing_and_keeps_nothing() {
     assert_eq!(world.beat(&lost, 1_120).word, "blind");
 
     assert!(world.started.is_empty());
-    assert_eq!(kept_for(&world.ledger, "watching-flow").expect("reads"), None);
+    assert_eq!(
+        kept_for(&world.ledger, "watching-flow").expect("reads"),
+        None
+    );
 }
 
 fn flow_watching(sensor: Value) -> FlowFile {
@@ -297,16 +333,31 @@ fn the_check_refuses_a_sensor_that_writes_spends_or_is_unknown_and_accepts_one_t
     let world = World::new("check");
     let refused = |declared: Value| refusal_of(&flow_watching(declared), &world.registry);
 
-    assert_eq!(refused(json!({"action": "reading", "pointer": "/head"})), None);
+    assert_eq!(
+        refused(json!({"action": "reading", "pointer": "/head"})),
+        None
+    );
     for (declared, reason) in [
-        (json!({"action": "writing"}), "does not declare that it only reads"),
+        (
+            json!({"action": "writing"}),
+            "does not declare that it only reads",
+        ),
         (json!({"action": "spending"}), "may spend"),
-        (json!({"action": "nobody-registers-this"}), "which nothing registers"),
-        (json!({"action": "reading", "pointer": "head"}), "is not a JSON pointer"),
-        (json!({"action": "reading", "cooldown_secs": -5}), "zero or more"),
+        (
+            json!({"action": "nobody-registers-this"}),
+            "which nothing registers",
+        ),
+        (
+            json!({"action": "reading", "pointer": "head"}),
+            "is not a JSON pointer",
+        ),
+        (
+            json!({"action": "reading", "cooldown_secs": -5}),
+            "zero or more",
+        ),
     ] {
-        let said = refused(declared.clone())
-            .unwrap_or_else(|| panic!("{declared} must be refused"));
+        let said =
+            refused(declared.clone()).unwrap_or_else(|| panic!("{declared} must be refused"));
         assert!(said.contains("watching-flow"), "the flow is named: {said}");
         assert!(said.contains(reason), "{declared}: {said}");
     }
@@ -314,7 +365,8 @@ fn the_check_refuses_a_sensor_that_writes_spends_or_is_unknown_and_accepts_one_t
 
 #[test]
 fn the_trigger_step_of_a_sensor_flow_hands_the_change_downstream_as_a_record() {
-    let text = json!({"before": "a1", "after": "b2", "fingerprint_before": "x", "fingerprint_after": "y"});
+    let text =
+        json!({"before": "a1", "after": "b2", "fingerprint_before": "x", "fingerprint_after": "y"});
     let input = json!({
         "source": "sensor",
         "sensor": {"action": "reading"},
@@ -345,11 +397,17 @@ fn a_sensor_works_where_a_step_of_its_flow_would() {
     };
 
     let absent = echo("echoing", json!({})).expect("it reads");
-    assert_eq!(absent["workdir"], "/a/project", "an absent workdir is the root");
+    assert_eq!(
+        absent["workdir"], "/a/project",
+        "an absent workdir is the root"
+    );
     let relative = echo("echoing", json!({"workdir": "crates/flow"})).expect("it reads");
     assert_eq!(relative["workdir"], "/a/project/crates/flow");
     let refused = echo("echoing", json!({"workdir": "/elsewhere"})).expect_err("absolute");
     assert!(refused.contains("/elsewhere"), "{refused}");
     let closed = echo("closed", json!({"collection": "c"})).expect("it reads");
-    assert!(closed.get("workdir").is_none(), "no field its action never asked for: {closed}");
+    assert!(
+        closed.get("workdir").is_none(),
+        "no field its action never asked for: {closed}"
+    );
 }

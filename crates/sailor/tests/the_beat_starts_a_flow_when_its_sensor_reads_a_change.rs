@@ -27,7 +27,8 @@ fn write_flow(flows: &Path, watched: &Path) {
         }]},
         "inputs": {}
     });
-    fs::write(flows.join(format!("{FLOW}.flow.json")), flow.to_string()).expect("the flow is written");
+    fs::write(flows.join(format!("{FLOW}.flow.json")), flow.to_string())
+        .expect("the flow is written");
 }
 
 fn runs_of_the_flow(ledger: &Ledger) -> i64 {
@@ -51,7 +52,11 @@ fn line_of_the_flow(report: &str) -> &str {
 fn a_baseline_starts_nothing_a_change_starts_one_run_and_no_change_starts_none() {
     let scratch = std::env::temp_dir().join(format!("sailor-beat-sensor-{}", std::process::id()));
     let _ = fs::remove_dir_all(&scratch);
-    let (home, ledger_dir, flows) = (scratch.join("home"), scratch.join("ledger"), scratch.join("flows"));
+    let (home, ledger_dir, flows) = (
+        scratch.join("home"),
+        scratch.join("ledger"),
+        scratch.join("flows"),
+    );
     for directory in [&home, &ledger_dir, &flows] {
         fs::create_dir_all(directory).expect("a scratch directory");
     }
@@ -69,12 +74,20 @@ fn a_baseline_starts_nothing_a_change_starts_one_run_and_no_change_starts_none()
     let first = tick_flows(&sources).expect("the first beat");
     assert!(line_of_the_flow(&first).contains("\thold\t"), "{first}");
     let ledger = Ledger::open(&ledger_dir).expect("the beat left a ledger");
-    assert_eq!(runs_of_the_flow(&ledger), 0, "a baseline starts nothing: {first}");
+    assert_eq!(
+        runs_of_the_flow(&ledger),
+        0,
+        "a baseline starts nothing: {first}"
+    );
 
     fs::write(&watched, "\"b2\"").expect("the watched file changes");
     let second = tick_flows(&sources).expect("the second beat");
     assert!(line_of_the_flow(&second).contains("\tran\t"), "{second}");
-    assert_eq!(runs_of_the_flow(&ledger), 1, "one change, one run: {second}");
+    assert_eq!(
+        runs_of_the_flow(&ledger),
+        1,
+        "one change, one run: {second}"
+    );
     let run = ledger
         .last_finished_run(FLOW)
         .expect("the ledger reads")
@@ -85,14 +98,23 @@ fn a_baseline_starts_nothing_a_change_starts_one_run_and_no_change_starts_none()
         .find(|step| step.step_id == "trigger")
         .expect("the run has its trigger step");
     let text: Value = serde_json::from_str(
-        trigger.input["text"].as_str().expect("the trigger was handed a text"),
+        trigger.input["text"]
+            .as_str()
+            .expect("the trigger was handed a text"),
     )
     .expect("the text is one JSON object");
-    assert_eq!((text["before"].clone(), text["after"].clone()), (json!("a1"), json!("b2")));
+    assert_eq!(
+        (text["before"].clone(), text["after"].clone()),
+        (json!("a1"), json!("b2"))
+    );
 
     let third = tick_flows(&sources).expect("the third beat");
     assert!(line_of_the_flow(&third).contains("\thold\t"), "{third}");
-    assert_eq!(runs_of_the_flow(&ledger), 1, "nothing changed, nothing started: {third}");
+    assert_eq!(
+        runs_of_the_flow(&ledger),
+        1,
+        "nothing changed, nothing started: {third}"
+    );
 
     let _ = fs::remove_dir_all(&scratch);
 }

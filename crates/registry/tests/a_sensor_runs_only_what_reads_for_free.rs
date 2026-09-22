@@ -20,7 +20,10 @@ fn flow_watching(sensor: Value) -> FlowFile {
 }
 
 fn refused(sensor: Value) -> Option<String> {
-    trigger::sensor::refusal_of(&flow_watching(sensor), &registry_in(House::empty(), None, None))
+    trigger::sensor::refusal_of(
+        &flow_watching(sensor),
+        &registry_in(House::empty(), None, None),
+    )
 }
 
 #[test]
