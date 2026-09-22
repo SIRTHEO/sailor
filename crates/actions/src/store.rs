@@ -226,6 +226,15 @@ impl StoreReadAction {
 }
 
 impl Action for StoreReadAction {
+    /// Reading a collection touches nothing and reaches no engine.
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        true
+    }
+
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: ReadSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
@@ -299,6 +308,15 @@ impl StoreSelectAction {
 }
 
 impl Action for StoreSelectAction {
+    /// Reading a collection touches nothing and reaches no engine.
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        true
+    }
+
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: SelectSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
@@ -410,6 +428,15 @@ impl StoreListAction {
 }
 
 impl Action for StoreListAction {
+    /// Reading a collection touches nothing and reaches no engine.
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        true
+    }
+
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: ListSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;

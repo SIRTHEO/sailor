@@ -42,6 +42,10 @@ struct TriggerSpec {
     #[serde(default)]
     #[allow(dead_code)]
     on: Option<On>,
+    /// What a sensor flow watches. Read by the beat, like `on` by the arc.
+    #[serde(default)]
+    #[allow(dead_code)]
+    sensor: Option<Value>,
     /// Descriptor files or directories to use beyond the usual ones.
     #[serde(default)]
     descriptor_paths: Vec<String>,
@@ -102,7 +106,7 @@ impl Action for TriggerAction {
             // The two that carry the signal with them. A session event has
             // already happened by the time anything starts: there is nothing
             // left to wait for, and the launcher puts the delivery in hand.
-            Kind::Manual | Kind::SessionEvent => {
+            Kind::Manual | Kind::SessionEvent | Kind::Sensor => {
                 let text = spec.text.ok_or_else(|| {
                     ActionError::new(
                         "empty_signal",
@@ -112,7 +116,7 @@ impl Action for TriggerAction {
                         ),
                     )
                 })?;
-                let carried = matches!(descriptor.kind, Kind::SessionEvent)
+                let carried = matches!(descriptor.kind, Kind::SessionEvent | Kind::Sensor)
                     .then(|| serde_json::from_str(&text).ok())
                     .flatten();
                 let signal = Signal {
@@ -122,6 +126,7 @@ impl Action for TriggerAction {
                     source: descriptor.id.clone(),
                     kind: match descriptor.kind {
                         Kind::SessionEvent => "session_event",
+                        Kind::Sensor => "sensor",
                         _ => "manual",
                     }
                     .to_owned(),

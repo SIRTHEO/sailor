@@ -100,6 +100,13 @@ impl Action for ShellCheckAction {
         false
     }
 
+    /// A check's trade is to reread the world, the same promise `species`
+    /// makes: a command that writes has broken this action's contract, not
+    /// found a way around it.
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        true
+    }
+
     /// As for the engine, and out of the same struct.
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         match serde_json::from_value::<CheckSpec>(declared.clone()) {
