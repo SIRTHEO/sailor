@@ -36,6 +36,16 @@ describe("the window stands on three columns", () => {
     }
   });
 
+  /** `lists.ts` calls the name «what a pointer resting on the icon says». The
+   *  rail is the whole navigation while the window is open, so a claim that
+   *  only a screen reader can collect leaves a mouse user clicking to learn. */
+  test("A POINTER RESTING ON AN ICON IS TOLD THE NAME, not only a reader", () => {
+    shell("workspaces");
+    for (const entry of LISTS) {
+      expect(screen.getByRole("button", { name: entry.name }).getAttribute("title")).toBe(entry.name);
+    }
+  });
+
   test("the list in force is the only one marked, and the mark is not a tint", () => {
     shell("data");
     const marked = screen
