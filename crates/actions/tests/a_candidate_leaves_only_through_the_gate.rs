@@ -1,5 +1,5 @@
-//! The last gate a candidate passes before a draft, integration or a release
-//! lets it leave. Every case is decided from readings handed in, so a refusal is proved
+//! The last gate a candidate passes before a draft, integration, a release or
+//! closing the work lets it leave. Every case is decided from readings handed in, so a refusal is proved
 //! without a forge, a remote that moves on cue, or a binary in service.
 
 use actions::candidate_gate::{
@@ -373,6 +373,23 @@ mod on_a_real_repository {
         input
     }
 
+    /// What `close-the-work` hands the gate before it deletes the remote
+    /// branch: the tip the remote carries, or nothing, and no local branch.
+    fn closing(repo: &Path, trunk: &str, tip: &str) -> Value {
+        let mut input = drafting(repo, trunk, tip);
+        let fields = input.as_object_mut().expect("an object");
+        fields.remove("branch");
+        fields.remove("reviewed");
+        input
+    }
+
+    /// A scan that refuses whatever it is handed, committed on the trunk.
+    fn a_scan_that_refuses_everything(repo: &Path) -> String {
+        std::fs::write(repo.join(SCAN), "#!/bin/sh\necho \"asked\"; exit 5\n").expect("the scan");
+        git(repo, &["commit", "-q", "-am", "a scan that refuses"]);
+        git(repo, &["rev-parse", "HEAD"])
+    }
+
     fn the_gate(input: Value) -> Result<Value, (String, String)> {
         let mut registry = flow::ActionRegistry::default();
         actions::candidate_gate::register_candidate_gate(&mut registry);
@@ -464,6 +481,38 @@ mod on_a_real_repository {
         let (class, said) = the_gate(drafting(&repo, &trunk, &head)).unwrap_err();
         assert_eq!(class, "publication_refused");
         assert!(said.contains("a forbidden file"), "{said}");
+    }
+
+    #[test]
+    fn closing_scans_the_tip_the_remote_carries() {
+        let (repo, trunk, tip) = a_delivery("closing", "forbidden");
+        let (class, said) = the_gate(closing(&repo, &trunk, &tip)).unwrap_err();
+        assert_eq!(class, "publication_refused");
+        assert!(said.contains("a forbidden file"), "{said}");
+    }
+
+    /// A branch the remote never carried: nothing leaves, so nothing is scanned.
+    #[test]
+    fn closing_with_no_tip_on_the_remote_scans_nothing() {
+        let (repo, _, _) = a_delivery("closing-nothing", "src/change");
+        let trunk = a_scan_that_refuses_everything(&repo);
+        assert_eq!(
+            the_gate(closing(&repo, &trunk, "")),
+            Ok(json!({ "ref": "", "privacy_exit": 0 }))
+        );
+    }
+
+    #[test]
+    fn closing_with_no_tip_still_refuses_a_scan_the_trunk_does_not_commit() {
+        let (repo, trunk, _) = a_delivery("closing-edited", "src/change");
+        let input = closing(&repo, &trunk, "");
+        std::fs::write(repo.join(SCAN), "#!/bin/sh\nexit 0\n").expect("the edit");
+        let (class, said) = the_gate(input).unwrap_err();
+        assert_eq!(class, "the_candidate_is_held");
+        assert!(
+            said.contains("differs from the one the trusted trunk commits"),
+            "{said}"
+        );
     }
 
     /// A lost transport is not an empty ref: nothing is decided on it.
