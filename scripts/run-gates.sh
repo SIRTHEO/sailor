@@ -13,6 +13,7 @@ set -u
 
 no_fail_fast=0
 list_only=0
+plan_only=""
 base=""
 manifest=""
 covered=""
