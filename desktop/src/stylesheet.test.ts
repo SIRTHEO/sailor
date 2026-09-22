@@ -116,14 +116,9 @@ describe("prohibition 8 — the sizes stay in the scale", () => {
     return out;
   }
 
-  /** THIS SHEET IS UNLAYERED AND TAILWIND'S UTILITIES ARE NOT, so unlayered
-   *  wins whatever the specificity: a rule on bare `button` repaints a shadcn
-   *  button and the component becomes a dependency paid for and inert.
-   *
-   *  AND IT MUST STILL LOSE TO A CLASS. The guard costs weight, so it goes
-   *  inside `:where()`, which weighs nothing: written `:not([data-slot])` it
-   *  outweighed every class in this sheet and won on thirty of the window's
-   *  thirty-two buttons — `aclasswins.test.tsx` measures that on the DOM. */
+  /** A rule on bare `button` repaints a shadcn button, so it carries a guard —
+   *  and the guard must weigh nothing, or the rule outweighs every class in
+   *  this sheet and paints the window's buttons over them. */
   test("THE BARE `button` RULE STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF", () => {
     const onEveryButton = sheet.rules
       .map((rule) => rule.selector.trim())

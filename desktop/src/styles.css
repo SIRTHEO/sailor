@@ -666,18 +666,12 @@ button.is-danger {
   background: var(--danger-soft);
 }
 
-/* IT STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF. This sheet is unlayered
-   and Tailwind's utilities are not, so unlayered wins whatever the
-   specificity: without the `:not`, a shadcn button renders as a hand-rolled
-   one and the component is a dependency paid for and inert.
-
-   AND IT STEPS ASIDE FOR A CLASS. `:not([data-slot])` carries the weight of an
-   attribute, so between 06/09 and today this rule outweighed every single
-   class and won on all of them: thirty of the thirty-two buttons drawn in the
-   window — the rows of the column, the places, the canvas controls — were
-   painted as this generic button, box and all, over rules that said `border:
-   none`. `:where()` carries no weight, so the guard survives and the paint
-   goes back to being the floor a class stands on. */
+/* IT STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF, and for a class. This
+   sheet is unlayered and Tailwind's is not, so a bare `button` rule repaints a
+   shadcn button; and the guard against that costs weight, which is why it sits
+   inside `:where()`. Written `:not([data-slot])` it outweighed every class
+   here and was painting thirty of the window's thirty-two buttons as this box.
+   `aclasswins.test.tsx` measures that on the drawn DOM. */
 button:where(:not([data-slot])) {
   font: inherit;
   font-family: var(--font-prose);

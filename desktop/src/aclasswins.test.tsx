@@ -7,17 +7,11 @@ import { TheWindow } from "./window/TheWindow";
 import { parseStylesheet, type CssRule, type Stylesheet } from "./contrast";
 
 /**
- * **A CLASS ON A BUTTON WINS OVER THE PAINT UNDER IT.** The sheet paints every
- * bare `button` — a border, a radius, a padding, a ground — and a class that
- * says `border: none` is how a row of a column, a place, a canvas control stops
- * being a box. Between 06/09 and today that never happened: the bare rule was
- * written `button:not([data-slot])`, the attribute gave it the weight of a
- * class, and it won on all of them. Thirty of the thirty-two buttons in the
- * window were drawn as the generic button over rules that said otherwise, and
- * no check could see it: every rule in the sheet was correct on its own.
- *
- * This measures the cascade on the drawn DOM: for each button, what its own
- * classes ask for is what it gets.
+ * **A CLASS ON A BUTTON WINS OVER THE PAINT UNDER IT**, measured on the drawn
+ * DOM: for each button, what its own classes ask for is what it gets. No rule
+ * of the sheet had to be wrong for this to break — a guard on the bare
+ * `button` rule outweighed them all, and thirty of the window's thirty-two
+ * buttons were boxes over rules that said `border: none`.
  */
 
 afterEach(cleanup);
