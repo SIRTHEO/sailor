@@ -149,6 +149,10 @@
   --text-large: 18px;
   --text-micro: var(--text-small);
   --text-display: var(--text-large);
+  /* The face is loaded without its optical axis, so the text cut is set at
+     every size and reads loose at the top of the scale: Inter's own dynamic
+     metrics give -0.014em at 18px and about zero at 12 and 13. */
+  --tracking-large: -0.014em;
 
   /* --- SPACE. A 4px grid, seven steps. Nothing outside it. --- */
   --space-1: 4px;
@@ -1418,6 +1422,7 @@ button.is-primary {
 .keeps__title {
   font-family: var(--font-display);
   font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
   margin: 0 0 var(--space-2);
 }
 
@@ -2371,6 +2376,7 @@ tr[data-followable]:hover {
 
 .blank__card h2 {
   font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
   margin: 0 0 10px;
 }
 
@@ -2509,6 +2515,7 @@ tr[data-followable]:hover {
 
 .broken h2 {
   font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
   margin: 0 0 10px;
 }
 
@@ -6968,6 +6975,7 @@ tr[data-followable]:hover {
 .waiting__title {
   font-family: var(--font-display);
   font-size: var(--text-display);
+  letter-spacing: var(--tracking-large);
   font-weight: 600;
   color: var(--ink);
 }
@@ -7217,6 +7225,7 @@ tr[data-followable]:hover {
 .demo__title {
   font-family: var(--font-display);
   font-size: var(--text-display);
+  letter-spacing: var(--tracking-large);
   font-weight: 600;
   color: var(--ink);
   margin: 0;
@@ -7532,6 +7541,7 @@ tr[data-followable]:hover {
 .window-panel__name {
   margin: 0;
   font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
   font-weight: 600;
   color: var(--ink);
 }
