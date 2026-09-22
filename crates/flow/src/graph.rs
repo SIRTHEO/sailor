@@ -68,7 +68,18 @@ pub struct Step {
     /// ran, or forgave its own failure leaves the run short of complete.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub required: bool,
+    /// Starts once every dependency has settled, a broken one included, so a
+    /// flow gives back what it took when the work in between failed. It is
+    /// handed its dependencies by id, those that closed, and under
+    /// [`BROKEN_FIELD`] the ids of those that did not because of a break. A run
+    /// that broke stays failed whatever this step does. ADR-023.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub even_after_a_break: bool,
 }
+
+/// Where a step that runs even after a break finds which dependencies did not
+/// close because of one.
+pub const BROKEN_FIELD: &str = "broken";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -253,6 +264,8 @@ pub enum GraphError {
     IncompatibleInput { step: String },
     ForEachWithout { step: String, field: &'static str },
     StopsWhenIsNotAPointer { step: String, value: String },
+    AfterABreakWithNothingBefore { step: String },
+    DependencyNamedLikeTheBrokenList { step: String },
 }
 
 impl Graph {
@@ -285,6 +298,11 @@ impl Graph {
             .contains(&DependencyEdge::new(step, dependency))
     }
 
+    /// Whether this step may start without that dependency's output.
+    fn dependency_is_optional(&self, step: &Step, dependency: &str) -> bool {
+        step.even_after_a_break || self.dependency_is_skippable(&step.id, dependency)
+    }
+
     fn validate(&self) -> Result<(), GraphError> {
         let mut by_id = BTreeMap::new();
         for step in &self.steps {
@@ -305,6 +323,22 @@ impl Graph {
                     return Err(GraphError::StopsWhenIsNotAPointer {
                         step: step.id.clone(),
                         value: pointer.to_owned(),
+                    });
+                }
+            }
+            if step.even_after_a_break {
+                if step.deps.is_empty() {
+                    return Err(GraphError::AfterABreakWithNothingBefore {
+                        step: step.id.clone(),
+                    });
+                }
+                if step
+                    .deps
+                    .iter()
+                    .any(|dependency| dependency == BROKEN_FIELD)
+                {
+                    return Err(GraphError::DependencyNamedLikeTheBrokenList {
+                        step: step.id.clone(),
                     });
                 }
             }
@@ -404,7 +438,7 @@ impl Graph {
         let has_required_dependency = step
             .deps
             .iter()
-            .any(|dependency| !self.dependency_is_skippable(&step.id, dependency));
+            .any(|dependency| !self.dependency_is_optional(step, dependency));
         if !has_required_dependency {
             return Ok(());
         }
@@ -453,6 +487,9 @@ impl Graph {
         step: &Step,
         by_id: &BTreeMap<&str, &Step>,
     ) -> Option<ValueSchema> {
+        if step.even_after_a_break {
+            return Some(after_a_break_schema(step, by_id));
+        }
         match step.deps.as_slice() {
             [] => None,
             [only] if !self.dependency_is_skippable(&step.id, only) => by_id
@@ -494,6 +531,27 @@ impl Graph {
             None => produced,
         })
     }
+}
+
+/// Every dependency by id and none of them promised, beside the list of those
+/// that broke, which is always there and may be empty.
+fn after_a_break_schema(step: &Step, by_id: &BTreeMap<&str, &Step>) -> ValueSchema {
+    let mut properties: BTreeMap<String, ValueSchema> = step
+        .deps
+        .iter()
+        .filter_map(|id| {
+            by_id
+                .get(id.as_str())
+                .map(|dependency| (id.clone(), dependency.output_schema.clone()))
+        })
+        .collect();
+    properties.insert(
+        BROKEN_FIELD.to_owned(),
+        ValueSchema::Array {
+            items: Box::new(ValueSchema::String),
+        },
+    );
+    ValueSchema::object(properties, [BROKEN_FIELD.to_owned()])
 }
 
 fn schema_with_overlay(produced: ValueSchema, with: &Value) -> ValueSchema {
@@ -598,6 +656,16 @@ impl Display for GraphError {
                      a pointer into its output: it begins with a slash, as «/done» does"
                 )
             }
+            GraphError::AfterABreakWithNothingBefore { step } => write!(
+                formatter,
+                "step {step} runs `even_after_a_break` but depends on nothing: \
+                 name in `deps` the steps whose break it follows"
+            ),
+            GraphError::DependencyNamedLikeTheBrokenList { step } => write!(
+                formatter,
+                "step {step} runs `even_after_a_break` and depends on a step called \
+                 «{BROKEN_FIELD}», whose output the list of broken steps would hide"
+            ),
         }
     }
 }
@@ -624,6 +692,7 @@ mod tests {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
             needs: Vec::new(),
         }
     }
