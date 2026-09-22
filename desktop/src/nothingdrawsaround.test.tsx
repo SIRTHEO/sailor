@@ -29,6 +29,15 @@ beforeEach(() => {
   window.localStorage.clear();
 });
 
+/**
+ * **THE CHUNK HAS TO ARRIVE BEFORE THE DOM CAN BE READ.** Everything this file
+ * looks at lives behind the Suspense around `SailorScreen`, and that chunk now
+ * carries the window, the pane and xterm. On a cold or loaded runner the
+ * default 1000 ms of `waitFor` runs out while the chunk is still in flight, and
+ * the check goes red without the product having changed.
+ */
+const CHUNK_ARRIVES = { timeout: 5000 };
+
 /** Where the window was left, which is how it opens without a click. */
 function leftAt(sailorTab: string) {
   window.localStorage.setItem(
@@ -41,7 +50,7 @@ describe("what draws around the three columns", () => {
   test("nothing, when the window is the thing open", async () => {
     leftAt("window");
     const { container } = render(<App />);
-    await waitFor(() => { expect(container.querySelector(".window-shell")).not.toBeNull(); });
+    await waitFor(() => { expect(container.querySelector(".window-shell")).not.toBeNull(); }, CHUNK_ARRIVES);
     expect(container.querySelector(".topbar"), "the bar and its crumbs draw over the field").toBeNull();
     expect(container.querySelector(".world"), "the column of places draws beside the column of lists").toBeNull();
   });
@@ -51,7 +60,7 @@ describe("what draws around the three columns", () => {
   test("both of them, on any other screen of the machine", async () => {
     leftAt("look");
     const { container } = render(<App />);
-    await waitFor(() => { expect(container.querySelector(".world")).not.toBeNull(); });
+    await waitFor(() => { expect(container.querySelector(".world")).not.toBeNull(); }, CHUNK_ARRIVES);
     expect(container.querySelector(".topbar")).not.toBeNull();
     expect(container.querySelector(".window-shell")).toBeNull();
   });
@@ -61,7 +70,7 @@ describe("what draws around the three columns", () => {
   test("the palette still opens with the bar gone", async () => {
     leftAt("window");
     const { container } = render(<App />);
-    await waitFor(() => { expect(container.querySelector(".window-shell")).not.toBeNull(); });
+    await waitFor(() => { expect(container.querySelector(".window-shell")).not.toBeNull(); }, CHUNK_ARRIVES);
     expect(container.querySelector(".palette"), "it is open before the key").toBeNull();
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     await waitFor(() => { expect(container.querySelector(".palette")).not.toBeNull(); });
