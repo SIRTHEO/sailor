@@ -19,7 +19,7 @@ fn gates_script() -> PathBuf {
 /// and not copied here: a copy would keep passing after the script changed.
 fn how_the_root_is_given(text: &str) -> String {
     let opened = text
-        .find("gates_tmp=$(mktemp")
+        .find("gates_under=")
         .expect("the gates make a temporary root of their own");
     let closed = text[opened..]
         .find("export TMPDIR")
@@ -32,6 +32,10 @@ fn how_the_root_is_given(text: &str) -> String {
 /// Run those lines, then a body, under a parent temporary directory of this
 /// test's own — so what the script does is measured, never described.
 fn under_the_gates_root(label: &str, body: &str) -> (String, PathBuf) {
+    under_a_root(label, body, false)
+}
+
+fn under_a_root(label: &str, body: &str, trailing_slash: bool) -> (String, PathBuf) {
     let text = std::fs::read_to_string(gates_script()).expect("the gates script is readable");
     // The name carries the run *and* the test: these two run side by side, and
     // a shared name would have each sweeping the other's parent away.
@@ -39,10 +43,15 @@ fn under_the_gates_root(label: &str, body: &str) -> (String, PathBuf) {
         std::env::temp_dir().join(format!("gates-root-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&parent);
     std::fs::create_dir_all(&parent).expect("a parent for the root");
+    let handed = if trailing_slash {
+        format!("{}/", parent.display())
+    } else {
+        parent.display().to_string()
+    };
     let output = Command::new("sh")
         .arg("-c")
         .arg(format!("{}\n{body}", how_the_root_is_given(&text)))
-        .env("TMPDIR", &parent)
+        .env("TMPDIR", &handed)
         .output()
         .expect("the lines run");
     assert!(
@@ -95,4 +104,21 @@ fn what_the_battery_leaves_in_it_goes_when_the_run_goes() {
         0,
         "directories left behind when the run ended",
     );
+}
+
+/// **FOUND BY RUNNING THE WHOLE BATTERY, NOT BY THE TWO ABOVE.** macOS hands
+/// out a TMPDIR that ends in a slash, and concatenating onto it made
+/// `…/T//sailor-gates-…`. Every test comparing a path it built against one
+/// the system canonicalised then went red, far from here and for no reason of
+/// its own. The two tests above passed throughout: their parent had no
+/// trailing slash, because the shell they ran under handed out none.
+#[test]
+fn a_root_handed_with_a_trailing_slash_makes_no_doubled_separator() {
+    let (said, parent) = under_a_root("slashed", "printf '%s' \"$TMPDIR\"", true);
+    assert!(
+        !said.contains("//"),
+        "the root the battery is handed carries a doubled separator: {said}"
+    );
+    let _ = std::fs::remove_dir_all(&parent);
+    workspace::measured(1, "root read for a doubled separator");
 }
