@@ -16,7 +16,10 @@ struct Act(Arc<Mutex<Vec<String>>>);
 
 impl Action for Act {
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        let step = shared.get(CURRENT_STEP).and_then(Value::as_str).unwrap_or("?");
+        let step = shared
+            .get(CURRENT_STEP)
+            .and_then(Value::as_str)
+            .unwrap_or("?");
         self.0.lock().expect("the list").push(step.to_owned());
         match input.get("say").and_then(Value::as_str) {
             Some("break") => Err(ActionError::new("check_failed", "it broke")),
@@ -54,10 +57,16 @@ fn says(id: &str, deps: &[&str], word: &str) -> Step {
 
 /// `open` takes something, `work` then `more` use it, `close` gives it back
 /// once `more` has settled, and only when `open` did take it.
-fn open_work_close(open_says: &str, work_says: &str, stops: RunStops) -> (Vec<Decision>, Vec<String>) {
+fn open_work_close(
+    open_says: &str,
+    work_says: &str,
+    stops: RunStops,
+) -> (Vec<Decision>, Vec<String>) {
     let mut close = says("close", &["open", "more"], "go");
     close.even_after_a_break = true;
-    close.when = Some(Condition::PointerExists { pointer: "/open".to_owned() });
+    close.when = Some(Condition::PointerExists {
+        pointer: "/open".to_owned(),
+    });
     let graph = Graph::new(vec![
         says("open", &[], open_says),
         says("work", &["open"], work_says),
@@ -110,7 +119,10 @@ fn a_run_paused_on_a_person_keeps_what_it_took() {
     let (decisions, order) = open_work_close("go", "wait", RunStops::default());
 
     assert_eq!(order, ["open", "work"], "{decisions:?}");
-    assert_eq!(decisions.last(), Some(&Decision::Waiting(vec!["work".to_owned()])));
+    assert_eq!(
+        decisions.last(),
+        Some(&Decision::Waiting(vec!["work".to_owned()]))
+    );
 }
 
 #[test]
@@ -118,7 +130,10 @@ fn nothing_is_given_back_where_nothing_was_taken() {
     let (decisions, order) = open_work_close("break", "go", RunStops::default());
 
     assert_eq!(order, ["open"], "{decisions:?}");
-    assert_eq!(decisions.last(), Some(&Decision::Failed(vec!["open".to_owned()])));
+    assert_eq!(
+        decisions.last(),
+        Some(&Decision::Failed(vec!["open".to_owned()]))
+    );
 }
 
 #[test]

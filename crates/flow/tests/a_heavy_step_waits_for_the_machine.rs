@@ -31,10 +31,18 @@ impl Drop for Hold {
 struct FakeMachine;
 
 impl MachineTurns for FakeMachine {
-    fn wait_for_the_machine(&self, _run_id: &str, step_id: &str, carried: Option<&str>) -> Result<HeldTurn, String> {
+    fn wait_for_the_machine(
+        &self,
+        _run_id: &str,
+        step_id: &str,
+        carried: Option<&str>,
+    ) -> Result<HeldTurn, String> {
         if let Some(token) = carried {
             say(format!("{step_id} runs inside {token}"));
-            return Ok(HeldTurn { token: token.to_owned(), hold: Box::new(()) });
+            return Ok(HeldTurn {
+                token: token.to_owned(),
+                hold: Box::new(()),
+            });
         }
         say(format!("took {step_id}"));
         if step_id == "refused" {
@@ -51,8 +59,14 @@ struct Act;
 
 impl Action for Act {
     fn execute(&self, _input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
-        let step = shared.get(CURRENT_STEP).and_then(Value::as_str).unwrap_or("?");
-        let token = shared.get(MACHINE_TURN).and_then(Value::as_str).unwrap_or("none");
+        let step = shared
+            .get(CURRENT_STEP)
+            .and_then(Value::as_str)
+            .unwrap_or("?");
+        let token = shared
+            .get(MACHINE_TURN)
+            .and_then(Value::as_str)
+            .unwrap_or("none");
         say(format!("ran {step} with {token}"));
         Ok(ActionOutcome::Went(json!({})))
     }
@@ -141,5 +155,11 @@ fn a_heavy_step_of_a_run_inside_a_turn_does_not_wait_for_it() {
     shared.insert(MACHINE_TURN.to_owned(), json!("the-callers-turn"));
     let lines = run_carrying(vec![step("inner", &[], flow::Weight::Heavy)], shared);
 
-    assert_eq!(lines, ["inner runs inside the-callers-turn", "ran inner with the-callers-turn"]);
+    assert_eq!(
+        lines,
+        [
+            "inner runs inside the-callers-turn",
+            "ran inner with the-callers-turn"
+        ]
+    );
 }

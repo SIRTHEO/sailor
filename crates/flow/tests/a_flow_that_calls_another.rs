@@ -466,7 +466,8 @@ fn the_child_runs_inside_the_turn_its_caller_holds() {
     let scratch = Scratch::new("turno");
     scratch.put(LEAF);
     let bench = Bench::new(scratch.place());
-    let graph = Graph::new(vec![calling_step("chiamata", "foglia", json!({}))]).expect("valid graph");
+    let graph =
+        Graph::new(vec![calling_step("chiamata", "foglia", json!({}))]).expect("valid graph");
     let registry = bench.registry();
     let mut shared = SharedState::new();
     shared.insert(flow::MACHINE_TURN.to_owned(), json!("the-callers-turn"));
@@ -489,9 +490,16 @@ fn the_child_runs_inside_the_turn_its_caller_holds() {
         )
         .expect("the execution is not an engine fault");
 
-    let seen = bench.watcher.seen.lock().unwrap_or_else(|held| held.into_inner());
+    let seen = bench
+        .watcher
+        .seen
+        .lock()
+        .unwrap_or_else(|held| held.into_inner());
     let (_, shared) = seen.first().expect("the child ran");
-    assert_eq!(shared.get(flow::MACHINE_TURN).and_then(Value::as_str), Some("the-callers-turn"));
+    assert_eq!(
+        shared.get(flow::MACHINE_TURN).and_then(Value::as_str),
+        Some("the-callers-turn")
+    );
 }
 
 /// **AND A PARENT WITHOUT A ROOT INVENTS NONE.** Absent stays absent: the child

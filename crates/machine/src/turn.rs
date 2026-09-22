@@ -73,7 +73,11 @@ pub fn wait_for_the_machine(
 ) -> std::io::Result<Turn> {
     let holder = turns.join(THE_HOLDER);
     if let Some(held) = carried.and_then(|token| held_with(&holder, token)) {
-        return Ok(Turn { lock: None, holder, token: held.token });
+        return Ok(Turn {
+            lock: None,
+            holder,
+            token: held.token,
+        });
     }
     let queue = turns.join(THE_QUEUE);
     std::fs::create_dir_all(&queue)?;
@@ -98,7 +102,11 @@ pub fn wait_for_the_machine(
         if ahead.is_empty() && took(&lock) {
             let _ = std::fs::remove_file(&ticket);
             write_ticket(&holder, &me)?;
-            return Ok(Turn { lock: Some(lock), holder, token: me.token });
+            return Ok(Turn {
+                lock: Some(lock),
+                holder,
+                token: me.token,
+            });
         }
         let first = read_ticket(&holder)
             .filter(|held| the_process_that_took_it_is_still_there(held.pid, held.born_at))
@@ -181,15 +189,25 @@ fn tickets_in(queue: &Path) -> Vec<(PathBuf, Ticket)> {
 }
 
 fn write_ticket(path: &Path, ticket: &Ticket) -> std::io::Result<()> {
-    let born = ticket.born_at.map(|born| born.to_string()).unwrap_or_default();
+    let born = ticket
+        .born_at
+        .map(|born| born.to_string())
+        .unwrap_or_default();
     let partial = path.with_extension("partial");
     let mut file = File::create(&partial)?;
-    writeln!(file, "{}\n{}\n{}\n{}", ticket.pid, born, ticket.purpose, ticket.token)?;
+    writeln!(
+        file,
+        "{}\n{}\n{}\n{}",
+        ticket.pid, born, ticket.purpose, ticket.token
+    )?;
     std::fs::rename(&partial, path)
 }
 
 fn read_ticket(path: &Path) -> Option<Ticket> {
-    if path.extension().is_some_and(|extension| extension == "partial") {
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "partial")
+    {
         return None;
     }
     let text = std::fs::read_to_string(path).ok()?;
@@ -198,7 +216,12 @@ fn read_ticket(path: &Path) -> Option<Ticket> {
     let born_at = lines.next().and_then(|line| line.trim().parse().ok());
     let purpose = lines.next().unwrap_or("").to_owned();
     let token = lines.next().unwrap_or("").to_owned();
-    Some(Ticket { pid, born_at, purpose, token })
+    Some(Ticket {
+        pid,
+        born_at,
+        purpose,
+        token,
+    })
 }
 
 fn nanos_now() -> u128 {

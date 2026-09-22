@@ -10,7 +10,10 @@ fn sailor() -> &'static str {
 }
 
 fn a_ledger(label: &str) -> PathBuf {
-    let path = std::env::temp_dir().join(format!("sailor-machine-turn-{label}-{}", std::process::id()));
+    let path = std::env::temp_dir().join(format!(
+        "sailor-machine-turn-{label}-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&path);
     std::fs::create_dir_all(&path).expect("a ledger directory");
     path
@@ -42,7 +45,11 @@ fn a_command_started_inside_a_turn_does_not_wait_for_it() {
     }
     let said = outer.wait_with_output().expect("its output");
 
-    assert!(said.status.success(), "{}", String::from_utf8_lossy(&said.stderr));
+    assert!(
+        said.status.success(),
+        "{}",
+        String::from_utf8_lossy(&said.stderr)
+    );
     assert_eq!(String::from_utf8_lossy(&said.stdout).trim(), "inside");
 }
 
@@ -60,9 +67,15 @@ fn a_second_heavy_command_waits_and_says_for_whom() {
     let first = first.wait_with_output().expect("the first ends");
 
     assert!(first.status.success());
-    assert!(second.status.success(), "the second ran before the first was done");
+    assert!(
+        second.status.success(),
+        "the second ran before the first was done"
+    );
     let waited = String::from_utf8_lossy(&second.stderr);
-    assert!(waited.contains("sleep 2"), "the wait did not say whose turn it was: {waited}");
+    assert!(
+        waited.contains("sleep 2"),
+        "the wait did not say whose turn it was: {waited}"
+    );
 }
 
 #[test]

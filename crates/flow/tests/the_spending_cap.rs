@@ -495,8 +495,22 @@ fn a_run_stopped_by_the_cap_still_closes_what_it_opened() {
     let paid = Arc::new(AtomicUsize::new(0));
     let closed = Arc::new(AtomicUsize::new(0));
     let mut actions = flow::ActionRegistry::default();
-    actions.register("costs", CostsMoney { store: Arc::clone(&store), micros: 150, times: Arc::clone(&paid) });
-    actions.register("free", CostsMoney { store: Arc::clone(&store), micros: 0, times: Arc::clone(&closed) });
+    actions.register(
+        "costs",
+        CostsMoney {
+            store: Arc::clone(&store),
+            micros: 150,
+            times: Arc::clone(&paid),
+        },
+    );
+    actions.register(
+        "free",
+        CostsMoney {
+            store: Arc::clone(&store),
+            micros: 0,
+            times: Arc::clone(&closed),
+        },
+    );
     let mut close = step("close", "free", vec!["open".to_owned(), "more".to_owned()]);
     close.even_after_a_break = true;
     let graph = Graph::new(vec![
@@ -524,10 +538,21 @@ fn a_run_stopped_by_the_cap_still_closes_what_it_opened() {
         )
         .expect("the execution is not a fault");
 
-    assert_eq!(paid.load(Ordering::SeqCst), 1, "only the first paid step ran");
-    assert_eq!(closed.load(Ordering::SeqCst), 1, "the close was skipped at the cap");
+    assert_eq!(
+        paid.load(Ordering::SeqCst),
+        1,
+        "only the first paid step ran"
+    );
+    assert_eq!(
+        closed.load(Ordering::SeqCst),
+        1,
+        "the close was skipped at the cap"
+    );
     let Some(Decision::CapReached(stop)) = execution.decisions.last() else {
-        panic!("it should have stopped at the cap: {:?}", execution.decisions);
+        panic!(
+            "it should have stopped at the cap: {:?}",
+            execution.decisions
+        );
     };
     assert_eq!(stop.not_started, ["more"]);
 }

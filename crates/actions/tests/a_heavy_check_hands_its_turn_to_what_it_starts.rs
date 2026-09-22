@@ -12,7 +12,10 @@ fn the_command_sees(shared: &SharedState, token: &str) -> bool {
         "timeout_secs": 10,
         "accept": ["failed"],
     });
-    match ShellCheckAction::new().execute(&input, shared).expect("the check runs") {
+    match ShellCheckAction::new()
+        .execute(&input, shared)
+        .expect("the check runs")
+    {
         ActionOutcome::Went(output) => output["status"] == "passed",
         other => panic!("the check did not answer: {other:?}"),
     }
@@ -21,7 +24,10 @@ fn the_command_sees(shared: &SharedState, token: &str) -> bool {
 #[test]
 fn the_token_of_a_heavy_step_reaches_the_command() {
     let mut shared = SharedState::new();
-    shared.insert(MACHINE_TURN.to_owned(), Value::String("the-token".to_owned()));
+    shared.insert(
+        MACHINE_TURN.to_owned(),
+        Value::String("the-token".to_owned()),
+    );
 
     assert!(the_command_sees(&shared, "the-token"));
 }

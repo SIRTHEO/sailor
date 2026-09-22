@@ -781,5 +781,8 @@ fn a_worker_that_never_acknowledges_the_mandate_is_parked_before_acceptance_ever
         "an unacknowledged mandate never gets that field written: {:?}",
         task.value
     );
-    assert!(step_went(&store, "release_tree"), "a task parked on a person still holds its tree");
+    assert!(
+        step_went(&store, "release_tree"),
+        "a task parked on a person still holds its tree"
+    );
 }

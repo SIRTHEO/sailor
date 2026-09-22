@@ -18,8 +18,12 @@ pub struct HeldTurn {
 pub trait MachineTurns: Send + Sync {
     /// Blocks until the machine is this step's. `carried` is the token of the
     /// turn the run already runs inside, when a heavy step called it.
-    fn wait_for_the_machine(&self, run_id: &str, step_id: &str, carried: Option<&str>)
-        -> Result<HeldTurn, String>;
+    fn wait_for_the_machine(
+        &self,
+        run_id: &str,
+        step_id: &str,
+        carried: Option<&str>,
+    ) -> Result<HeldTurn, String>;
 }
 
 static TURNS: OnceLock<Box<dyn MachineTurns>> = OnceLock::new();
@@ -35,6 +39,8 @@ pub(crate) fn the_machine_for(
 ) -> Result<Option<HeldTurn>, String> {
     match TURNS.get() {
         None => Ok(None),
-        Some(turns) => turns.wait_for_the_machine(run_id, step_id, carried).map(Some),
+        Some(turns) => turns
+            .wait_for_the_machine(run_id, step_id, carried)
+            .map(Some),
     }
 }

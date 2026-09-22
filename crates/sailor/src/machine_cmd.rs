@@ -74,7 +74,10 @@ pub fn the_machine_for(purpose: &str) -> Result<machine::turn::Turn, String> {
     the_machine_carrying(purpose, std::env::var(flow::MACHINE_TURN_VARIABLE).ok())
 }
 
-fn the_machine_carrying(purpose: &str, carried: Option<String>) -> Result<machine::turn::Turn, String> {
+fn the_machine_carrying(
+    purpose: &str,
+    carried: Option<String>,
+) -> Result<machine::turn::Turn, String> {
     let directory =
         ledger::default_directory().ok_or_else(|| catalogue::say("cli.no_home", &[]))?;
     machine::turn::wait_for_the_machine(

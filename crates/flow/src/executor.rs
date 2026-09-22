@@ -1489,7 +1489,10 @@ fn run_one(
             match crate::machine_turn::the_machine_for(run_id, &step.id, carried) {
                 Ok(turn) => turn,
                 Err(why) => {
-                    let completion = broke(ActionError::new("no_turn_on_the_machine", why), clock.now()?);
+                    let completion = broke(
+                        ActionError::new("no_turn_on_the_machine", why),
+                        clock.now()?,
+                    );
                     return store.close(run_id, &step.id, work.attempt, epoch, completion);
                 }
             }
@@ -1497,7 +1500,10 @@ fn run_one(
         _ => None,
     };
     if let Some(turn) = &turn {
-        mine.insert(crate::MACHINE_TURN.to_owned(), Value::String(turn.token.clone()));
+        mine.insert(
+            crate::MACHINE_TURN.to_owned(),
+            Value::String(turn.token.clone()),
+        );
     }
     let completion = match work.action {
         None => closed(Outcome::Skipped, None, None, None, clock.now()?),
