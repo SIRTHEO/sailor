@@ -17,7 +17,11 @@ const AFTER_THE_CLOCK_BEFORE_THE_ATTESTATION: &str = "2400-01-01T00:00:00Z";
 const AN_HOUR_OF_POLLS: usize = 120;
 
 fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(2).expect("the workspace root").to_path_buf()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("the workspace root")
+        .to_path_buf()
 }
 
 fn the_command() -> String {
@@ -44,20 +48,29 @@ struct State<'a> {
 }
 
 fn state<'a>(name: &'a str, checks: String) -> State<'a> {
-    State { name, checks, moves_on: None }
+    State {
+        name,
+        checks,
+        moves_on: None,
+    }
 }
 
 impl Forge {
     /// A forge that starts in the first state and goes to `asked_again` when a run is asked again.
     fn new(label: &str, states: &[State], asked_again: &str) -> Self {
-        let root = std::env::temp_dir().join(format!("sailor-asked-again-{label}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("sailor-asked-again-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("bin")).expect("a bin directory");
         std::fs::create_dir_all(root.join("repo")).expect("a repository directory");
         for one in states {
             std::fs::write(root.join(format!("{}.json", one.name)), &one.checks).expect("a state");
             if let Some((polls, next)) = one.moves_on {
-                std::fs::write(root.join(format!("{}.after", one.name)), format!("{polls} {next}\n")).expect("a move");
+                std::fs::write(
+                    root.join(format!("{}.after", one.name)),
+                    format!("{polls} {next}\n"),
+                )
+                .expect("a move");
             }
         }
         std::fs::write(root.join("state"), states[0].name).expect("the first state");
@@ -91,9 +104,18 @@ esac
 "#,
         )
         .expect("the forge");
-        let chmod = Command::new("chmod").arg("+x").arg(&gh).status().expect("chmod runs");
+        let chmod = Command::new("chmod")
+            .arg("+x")
+            .arg(&gh)
+            .status()
+            .expect("chmod runs");
         assert!(chmod.success());
-        let init = Command::new("git").arg("-C").arg(root.join("repo")).args(["init", "-q"]).status().expect("git runs");
+        let init = Command::new("git")
+            .arg("-C")
+            .arg(root.join("repo"))
+            .args(["init", "-q"])
+            .status()
+            .expect("git runs");
         assert!(init.success());
         let config = Command::new("git")
             .arg("-C")
@@ -109,7 +131,14 @@ esac
         Command::new("sh")
             .arg("-c")
             .arg(the_command())
-            .env("PATH", format!("{}:{}", self.0.join("bin").display(), std::env::var("PATH").unwrap_or_default()))
+            .env(
+                "PATH",
+                format!(
+                    "{}:{}",
+                    self.0.join("bin").display(),
+                    std::env::var("PATH").unwrap_or_default()
+                ),
+            )
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("REPO", self.0.join("repo"))
@@ -146,7 +175,11 @@ const A_RUN: &str = "https://forge.example/an-owner/a-repository/actions/runs/11
 const A_STATUS: &str = "";
 
 fn said(output: &Output) -> String {
-    format!("{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr))
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 #[test]
@@ -154,15 +187,30 @@ fn a_check_that_gave_up_before_the_attestation_is_asked_again_and_the_merge_goes
     let forge = Forge::new(
         "gave-up",
         &[
-            state("gave-up", checks(&[check("boundary", "fail", LONG_AGO, A_RUN), check("names", "pass", LONG_AGO, A_STATUS)])),
-            state("green", checks(&[check("boundary", "pass", LONG_AFTER, A_RUN), check("names", "pass", LONG_AGO, A_STATUS)])),
+            state(
+                "gave-up",
+                checks(&[
+                    check("boundary", "fail", LONG_AGO, A_RUN),
+                    check("names", "pass", LONG_AGO, A_STATUS),
+                ]),
+            ),
+            state(
+                "green",
+                checks(&[
+                    check("boundary", "pass", LONG_AFTER, A_RUN),
+                    check("names", "pass", LONG_AGO, A_STATUS),
+                ]),
+            ),
         ],
         "green",
     );
     let merged = forge.merge();
     workspace::measured(1, "merge_request command read from the shipped flow");
     assert!(merged.status.success(), "{}", said(&merged));
-    assert_eq!(forge.calls(), "run rerun 111 --failed\npr merge 7 --merge\n");
+    assert_eq!(
+        forge.calls(),
+        "run rerun 111 --failed\npr merge 7 --merge\n"
+    );
 }
 
 #[test]
@@ -170,14 +218,28 @@ fn the_moment_is_the_one_attest_answered_not_the_clock() {
     let forge = Forge::new(
         "moment",
         &[
-            state("gave-up", checks(&[check("boundary", "fail", AFTER_THE_CLOCK_BEFORE_THE_ATTESTATION, A_RUN)])),
-            state("green", checks(&[check("boundary", "pass", LONG_AFTER, A_RUN)])),
+            state(
+                "gave-up",
+                checks(&[check(
+                    "boundary",
+                    "fail",
+                    AFTER_THE_CLOCK_BEFORE_THE_ATTESTATION,
+                    A_RUN,
+                )]),
+            ),
+            state(
+                "green",
+                checks(&[check("boundary", "pass", LONG_AFTER, A_RUN)]),
+            ),
         ],
         "green",
     );
     let merged = forge.merge();
     assert!(merged.status.success(), "{}", said(&merged));
-    assert_eq!(forge.calls(), "run rerun 111 --failed\npr merge 7 --merge\n");
+    assert_eq!(
+        forge.calls(),
+        "run rerun 111 --failed\npr merge 7 --merge\n"
+    );
 }
 
 #[test]
@@ -185,15 +247,28 @@ fn a_run_asked_again_is_waited_for_before_the_merge() {
     let forge = Forge::new(
         "queued",
         &[
-            state("gave-up", checks(&[check("boundary", "fail", LONG_AGO, A_RUN)])),
-            State { name: "queued", checks: checks(&[check("boundary", "pending", LONG_AGO, A_RUN)]), moves_on: Some((3, "green")) },
-            state("green", checks(&[check("boundary", "pass", LONG_AFTER, A_RUN)])),
+            state(
+                "gave-up",
+                checks(&[check("boundary", "fail", LONG_AGO, A_RUN)]),
+            ),
+            State {
+                name: "queued",
+                checks: checks(&[check("boundary", "pending", LONG_AGO, A_RUN)]),
+                moves_on: Some((3, "green")),
+            },
+            state(
+                "green",
+                checks(&[check("boundary", "pass", LONG_AFTER, A_RUN)]),
+            ),
         ],
         "queued",
     );
     let merged = forge.merge();
     assert!(merged.status.success(), "{}", said(&merged));
-    assert_eq!(forge.calls(), "run rerun 111 --failed\npr merge 7 --merge\n");
+    assert_eq!(
+        forge.calls(),
+        "run rerun 111 --failed\npr merge 7 --merge\n"
+    );
 }
 
 #[test]
@@ -202,31 +277,67 @@ fn both_waits_share_one_hour() {
     let forge = Forge::new(
         "hour",
         &[
-            State { name: "slow", checks: checks(&[check("boundary", "pending", LONG_AGO, A_RUN)]), moves_on: Some((most, "gave-up")) },
-            state("gave-up", checks(&[check("boundary", "fail", LONG_AGO, A_RUN)])),
-            State { name: "queued", checks: checks(&[check("boundary", "pending", LONG_AGO, A_RUN)]), moves_on: Some((most, "green")) },
-            state("green", checks(&[check("boundary", "pass", LONG_AFTER, A_RUN)])),
+            State {
+                name: "slow",
+                checks: checks(&[check("boundary", "pending", LONG_AGO, A_RUN)]),
+                moves_on: Some((most, "gave-up")),
+            },
+            state(
+                "gave-up",
+                checks(&[check("boundary", "fail", LONG_AGO, A_RUN)]),
+            ),
+            State {
+                name: "queued",
+                checks: checks(&[check("boundary", "pending", LONG_AGO, A_RUN)]),
+                moves_on: Some((most, "green")),
+            },
+            state(
+                "green",
+                checks(&[check("boundary", "pass", LONG_AFTER, A_RUN)]),
+            ),
         ],
         "queued",
     );
     let refused = forge.merge();
     assert_eq!(refused.status.code(), Some(1), "{}", said(&refused));
-    assert!(said(&refused).contains("still pending after an hour"), "{}", said(&refused));
+    assert!(
+        said(&refused).contains("still pending after an hour"),
+        "{}",
+        said(&refused)
+    );
     assert_eq!(forge.calls(), "run rerun 111 --failed\n");
 }
 
 #[test]
 fn a_check_still_red_when_asked_again_refuses_the_merge_after_one_try() {
-    let forge = Forge::new("still-red", &[state("red", checks(&[check("boundary", "fail", LONG_AGO, A_RUN)]))], "red");
+    let forge = Forge::new(
+        "still-red",
+        &[state(
+            "red",
+            checks(&[check("boundary", "fail", LONG_AGO, A_RUN)]),
+        )],
+        "red",
+    );
     let refused = forge.merge();
     assert_eq!(refused.status.code(), Some(1), "{}", said(&refused));
-    assert!(said(&refused).contains("not green on pull request 7: boundary"), "{}", said(&refused));
+    assert!(
+        said(&refused).contains("not green on pull request 7: boundary"),
+        "{}",
+        said(&refused)
+    );
     assert_eq!(forge.calls(), "run rerun 111 --failed\n");
 }
 
 #[test]
 fn a_check_that_failed_after_the_attestation_is_not_asked_again() {
-    let forge = Forge::new("after", &[state("red", checks(&[check("boundary", "fail", LONG_AFTER, A_RUN)]))], "red");
+    let forge = Forge::new(
+        "after",
+        &[state(
+            "red",
+            checks(&[check("boundary", "fail", LONG_AFTER, A_RUN)]),
+        )],
+        "red",
+    );
     let refused = forge.merge();
     assert_eq!(refused.status.code(), Some(1), "{}", said(&refused));
     assert_eq!(forge.calls(), "");
@@ -234,7 +345,14 @@ fn a_check_that_failed_after_the_attestation_is_not_asked_again() {
 
 #[test]
 fn a_red_status_that_no_run_carries_refuses_without_asking_anything() {
-    let forge = Forge::new("status", &[state("red", checks(&[check("names", "fail", LONG_AGO, A_STATUS)]))], "red");
+    let forge = Forge::new(
+        "status",
+        &[state(
+            "red",
+            checks(&[check("names", "fail", LONG_AGO, A_STATUS)]),
+        )],
+        "red",
+    );
     let refused = forge.merge();
     assert_eq!(refused.status.code(), Some(1), "{}", said(&refused));
     assert_eq!(forge.calls(), "");
@@ -242,7 +360,14 @@ fn a_red_status_that_no_run_carries_refuses_without_asking_anything() {
 
 #[test]
 fn all_green_merges_without_asking_anything_again() {
-    let forge = Forge::new("green", &[state("green", checks(&[check("boundary", "pass", LONG_AGO, A_RUN)]))], "green");
+    let forge = Forge::new(
+        "green",
+        &[state(
+            "green",
+            checks(&[check("boundary", "pass", LONG_AGO, A_RUN)]),
+        )],
+        "green",
+    );
     let merged = forge.merge();
     assert!(merged.status.success(), "{}", said(&merged));
     assert_eq!(forge.calls(), "pr merge 7 --merge\n");
