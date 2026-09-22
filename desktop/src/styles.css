@@ -64,9 +64,9 @@
        gets a say: at 375px the rail and the inspector came to 520 and the
        canvas — the surface this window exists for — was zero pixels wide. */
 
-/* 12. The ground is never pure black, and never neutral: the greys carry a
-       plum undertone so that the ANSI green and red the terminal prints read
-       as the only pure hues on the screen. */
+/* 12. The ground is never pure black, and never a brand: the greys are paper,
+       warm and unsaturated, and every hue on the screen was put there by a
+       machine saying what it is doing. Selection and focus are the ink. */
 
 /* HOW THESE PROHIBITIONS TURN RED. `stylesheet.test.ts` reads this sheet and
    rejects a font, a radius, a shadow or a colour that skips a role;
@@ -77,20 +77,21 @@
 
 :root {
   /* --- THREE GROUNDS, named for their distance from the floor. --- */
-  --surface-0: #19171d;  /* the terminal and the canvas: the floor */
-  --surface-1: #211e26;  /* the rail and the chrome around the work */
-  --surface-2: #2b2731;  /* hover, menus, nodes: what lifts off the chrome */
-  --border: #423a4b;     /* a 1px thread, never a carrier of state on its own */
+  --surface-0: #17181a;  /* the terminal and the canvas: the floor */
+  --surface-1: #1d1f22;  /* the rail and the chrome around the work */
+  --surface-2: #232629;  /* hover, menus, nodes: what lifts off the chrome */
+  --border: #3a3e43;     /* a 1px thread, never a carrier of state on its own */
 
   /* --- THREE TEXT LEVELS. Lowest pair on any ground, 5.5:1. --- */
-  --text-1: #f1edf3;
-  --text-2: #c4bdcc;
-  --text-3: #a49bab;
+  --text-1: #ddd9d1;
+  --text-2: #a3a29c;
+  --text-3: #8e8d88;
 
-  /* --- SELECTION AND FOCUS, AND NOTHING ELSE. Violet because the terminal
-         under it prints ANSI green and red all day. --- */
-  --accent: #ac9af2;
-  --on-accent: #19171d;
+  /* --- SELECTION AND FOCUS, AND NOTHING ELSE. Graphite: what is selected is
+         said with the ink itself, so the only hues on the screen are the ones
+         a machine put there. --- */
+  --accent: #d8d3ca;
+  --on-accent: #17181a;
 
   /* --- MACHINE STATE, on an icon and the word, never on a whole row. --- */
   --running: #87b5ed;
@@ -107,7 +108,7 @@
   --line: var(--border);
   /* The veil under a lane: the panel is visible, and it moves no contrast
      pair. */
-  --band-fill: rgb(241 237 243 / 3.5%);
+  --band-fill: rgb(221 217 209 / 3.5%);
 
   --ink: var(--text-1);
   --muted: var(--text-2);
@@ -194,8 +195,8 @@
   --optional: var(--text-3);
   /* Graph paper at two pitches, both under 1.5:1 on --bg: a grid that reads
      competes with the nodes, and the nodes are the figure. */
-  --grid-fine: #1d1b22;
-  --grid-coarse: #232029;
+  --grid-fine: #1c1d20;
+  --grid-coarse: #212327;
 
   /* One tint per flow lane, generated rather than picked: hues evenly spaced,
      lightness solved so each clears 3:1 on both grounds, closest pair 0.070
@@ -255,18 +256,18 @@
    values in place. Day, for whoever works by a window. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --surface-0: #f7f4f8;
-    --surface-1: #eeebf1;
-    --surface-2: #ffffff;
-    --border: #d5cdd9;
-    --band-fill: rgb(41 35 47 / 3.5%);
+    --surface-0: #f4f2ed;
+    --surface-1: #ebe8e2;
+    --surface-2: #faf9f6;
+    --border: #cdc9c1;
+    --band-fill: rgb(51 48 43 / 3.5%);
 
-    --text-1: #29232f;
-    --text-2: #514958;
-    --text-3: #706676;
+    --text-1: #33302b;
+    --text-2: #5c5a54;
+    --text-3: #676460;
 
-    --accent: #6750a4;
-    --on-accent: #ffffff;
+    --accent: #33302b;
+    --on-accent: #faf9f6;
 
     --running: #245c96;
     --needs-human: #805b15;
@@ -278,11 +279,11 @@
     --warn-soft: #f4e7d0;
     --danger-soft: #f7dfe3;
 
-    --shadow: 0 8px 24px rgb(41 35 47 / 10%);
-    --scrim: rgb(41 35 47 / 40%);
+    --shadow: 0 8px 24px rgb(51 48 43 / 10%);
+    --scrim: rgb(51 48 43 / 40%);
 
-    --grid-fine: #efebf1;
-    --grid-coarse: #e6e1e9;
+    --grid-fine: #efede8;
+    --grid-coarse: #e6e3dd;
 
     --lane-1: #d26b71;
     --lane-2: #c87436;
@@ -304,18 +305,18 @@
    compares the two declaration by declaration. Night needs no twin — it is the
    ground, and the `:not()` above is what steps aside for it. */
 :root[data-theme="light"] {
-  --surface-0: #f7f4f8;
-  --surface-1: #eeebf1;
-  --surface-2: #ffffff;
-  --border: #d5cdd9;
-  --band-fill: rgb(41 35 47 / 3.5%);
+  --surface-0: #f4f2ed;
+  --surface-1: #ebe8e2;
+  --surface-2: #faf9f6;
+  --border: #cdc9c1;
+  --band-fill: rgb(51 48 43 / 3.5%);
 
-  --text-1: #29232f;
-  --text-2: #514958;
-  --text-3: #706676;
+  --text-1: #33302b;
+  --text-2: #5c5a54;
+  --text-3: #676460;
 
-  --accent: #6750a4;
-  --on-accent: #ffffff;
+  --accent: #33302b;
+  --on-accent: #faf9f6;
 
   --running: #245c96;
   --needs-human: #805b15;
@@ -327,11 +328,11 @@
   --warn-soft: #f4e7d0;
   --danger-soft: #f7dfe3;
 
-  --shadow: 0 8px 24px rgb(41 35 47 / 10%);
-  --scrim: rgb(41 35 47 / 40%);
+  --shadow: 0 8px 24px rgb(51 48 43 / 10%);
+  --scrim: rgb(51 48 43 / 40%);
 
-  --grid-fine: #efebf1;
-  --grid-coarse: #e6e1e9;
+  --grid-fine: #efede8;
+  --grid-coarse: #e6e3dd;
 
   --lane-1: #d26b71;
   --lane-2: #c87436;
