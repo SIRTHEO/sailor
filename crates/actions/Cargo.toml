@@ -31,6 +31,10 @@ profiles = { path = "../profiles" }
 # looks for that binary reads the table instead of writing the path again.
 # No cycle: `release` depends on nothing.
 release = { path = "../release" }
+# Who stands in a tree and what works below it: the same reading the command
+# line gets, so a flow and a person never answer that question differently.
+# No cycle: `machine` depends on `ledger` and `sessions`.
+machine = { path = "../machine" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # The frozen benchmark's hash: the same digest `flow` and `workspace` use.
