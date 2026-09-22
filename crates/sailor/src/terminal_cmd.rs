@@ -954,8 +954,8 @@ mod tests {
                 at: 1,
             })
             .expect("the terminal is registered");
-        let options = options_of(&words(&["--store", directory.to_str().expect("a path")]))
-            .expect("pairs");
+        let options =
+            options_of(&words(&["--store", directory.to_str().expect("a path")])).expect("pairs");
         let mandate = serde_json::json!({
             "tree": "/a/scratch/directory",
             "session": "a-session",

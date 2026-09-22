@@ -281,7 +281,10 @@ fn filed(
             .entry("tree")
             .or_insert_with(|| serde_json::Value::String(tree.display().to_string()));
     } else {
-        object.insert("tree".to_owned(), serde_json::Value::String(known.tree.clone()));
+        object.insert(
+            "tree".to_owned(),
+            serde_json::Value::String(known.tree.clone()),
+        );
     }
     object.insert(
         "store".to_owned(),
