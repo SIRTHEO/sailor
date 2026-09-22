@@ -1,7 +1,7 @@
 //! The last gate a candidate passes before it leaves this machine.
 //!
-//! **A FLOW STEP IS NOT A SHELL PROGRAM.** A draft, integration and a release
-//! ask the same questions before anything leaves, so they ask them here, once,
+//! **A FLOW STEP IS NOT A SHELL PROGRAM.** A draft, integration, a release and
+//! closing the work ask the same questions before anything leaves, so they ask them here, once,
 //! and the answer is a verdict a case can reach without a forge behind it.
 
 use crate::process::{run_with_timeout, RunOutcome};
@@ -467,7 +467,11 @@ impl Action for CandidateGateAction {
         if !is_yes(&spec.before_the_push) {
             let_the_scan_judge(what_the_gate_says(&read_the_remote(&spec, here)?), &spec)?;
         }
-        run_the_scan(&spec)?;
+        // Closing a branch the remote never carried pushes nothing: the trust
+        // and the policy still hold it, and there is no commit to scan.
+        if !spec.candidate.is_empty() {
+            run_the_scan(&spec)?;
+        }
         Ok(ActionOutcome::Went(
             json!({ "ref": spec.candidate, "privacy_exit": 0 }),
         ))
