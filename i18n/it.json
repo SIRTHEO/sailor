@@ -1281,5 +1281,21 @@
   "cli.flow.yours_has_drifted_and_more": "la tua copia di questo flusso non è più uguale a quella spedita col prodotto: {count} campo/i differiscono, e le riparazioni fatte a quella spedita da quando l'hai presa non sono nella tua — {fields}, e altri {more}\n",
   "cli.session.the_drop_was_filed": "Il mandato che hai lasciato per {tty} è stato depositato: «{head}». Per la consegna non è dovuto altro.",
   "cli.session.the_drop_was_refused": "Il mandato in {path} non è stato depositato: {why}. È ancora lì: correggilo e verrà preso al prossimo giro.",
-  "cli.session.handovers_missed": "**Questo terminale doveva passare la mano {owed} volte e ne ha mancate {missed}.** Si riempie, deposita un mandato e non viene mai svuotato, perché l'ultima lettura diceva: {said}. Una sessione che non è mai libera non passa la mano: viene compattata, e il filo si perde. Quando sei a oblige, chiudi quello che è aperto e non avviare altro lavoro in background."
+  "cli.session.handovers_missed": "**Questo terminale doveva passare la mano {owed} volte e ne ha mancate {missed}.** Si riempie, deposita un mandato e non viene mai svuotato, perché l'ultima lettura diceva: {said}. Una sessione che non è mai libera non passa la mano: viene compattata, e il filo si perde. Quando sei a oblige, chiudi quello che è aperto e non avviare altro lavoro in background.",
+  "cli.flow.sensor_refused": "il flusso {flow} dichiara un sensore che non può girare senza nessuno a guardare: {reason}",
+  "flow.sensor.malformed": "il «sensor» dell'innesco non è un sensore: {error}. Prende «action», «with», «pointer» e «cooldown_secs».",
+  "flow.sensor.not_declared": "l'innesco nomina la sorgente «sensor» ma non dichiara un oggetto «sensor»: di' quale azione legge cosa",
+  "flow.sensor.bad_pointer": "il puntatore «{pointer}» del sensore non è un puntatore JSON: è vuoto o comincia con «/»",
+  "flow.sensor.negative_cooldown": "la pausa del sensore è di {seconds} secondi: una pausa è zero o più",
+  "flow.sensor.unknown_action": "il sensore nomina l'azione «{action}», che nessuno registra",
+  "flow.sensor.may_spend": "l'azione «{action}» del sensore può spendere: un sensore gira a ogni battito, quindi non deve costare nulla",
+  "flow.sensor.writes": "l'azione «{action}» del sensore non dichiara di leggere soltanto: un sensore gira a ogni battito, quindi non deve cambiare nulla",
+  "flow.sensor.timed_out": "il sensore non ha risposto entro {seconds} secondi: non è partito nulla e non è stato tenuto nulla",
+  "flow.sensor.failed": "il sensore è fallito: {why}. Non è partito nulla e non è stato tenuto nulla",
+  "flow.sensor.did_not_answer": "il sensore ha risposto che non ha ancora nulla da leggere ({why}): non è partito nulla e non è stato tenuto nulla",
+  "flow.sensor.pointer_reaches_nothing": "il puntatore «{pointer}» del sensore non raggiunge nulla in ciò che ha letto: non è partito nulla e non è stato tenuto nulla",
+  "flow.sensor.could_not_remember": "la lettura del sensore non si è potuta tenere o rileggere dal deposito: {error}",
+  "flow.sensor.baseline": "prima lettura tenuta come quella con cui confrontare; non è partito nulla",
+  "flow.sensor.unchanged": "il sensore legge ciò che aveva letto l'ultima volta",
+  "flow.sensor.cooling": "il sensore legge un cambiamento, e la pausa lo trattiene per altri {seconds} secondi"
 }

@@ -1281,5 +1281,21 @@
   "cli.flow.yours_has_drifted_and_more": "your copy of this flow no longer matches the one shipped with the product: {count} field(s) differ, and the repairs made to the shipped one since you took it are not in yours — {fields}, and {more} more\n",
   "cli.session.the_drop_was_filed": "The mandate you left for {tty} has been deposited: «{head}». Nothing else is owed for the handover.",
   "cli.session.the_drop_was_refused": "The mandate at {path} was not deposited: {why}. It is still there: correct it and it will be taken at the next turn.",
-  "cli.session.handovers_missed": "**This terminal has been owed a handover {owed} time(s) and made {missed} fewer than that.** It stands full, deposits a mandate, and is never emptied, because the last reading said: {said}. A session that is never free is not handed on: it is compacted, and the thread is lost. When you stand at oblige, finish what is open and start no more background work."
+  "cli.session.handovers_missed": "**This terminal has been owed a handover {owed} time(s) and made {missed} fewer than that.** It stands full, deposits a mandate, and is never emptied, because the last reading said: {said}. A session that is never free is not handed on: it is compacted, and the thread is lost. When you stand at oblige, finish what is open and start no more background work.",
+  "cli.flow.sensor_refused": "flow {flow} declares a sensor that may not run with nobody watching: {reason}",
+  "flow.sensor.malformed": "the trigger's «sensor» is not a sensor: {error}. It takes «action», «with», «pointer» and «cooldown_secs».",
+  "flow.sensor.not_declared": "the trigger names the source «sensor» but declares no «sensor» object: say which action reads what",
+  "flow.sensor.bad_pointer": "the sensor's pointer «{pointer}» is not a JSON pointer: it is empty or starts with «/»",
+  "flow.sensor.negative_cooldown": "the sensor's cooldown is {seconds} seconds: a cooldown is zero or more",
+  "flow.sensor.unknown_action": "the sensor names the action «{action}», which nothing registers",
+  "flow.sensor.may_spend": "the sensor's action «{action}» may spend: a sensor runs on every beat, so it must cost nothing",
+  "flow.sensor.writes": "the sensor's action «{action}» does not declare that it only reads: a sensor runs on every beat, so it must change nothing",
+  "flow.sensor.timed_out": "the sensor did not answer within {seconds} seconds: nothing started and nothing was kept",
+  "flow.sensor.failed": "the sensor failed: {why}. Nothing started and nothing was kept",
+  "flow.sensor.did_not_answer": "the sensor answered that it has nothing to read yet ({why}): nothing started and nothing was kept",
+  "flow.sensor.pointer_reaches_nothing": "the sensor's pointer «{pointer}» reaches nothing in what it read: nothing started and nothing was kept",
+  "flow.sensor.could_not_remember": "the sensor's reading could not be kept or read back from the store: {error}",
+  "flow.sensor.baseline": "first reading kept as the one to compare against; nothing started",
+  "flow.sensor.unchanged": "the sensor reads what it read last time",
+  "flow.sensor.cooling": "the sensor reads a change, and the cooldown holds it for {seconds} more seconds"
 }

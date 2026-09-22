@@ -201,6 +201,14 @@ pub trait Action: Send + Sync {
         true
     }
 
+    /// Whether running this step leaves everything as it found it: nothing
+    /// written, deposited, typed or started. `false` by default, the direction
+    /// that refuses: a sensor runs on every beat with nobody watching, and an
+    /// action that does not answer is never taken for one that only looks.
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+
     /// Whether this action's output is a verdict a run may be closed on.
     ///
     /// Only an action that answers yes may carry `decides_done`. The default is

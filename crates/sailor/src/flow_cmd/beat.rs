@@ -197,7 +197,15 @@ fn tick_flows_with(
     let mut report = String::new();
     let mut ran = 0usize;
     let mut held = 0usize;
+    let watching = sensor_flows(&known);
     for (name, _, entry) in known {
+        // Its line is the sensor's, below: «no schedule» would read as never.
+        if entry
+            .as_ref()
+            .is_ok_and(|flow| flow.schedule.is_none() && trigger::sensor::declared_by(flow).is_some())
+        {
+            continue;
+        }
         // **A BEAT SAYS WHAT IT DID NOT DO, AND WHY.** The relay this replaces
         // declined 2,803 times out of 2,834 and left no trace of any of them,
         // so nobody could tell a working guard from a broken one.
@@ -276,6 +284,11 @@ fn tick_flows_with(
                 .map_err(|error| error.to_string())?;
         }
     }
+    let (sensed, sensed_ran, sensed_held) =
+        sense_the_watchers(&watching, glance.ledger.as_ref(), now, start);
+    report.push_str(&sensed);
+    ran += sensed_ran;
+    held += sensed_held;
     let (parked_said, woken, let_go) = match &glance.ledger {
         Some(ledger) => ask_the_parked_again(sources, ledger, now, resume),
         None => (String::new(), 0, 0),
@@ -295,6 +308,77 @@ fn tick_flows_with(
         )
     );
     Ok(report)
+}
+
+/// A flow whose trigger is a sensor, by name, id and what it declares.
+type Watching = (String, String, Result<trigger::sensor::Sensor, String>);
+
+fn sensor_flows(known: &[(String, &'static str, Result<flow::FlowFile, String>)]) -> Vec<Watching> {
+    known
+        .iter()
+        .filter_map(|(name, _, entry)| {
+            let flow = entry.as_ref().ok()?;
+            let sensor = trigger::sensor::declared_by(flow)?;
+            Some((name.clone(), flow.id.clone(), sensor))
+        })
+        .collect()
+}
+
+/// Reads every sensor once, starts the flows whose reading changed, and says
+/// what each came to. Returns the lines, how many started and how many held.
+fn sense_the_watchers(
+    watching: &[Watching],
+    ledger: Option<&Ledger>,
+    now: i64,
+    start: Starter<'_>,
+) -> (String, usize, usize) {
+    let mut said = String::new();
+    if watching.is_empty() {
+        return (said, 0, 0);
+    }
+    // A ledger nobody has written yet is created here: a first reading has to
+    // be kept somewhere, or every beat would be a first reading.
+    let opened = match ledger {
+        Some(ledger) => Ok(ledger.clone()),
+        None => default_ledger_dir()
+            .and_then(|dir| Ledger::open(&dir).map_err(|error| error.to_string())),
+    };
+    let ledger = match opened {
+        Ok(ledger) => ledger,
+        Err(error) => {
+            let why = catalogue::say("flow.sensor.could_not_remember", &[("error", &error)]);
+            for (name, _, _) in watching {
+                let _ = writeln!(said, "{name}\tblind\t{why}");
+            }
+            return (said, 0, watching.len());
+        }
+    };
+    let registry = std::sync::Arc::new(registry::default_registry(Some(ledger.clone()), None));
+    let (mut ran, mut held) = (0, 0);
+    for (name, id, sensor) in watching {
+        let sensed = match sensor {
+            Err(why) => trigger::sensor::Sensed {
+                word: "blind",
+                said: why.clone(),
+            },
+            Ok(sensor) => trigger::sensor::sense(
+                &ledger,
+                id,
+                sensor,
+                &registry,
+                trigger::sensor::SENSOR_TIMEOUT,
+                now,
+                &mut |text| start(name, Some(text)),
+            ),
+        };
+        if matches!(sensed.word, "ran" | "broke") {
+            ran += 1;
+        } else {
+            held += 1;
+        }
+        let _ = writeln!(said, "{name}\t{}\t{}", sensed.word, sensed.said);
+    }
+    (said, ran, held)
 }
 
 /// What the beat does with the runs parked on a step that answered «not yet».
@@ -343,14 +427,17 @@ pub fn ask_the_parked_again(
 }
 
 /// The flows a parked run can be woken under: the ones that still start
-/// without a person — a schedule, or a session event they subscribe to.
+/// without a person — a schedule, a session event they subscribe to, or a
+/// sensor.
 fn flows_that_start_by_themselves(sources: &[FlowSource]) -> BTreeSet<String> {
     let mut found: BTreeSet<String> = crate::arc_cmd::watchers(sources)
         .into_iter()
         .map(|(name, _)| name)
         .collect();
     for (name, _, entry) in known_flows(sources) {
-        if entry.is_ok_and(|flow| flow.schedule.is_some()) {
+        if entry.is_ok_and(|flow| {
+            flow.schedule.is_some() || trigger::sensor::declared_by(&flow).is_some()
+        }) {
             found.insert(name);
         }
     }

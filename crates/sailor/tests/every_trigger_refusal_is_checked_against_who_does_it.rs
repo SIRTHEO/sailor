@@ -47,6 +47,12 @@ const SHAPES: &[Shape] = &[
         descriptor: r#"{"id": "a-session-spoke", "kind": "session_event"}"#,
         input: r#"{"text": "{\"event\": \"Stop\"}"}"#,
     },
+    // So does a sensor: the beat has read the change before the run starts.
+    Shape {
+        kind: "sensor",
+        descriptor: r#"{"id": "a-reading-changed", "kind": "sensor"}"#,
+        input: r#"{"text": "{\"before\": 1, \"after\": 2}"}"#,
+    },
     Shape {
         kind: "periodic",
         descriptor: r#"{"id": "every-hour", "kind": "periodic", "periodic": {

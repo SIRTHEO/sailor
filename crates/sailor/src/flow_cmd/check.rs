@@ -192,6 +192,9 @@ pub fn refusals_of(flow: &FlowFile, registry: &ActionRegistry) -> Vec<String> {
             ],
         ));
     }
+    // A sensor runs on every beat with nobody watching: one that writes or
+    // spends does it again at every tick.
+    refused.extend(trigger::sensor::refusal_of(flow, registry));
     // A reference inside an executed field stops before the run: afterwards it
     // is shell text and no longer tells itself apart from what the flow wrote.
     let mounted: Vec<String> = outside_text_in_command(flow)
