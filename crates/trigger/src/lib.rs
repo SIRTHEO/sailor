@@ -20,6 +20,10 @@ pub mod action;
 /// descriptors say, added by writing one line of JSON.
 pub mod descriptor;
 
+/// A flow that starts because what it watches has changed: one read-only node
+/// the beat runs, and a reading kept per flow to compare against.
+pub mod sensor;
+
 pub use action::{register_default, TriggerAction, TRIGGER_ACTION};
 pub use descriptor::{
     deferral, Catalog, Happened, Kind, Listen, Loaded, MissedRun, On, Periodic, Problem, Source,

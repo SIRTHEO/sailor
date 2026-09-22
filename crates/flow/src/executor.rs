@@ -1,6 +1,8 @@
 use crate::record::{HolderIdentity, Ran, Refusal, Why, digest_input, truncate_said};
 use crate::reference;
-use crate::{AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies};
+use crate::{
+    AttemptRelation, Graph, Outcome, SchemaError, Step, StepRecord, StepSpecies, BROKEN_FIELD,
+};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -197,6 +199,14 @@ pub trait Action: Send + Sync {
     /// direction that narrows and never widens.
     fn may_spend(&self, _declared: Option<&Value>) -> bool {
         true
+    }
+
+    /// Whether running this step leaves everything as it found it: nothing
+    /// written, deposited, typed or started. `false` by default, the direction
+    /// that refuses: a sensor runs on every beat with nobody watching, and an
+    /// action that does not answer is never taken for one that only looks.
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        false
     }
 
     /// Whether this action's output is a verdict a run may be closed on.
@@ -996,7 +1006,7 @@ impl Executor for InProcessExecutor {
             let now = clock.now()?;
             let decision = decision_from(graph, &records, now)?;
             decisions.push(decision.clone());
-            let Decision::Ready(front) = decision else {
+            let Decision::Ready(mut front) = decision else {
                 return Ok(Execution {
                     decisions,
                     shared: request.shared,
@@ -1007,15 +1017,21 @@ impl Executor for InProcessExecutor {
             // moment any of them costs nothing, since a step at work has paid
             // and none of these takes it back. A run over its wall ends after
             // the step in flight, never during it.
+            // What the run opened is closed even so: the reason is met again
+            // on the next pass, with nothing left to close.
+            let closing = owed_before_a_stop(graph, &records);
             if let Some(reason) = closes_the_run(graph, &request, &records, store, now)? {
-                decisions.push(Decision::Halted {
-                    reason,
-                    not_started: front,
-                });
-                return Ok(Execution {
-                    decisions,
-                    shared: request.shared,
-                });
+                if closing.is_empty() {
+                    decisions.push(Decision::Halted {
+                        reason,
+                        not_started: front,
+                    });
+                    return Ok(Execution {
+                        decisions,
+                        shared: request.shared,
+                    });
+                }
+                front = closing.clone();
             }
 
             // The cap is checked before opening, not after spending: a step
@@ -1027,7 +1043,9 @@ impl Executor for InProcessExecutor {
             let mut at_once = AT_ONCE;
             if let Some(cap) = request.spend_cap_micros {
                 let spent = store.spent(&request.run_id)?;
-                if spent.micros >= cap {
+                if spent.micros >= cap && !closing.is_empty() {
+                    front = closing;
+                } else if spent.micros >= cap {
                     decisions.push(Decision::CapReached(SpendStop {
                         cap_micros: cap,
                         spent,
@@ -1037,8 +1055,9 @@ impl Executor for InProcessExecutor {
                         decisions,
                         shared: request.shared,
                     });
+                } else {
+                    at_once = how_many_fit(cap - spent.micros, spent.dearest_micros);
                 }
-                at_once = how_many_fit(cap - spent.micros, spent.dearest_micros);
             }
 
             // The epoch belongs to the front, not to the step: computed once
@@ -1472,6 +1491,28 @@ fn run_one(
     let mut mine = shared.clone();
     mine.insert(CURRENT_STEP.to_owned(), Value::String(step.id.clone()));
 
+    let turn = match (work.action, step.weight) {
+        (Some(_), crate::Weight::Heavy) => {
+            let carried = shared.get(crate::MACHINE_TURN).and_then(Value::as_str);
+            match crate::machine_turn::the_machine_for(run_id, &step.id, carried) {
+                Ok(turn) => turn,
+                Err(why) => {
+                    let completion = broke(
+                        ActionError::new("no_turn_on_the_machine", why),
+                        clock.now()?,
+                    );
+                    return store.close(run_id, &step.id, work.attempt, epoch, completion);
+                }
+            }
+        }
+        _ => None,
+    };
+    if let Some(turn) = &turn {
+        mine.insert(
+            crate::MACHINE_TURN.to_owned(),
+            Value::String(turn.token.clone()),
+        );
+    }
     let completion = match work.action {
         None => closed(Outcome::Skipped, None, None, None, clock.now()?),
         Some(action) => match action.execute_and_report(&work.input, &mine) {
@@ -1503,6 +1544,7 @@ fn run_one(
             Err(error) => broke(error, clock.now()?),
         },
     };
+    drop(turn);
     store.close(run_id, &step.id, work.attempt, epoch, completion)
 }
 
@@ -1681,7 +1723,31 @@ fn times_broken(step: &Step, records: &[StepRecord]) -> u32 {
         .count() as u32
 }
 
+/// Whether this step broke as many times as it may.
+fn broke_for_good(step: &Step, records: &[StepRecord]) -> bool {
+    latest_for(step, records).and_then(|record| record.outcome) == Some(Outcome::Broke)
+        && times_broken(step, records) >= step.max_attempts
+}
+
+/// Whether this step will never close because something broke: its attempts
+/// are spent, or the run broke and it is one the run no longer opens.
+fn fell(step: &Step, records: &[StepRecord], run_broke: bool) -> bool {
+    if broke_for_good(step, records) {
+        return true;
+    }
+    run_broke
+        && !step.even_after_a_break
+        && match latest_for(step, records) {
+            None => true,
+            Some(record) => matches!(record.outcome, Some(Outcome::Broke | Outcome::NotYet)),
+        }
+}
+
 fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Decision, FlowError> {
+    let run_broke = graph
+        .steps()
+        .iter()
+        .any(|step| broke_for_good(step, records));
     let mut ready = Vec::new();
     let mut running = Vec::new();
     let mut waiting = Vec::new();
@@ -1697,7 +1763,7 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
         let mut ready_or_later = |due: Option<i64>| match due {
             Some(due) if due > now => not_yet.push((step.id.clone(), due)),
             _ => {
-                if dependencies_satisfied(graph, step, records) {
+                if dependencies_satisfied(graph, step, records, run_broke) {
                     ready.push(step.id.clone());
                 }
             }
@@ -1730,9 +1796,25 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
             None => ready_or_later(None),
         }
     }
-    if !failed.is_empty() {
-        Ok(Decision::Failed(failed))
-    } else if !ready.is_empty() {
+    // After a break only the steps that give back are opened, and the run
+    // stays open while one of them is still to come.
+    if run_broke {
+        let gives_back = |id: &String| graph.step(id).is_some_and(|step| step.even_after_a_break);
+        ready.retain(gives_back);
+        not_yet.retain(|(id, _)| gives_back(id));
+        let still_to_give_back = graph.steps().iter().any(|step| {
+            step.even_after_a_break
+                && !broke_for_good(step, records)
+                && !matches!(
+                    latest_for(step, records).and_then(|record| record.outcome),
+                    Some(Outcome::Went | Outcome::Skipped)
+                )
+        });
+        if !still_to_give_back {
+            return Ok(Decision::Failed(failed));
+        }
+    }
+    if !ready.is_empty() {
         Ok(Decision::Ready(ready))
     } else if !running.is_empty() {
         Ok(Decision::Running(running))
@@ -1749,6 +1831,8 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
         Ok(Decision::Waiting(waiting))
     } else if !stopped.is_empty() {
         Ok(Decision::Stopped(stopped))
+    } else if run_broke {
+        Ok(Decision::Failed(failed))
     } else if let Some((step, reason)) = requirement_unmet(graph, records) {
         Ok(Decision::RequirementUnmet { step, reason })
     } else {
@@ -1756,7 +1840,25 @@ fn decision_from(graph: &Graph, records: &[StepRecord], now: i64) -> Result<Deci
     }
 }
 
-fn dependencies_satisfied(graph: &Graph, step: &Step, records: &[StepRecord]) -> bool {
+/// The steps that give back which a run stopping short of its end still owes:
+/// never started, with everything before them settled, the work the stop
+/// leaves unstarted counted as fallen, as a break would count it.
+fn owed_before_a_stop(graph: &Graph, records: &[StepRecord]) -> Vec<String> {
+    graph
+        .steps()
+        .iter()
+        .filter(|step| step.even_after_a_break && latest_for(step, records).is_none())
+        .filter(|step| dependencies_satisfied(graph, step, records, true))
+        .map(|step| step.id.clone())
+        .collect()
+}
+
+fn dependencies_satisfied(
+    graph: &Graph,
+    step: &Step,
+    records: &[StepRecord],
+    run_broke: bool,
+) -> bool {
     step.deps.iter().all(|dependency| {
         let outcome = records
             .iter()
@@ -1766,6 +1868,10 @@ fn dependencies_satisfied(graph: &Graph, step: &Step, records: &[StepRecord]) ->
         outcome == Some(Outcome::Went)
             || (outcome == Some(Outcome::Skipped)
                 && graph.dependency_is_skippable(&step.id, dependency))
+            || (step.even_after_a_break
+                && graph
+                    .step(dependency)
+                    .is_some_and(|dependency| fell(dependency, records, run_broke)))
     })
 }
 
@@ -2007,6 +2113,12 @@ fn composed_input(
     root_inputs: &BTreeMap<String, Value>,
     records: &[StepRecord],
 ) -> Result<Value, FlowError> {
+    if step.even_after_a_break {
+        return Ok(overlay_input(
+            after_a_break(step, records),
+            step.with.as_ref(),
+        ));
+    }
     let input = match step.deps.as_slice() {
         [] => Ok(root_inputs.get(&step.id).cloned().unwrap_or(Value::Null)),
         [only] if !graph.dependency_is_skippable(&step.id, only) => {
@@ -2027,6 +2139,29 @@ fn composed_input(
         }
     }?;
     Ok(overlay_input(input, step.with.as_ref()))
+}
+
+/// The output of every dependency that closed, by id, and the ids of those
+/// that did not. A skipped one is in neither: nothing broke there.
+fn after_a_break(step: &Step, records: &[StepRecord]) -> Value {
+    let mut values = serde_json::Map::new();
+    let mut broken = Vec::new();
+    for dependency in &step.deps {
+        let latest = records
+            .iter()
+            .filter(|record| record.step_id == *dependency)
+            .max_by_key(|record| (record.attempt, record.epoch));
+        match latest.and_then(|record| record.outcome) {
+            Some(Outcome::Went) => {
+                let output = latest.and_then(|record| record.output.clone());
+                values.insert(dependency.clone(), output.unwrap_or(Value::Null));
+            }
+            Some(Outcome::Skipped) => {}
+            _ => broken.push(Value::String(dependency.clone())),
+        }
+    }
+    values.insert(BROKEN_FIELD.to_owned(), Value::Array(broken));
+    Value::Object(values)
 }
 
 /// Where the step will work, decided here and not inside the action. Four
@@ -2292,7 +2427,9 @@ mod tests {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
         needs: Vec::new(),
+        weight: crate::Weight::Light,
         }
     }
 

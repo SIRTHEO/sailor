@@ -428,54 +428,52 @@
           "policy",
           "release_authorized"
         ],
-        "action": "shell_check",
+        "action": "candidate_gate",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"$TRUNK:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(trusted_policy) || exit 1\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_request/repo"
-            },
-            "REF": {
-              "$from": "/the_candidate/answer/candidate"
-            },
-            "SCAN_BASE": {
-              "$from": "/the_candidate/answer/remote_trunk"
-            },
-            "POLICY_READ": {
-              "$json": "/policy"
-            },
-            "TRUNK": {
-              "$from": "/the_request/trunk"
-            }
+          "repo": {
+            "$from": "/the_request/repo"
           },
-          "timeout_secs": 300,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "ref": {
-                "type": "string"
-              },
-              "privacy_exit": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "ref",
-              "privacy_exit"
-            ],
-            "allow_extra": false
-          }
+          "remote": {
+            "$from": "/the_request/remote"
+          },
+          "base": {
+            "$from": "/the_request/base"
+          },
+          "candidate": {
+            "$from": "/the_candidate/answer/candidate"
+          },
+          "scan": "scripts/privacy-scan.sh",
+          "scan_base": {
+            "$from": "/the_candidate/answer/remote_trunk"
+          },
+          "policy_read": {
+            "$from": "/policy"
+          },
+          "before_the_push": true
         },
         "needs": [
-          "python3"
+          "git"
         ],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "privacy_exit": {
+              "type": "number"
+            },
+            "ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "privacy_exit",
+            "ref"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -488,6 +486,7 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
+        "weight": "heavy",
         "when": null,
         "with": {
           "command": "set -eu\n# Every sailor this command runs is the copy the flow verified, checked again right before it runs.\ntrusted_sailor() {\n    sailor_now=$(shasum -a 256 < \"$SAILOR_BIN\") || { echo \"cannot read the trusted sailor at $SAILOR_BIN\" >&2; exit 2; }\n    [ \"${sailor_now%% *}\" = \"$SAILOR_SHA\" ] || { echo \"the sailor at $SAILOR_BIN changed since the flow verified it: sha256 ${sailor_now%% *}, not $SAILOR_SHA\" >&2; exit 2; }\n    \"$SAILOR_BIN\" \"$@\"\n}\ncd \"$REPO\"\n# The sailor in service builds a detached checkout of exactly the candidate and installs it; it publishes nothing.\nexport SAILOR_SOURCES=\"$REPO\"\nset +e\ntrusted_sailor release sailor --no-push --candidate \"$CANDIDATE\" >&2\nreleased=$?\nset -e\ncase \"$released\" in\n    0) ;;\n    4) echo \"sailor release installed the candidate and warns that the name sailor on PATH finds another copy; this flow calls $SAILOR_BIN and never that name\" >&2 ;;\n    *) echo \"sailor release exited $released\" >&2; exit \"$released\" ;;\nesac\nprintf '{\"built_from\":\"%s\"}' \"$CANDIDATE\"\n",
@@ -695,74 +694,103 @@
         "required": true
       },
       {
+        "id": "in_service_now",
+        "deps": [
+          "the_request",
+          "journey_green"
+        ],
+        "action": "sailor_in_service",
+        "max_attempts": 1,
+        "when": null,
+        "with": {},
+        "needs": [],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "commit": {
+              "type": "string"
+            },
+            "sailor": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "commit",
+            "sailor",
+            "sha256"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
         "id": "ref_gate",
         "deps": [
           "the_request",
           "the_candidate",
           "policy",
-          "journey_green"
+          "journey_green",
+          "in_service_now"
         ],
-        "action": "shell_check",
+        "action": "candidate_gate",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"$TRUNK:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(trusted_policy) || exit 1\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\nhome=${SAILOR_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sailor}\nstamp=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit\" 2>/dev/null || true)\n[ \"$stamp\" = \"$REF\" ] || { echo \"the release stamp names ${stamp:-nothing}, not the candidate $REF: the binary in service was built from something else\" >&2; exit 1; }\n[ -r \"$home/bin/sailor\" ] || { echo \"no installed binary at the release's safe copy\" >&2; exit 1; }\ndigest=$(shasum -a 256 < \"$home/bin/sailor\" | awk '{ print $1 }')\nrecorded=$(awk 'NF && $1 !~ /^#/ { print $1; exit }' \"$home/state/sailor-binary-commit.sha256\" 2>/dev/null || true)\n[ -n \"$recorded\" ] && [ \"$recorded\" = \"$digest\" ] || { echo \"bin/sailor has sha256 $digest, and the release recorded ${recorded:-nothing} for the candidate: the binary in service is not the one it built\" >&2; exit 1; }\n[ \"$digest\" = \"$DIGEST\" ] || { echo \"the binary in service changed after the journey\" >&2; exit 1; }\ngit fetch --quiet \"$REMOTE_NAME\"\nremote_now=$(git rev-parse --verify --quiet \"refs/remotes/$REMOTE_NAME/$BASE^{commit}\" || true)\n[ \"$remote_now\" = \"$REMOTE_WAS\" ] || { echo \"the remote $BASE moved from ${REMOTE_WAS:-nothing} to ${remote_now:-nothing} during acceptance: run the release again\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
-          "env": {
-            "REMOTE_NAME": {
-              "$from": "/the_request/remote"
-            },
-            "REPO": {
-              "$from": "/the_request/repo"
-            },
-            "REF": {
-              "$from": "/the_candidate/answer/candidate"
-            },
-            "SCAN_BASE": {
-              "$from": "/the_candidate/answer/remote_trunk"
-            },
-            "POLICY_READ": {
-              "$json": "/policy"
-            },
-            "BASE": {
-              "$from": "/the_request/base"
-            },
-            "DIGEST": {
-              "$from": "/journey_green/answer/binary_sha256"
-            },
-            "REMOTE_WAS": {
-              "$from": "/the_candidate/answer/remote_trunk"
-            },
-            "TRUNK": {
-              "$from": "/the_request/trunk"
-            }
+          "repo": {
+            "$from": "/the_request/repo"
           },
-          "timeout_secs": 300,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "ref": {
-                "type": "string"
-              },
-              "privacy_exit": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "ref",
-              "privacy_exit"
-            ],
-            "allow_extra": false
+          "remote": {
+            "$from": "/the_request/remote"
+          },
+          "base": {
+            "$from": "/the_request/base"
+          },
+          "candidate": {
+            "$from": "/the_candidate/answer/candidate"
+          },
+          "scan": "scripts/privacy-scan.sh",
+          "scan_base": {
+            "$from": "/the_candidate/answer/remote_trunk"
+          },
+          "policy_read": {
+            "$from": "/policy"
+          },
+          "trunk_was": {
+            "$from": "/the_candidate/answer/remote_trunk"
+          },
+          "in_service": {
+            "$from": "/in_service_now"
+          },
+          "walked_on": {
+            "$from": "/journey_green/answer/binary_sha256"
           }
         },
         "needs": [
-          "python3",
-          "shasum"
+          "git"
         ],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "privacy_exit": {
+              "type": "number"
+            },
+            "ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "privacy_exit",
+            "ref"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -829,7 +857,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote origin \"$1\") || { code=$?; echo \"cannot read $1 on origin: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nremote=$(read_remote_ref \"refs/heads/$BASE\")\n[ \"$remote\" = \"$CANDIDATE\" ] || { echo \"the remote $BASE reads ${remote:-nothing}, not the candidate $CANDIDATE\" >&2; exit 1; }\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
+          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote \"$REMOTE_NAME\" \"$1\") || { code=$?; echo \"cannot read $1 on $REMOTE_NAME: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nremote=$(read_remote_ref \"refs/heads/$BASE\")\n[ \"$remote\" = \"$CANDIDATE\" ] || { echo \"the remote $BASE reads ${remote:-nothing}, not the candidate $CANDIDATE\" >&2; exit 1; }\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -839,6 +867,9 @@
             },
             "CANDIDATE": {
               "$from": "/the_candidate/answer/candidate"
+            },
+            "REMOTE_NAME": {
+              "$from": "/the_request/remote"
             }
           },
           "timeout_secs": 60,

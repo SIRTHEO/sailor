@@ -4,7 +4,7 @@ import { LISTS, listEntry } from "./lists";
 /**
  * **FIVE, AND THE COLUMN IS NOT THE ROW.** `primarynav.test.ts` holds the row
  * of places to three, because a row of words becomes a list at the fourth.
- * A column of icons is scanned, not read — ADR-023 — and it is held here
+ * A column of icons is scanned, not read — ADR-026 — and it is held here
  * instead: named, so a regression says which entry broke the count.
  */
 describe("the column of lists", () => {

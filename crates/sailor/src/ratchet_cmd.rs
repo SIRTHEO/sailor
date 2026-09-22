@@ -756,6 +756,7 @@ fn measured(asked: &Asked) -> Result<bool, String> {
     let root = root_to_measure()?;
     let shared = checkout_holding_the_gate(&root);
     let gate = if the_shared_place_takes_a_lock(&shared) { shared } else { root.clone() };
+    let _turn = crate::machine_cmd::the_machine_for("sailor ratchet")?;
     let _only_one = only_gate_in(&gate)?;
     this_checkouts_own_copies_go(&root, &gate, crate::machine_cmd::an_earlier_runs_build_goes);
     let clean = gate.join("target").join("ratchet-tree");
@@ -899,6 +900,28 @@ mod tests {
         assert!(names.contains(&"comments_do_not_crowd_out_the_code"), "{names:?}");
         assert!(names.contains(&"no_engine_is_named_in_the_code"), "{names:?}");
         assert!(names.contains(&"no_product_home_is_written_into_the_code"), "{names:?}");
+    }
+
+    /// The release reads each judge's receipt, but only the release did: a
+    /// judge without one crossed three integrations and stopped the binary at
+    /// the last door. Written in the judge's text, it is seen by every battery.
+    #[test]
+    fn every_judge_of_this_tree_writes_a_receipt() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(std::path::Path::parent)
+            .expect("the crate lives in <root>/crates/sailor")
+            .to_path_buf();
+        let silent: Vec<String> = judges_in(&root)
+            .into_iter()
+            .filter(|judge| {
+                let path = root.join("crates").join(&judge.package).join("tests").join(format!("{}.rs", judge.test));
+                let text = std::fs::read_to_string(path).unwrap_or_default();
+                !["measured(", "measured_against(", "measured_nothing("].iter().any(|call| text.contains(call))
+            })
+            .map(|judge| judge.test)
+            .collect();
+        assert!(silent.is_empty(), "judges that read the sources and print no receipt: {silent:?}");
     }
 
     /// A test that never opens the sources is not a judge, whatever its name.

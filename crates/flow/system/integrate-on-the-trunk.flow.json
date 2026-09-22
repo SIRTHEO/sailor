@@ -1,6 +1,6 @@
 {
   "id": "integrate-on-the-trunk",
-  "description": "Steps 7 and 8 of docs/the-delivery-loop.md: a reviewed branch validated on the real candidate, merged on the forge, and reconciled with its pull request. The mandate is one JSON object naming the repo and the branch, with base and forge_repo optional; an unsaid base is the trunk the repository declares. The latest review recorded by review-a-pinned-commit must be clean, and the flow refuses when the branch head, local or remote, differs from the reviewed commit. The combined tree is built on the current remote trunk in a locked worktree of its own, and scripts/run-gates.sh runs letter A plus every applicable letter of docs/gates.md there with --no-fail-fast; a red line stops the run, and lines that need a person are handed to one. The policy is read from the trusted trunk; `ask` on merge or push hands the step to a person. Just before the merge the trunk is re-read, and a trunk that moved stops the run rather than validating something else; the publication gate runs on the candidate. The private-names check is posted from here, because only this machine holds the list. Nothing is pushed to the trunk: the flow waits for every check the forge requires, asks the forge to merge the pull request, and is complete only when the remote trunk carries the reviewed commit, the tree that landed is the one the gates ran on, and the host reports the pull request MERGED. Every forge call runs as the account in sailor.forgeAs.",
+  "description": "Steps 7 and 8 of docs/the-delivery-loop.md: a reviewed branch validated on the real candidate, merged on the forge, and reconciled with its pull request. The mandate is one JSON object naming the repo and the branch, with base and forge_repo optional; an unsaid base is the trunk the repository declares. The latest review recorded by review-a-pinned-commit must be clean, and the flow refuses when the branch head, local or remote, differs from the reviewed commit. The combined tree is built on the current remote trunk in a locked worktree of its own, and scripts/run-gates.sh runs letter A plus every applicable letter of docs/gates.md there with --no-fail-fast; a red line stops the run, and lines that need a person are handed to one. A person's green is recorded against the reviewed commit, so a run started again after the trunk moved counts those lines as covered and asks only for lines not yet approved. The policy is read from the trusted trunk; `ask` on merge or push hands the step to a person. Just before the merge the trunk is re-read, and a trunk that moved stops the run rather than validating something else; the publication gate runs on the candidate. The private-names check is posted from here, because only this machine holds the list. Nothing is pushed to the trunk: the flow waits for every check the forge requires, asks the forge to merge the pull request, and is complete only when the remote trunk carries the reviewed commit, the tree that landed is the one the gates ran on, and the host reports the pull request MERGED. Every forge call runs as the account in sailor.forgeAs.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -179,7 +179,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote \"$REMOTE_NAME\" \"$1\") || { code=$?; echo \"cannot read $1 on $REMOTE_NAME: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\ncommit=$(printf '%s' \"$RECORDS\" | python3 -c '\nimport json, sys\nrecords = json.loads(sys.stdin.read())\nif not records:\n    sys.exit(\"no review of this branch is recorded: run review-a-pinned-commit first\")\nreview = records[0][\"value\"]\nif review.get(\"verdict\") != \"clean\":\n    sys.exit(\"the latest review of commit %s has findings: resolve them and review again\" % review.get(\"commit\"))\nprint(review[\"commit\"])\n')\ngit -C \"$REPO\" fetch --quiet \"$REMOTE_NAME\"\nlocal_head=$(git -C \"$REPO\" rev-parse --verify \"refs/heads/$BRANCH^{commit}\" 2>/dev/null || true)\nremote_head=$(read_remote_ref \"refs/heads/$BRANCH\")\n[ \"$local_head\" = \"$commit\" ] || { echo \"the branch head $local_head differs from the reviewed commit $commit: the review does not cover it\" >&2; exit 1; }\n[ \"$remote_head\" = \"$commit\" ] || { echo \"the remote branch head ${remote_head:-nothing} differs from the reviewed commit $commit\" >&2; exit 1; }\nprintf '{\"commit\":\"%s\"}' \"$commit\"\n",
+          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote \"$REMOTE_NAME\" \"$1\") || { code=$?; echo \"cannot read $1 on $REMOTE_NAME: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\ncommit=$(printf '%s' \"$RECORDS\" | python3 -c '\nimport json, sys\nrecords = json.loads(sys.stdin.read())\nif not records:\n    sys.exit(\"no review of this branch is recorded: run review-a-pinned-commit first\")\nreview = records[0][\"value\"]\nif review.get(\"verdict\") != \"clean\":\n    sys.exit(\"the latest review of commit %s has findings: resolve them and review again\" % review.get(\"commit\"))\nprint(review[\"commit\"])\n')\ngit -C \"$REPO\" fetch -q --no-tags \"$REMOTE_NAME\"\nlocal_head=$(git -C \"$REPO\" rev-parse --verify \"refs/heads/$BRANCH^{commit}\" 2>/dev/null || true)\nremote_head=$(read_remote_ref \"refs/heads/$BRANCH\")\n[ \"$local_head\" = \"$commit\" ] || { echo \"the branch head $local_head differs from the reviewed commit $commit: the review does not cover it\" >&2; exit 1; }\n[ \"$remote_head\" = \"$commit\" ] || { echo \"the remote branch head ${remote_head:-nothing} differs from the reviewed commit $commit\" >&2; exit 1; }\nprintf '{\"commit\":\"%s\"}' \"$commit\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -286,7 +286,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet \"$REMOTE_NAME\"\ntrunk=$(git -C \"$REPO\" rev-parse --verify \"refs/remotes/$REMOTE_NAME/$BASE^{commit}\")\nshort=$(printf '%s' \"$COMMIT\" | cut -c1-12)\ntree=\"$(dirname \"$REPO\")/$(basename \"$REPO\")-worktrees/integrate-$short\"\nif git -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$trunk\"; then\n    printf '{\"tree\":\"\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":true}' \"$trunk\" \"$trunk\"\n    exit 0\nfi\nif [ -e \"$tree\" ]; then\n    git -C \"$REPO\" worktree unlock \"$tree\" 2>/dev/null || true\n    git -C \"$REPO\" worktree remove --force \"$tree\" >&2\nfi\nmkdir -p \"$(dirname \"$tree\")\"\ngit -C \"$REPO\" worktree add --detach --lock --reason \"integration of $COMMIT\" \"$tree\" \"$trunk\" >&2\ngit -C \"$tree\" merge --no-ff --no-edit -m \"Merge branch '$BRANCH'\" \"$COMMIT\" >&2 || { git -C \"$tree\" merge --abort 2>/dev/null || true; echo \"$BRANCH does not merge cleanly onto $BASE at $trunk\" >&2; exit 1; }\ncandidate=$(git -C \"$tree\" rev-parse HEAD)\nprintf '{\"tree\":\"%s\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":false}' \"$tree\" \"$trunk\" \"$candidate\"\n",
+          "command": "set -eu\ngit -C \"$REPO\" fetch -q --no-tags \"$REMOTE_NAME\"\ntrunk=$(git -C \"$REPO\" rev-parse --verify \"refs/remotes/$REMOTE_NAME/$BASE^{commit}\")\nshort=$(printf '%s' \"$COMMIT\" | cut -c1-12)\ntree=\"$(dirname \"$REPO\")/$(basename \"$REPO\")-worktrees/integrate-$short\"\nif git -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$trunk\"; then\n    printf '{\"tree\":\"\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":true}' \"$trunk\" \"$trunk\"\n    exit 0\nfi\nif [ -e \"$tree\" ]; then\n    git -C \"$REPO\" worktree unlock \"$tree\" 2>/dev/null || true\n    git -C \"$REPO\" worktree remove --force \"$tree\" >&2\nfi\nmkdir -p \"$(dirname \"$tree\")\"\ngit -C \"$REPO\" worktree add --detach --lock --reason \"integration of $COMMIT\" \"$tree\" \"$trunk\" >&2\ngit -C \"$tree\" merge --no-ff --no-edit -m \"Merge branch '$BRANCH'\" \"$COMMIT\" >&2 || { git -C \"$tree\" merge --abort 2>/dev/null || true; echo \"$BRANCH does not merge cleanly onto $BASE at $trunk\" >&2; exit 1; }\ncandidate=$(git -C \"$tree\" rev-parse HEAD)\nprintf '{\"tree\":\"%s\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":false}' \"$tree\" \"$trunk\" \"$candidate\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -338,17 +338,50 @@
         }
       },
       {
+        "id": "approved_before",
+        "deps": [
+          "the_request",
+          "the_reviewed"
+        ],
+        "action": "store_select",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "collection": "manual-gates",
+          "where": {
+            "repo": {
+              "$from": "/the_request/repo"
+            },
+            "branch": {
+              "$from": "/the_request/branch"
+            },
+            "commit": {
+              "$from": "/the_reviewed/answer/commit"
+            }
+          },
+          "limit": 100
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "gates",
         "deps": [
           "the_request",
           "reviews",
+          "approved_before",
           "combined"
         ],
         "action": "shell_check",
         "max_attempts": 1,
+        "weight": "heavy",
         "when": null,
         "with": {
-          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"covered\":0,\"manual_pending\":false,\"green\":true}'\n    exit 0\nfi\n# The resolver and its manifest are the trunk's: a change may not choose the gates that judge it.\nscript=$(mktemp \"${TMPDIR:-/tmp}/sailor-gates.XXXXXX\")\nmanifest=$(mktemp \"${TMPDIR:-/tmp}/sailor-manifest.XXXXXX\")\ncovered=$(mktemp \"${TMPDIR:-/tmp}/sailor-covered.XXXXXX\")\ntrap 'rm -f \"$script\" \"$manifest\" \"$covered\"' EXIT\nprintf '%s' \"$CHECKED\" | python3 -c 'import json,sys; print(\"\\n\".join(str(item) for item in json.load(sys.stdin)))' > \"$covered\"\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:scripts/run-gates.sh\" > \"$script\" || { echo \"the trunk $TRUNK_COMMIT carries no scripts/run-gates.sh\" >&2; exit 2; }\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:docs/gates.md\" > \"$manifest\" || { echo \"the trunk $TRUNK_COMMIT carries no docs/gates.md\" >&2; exit 2; }\ncd \"$TREE\"\nsh \"$script\" --no-fail-fast --base \"$TRUNK_COMMIT\" --manifest \"$manifest\" --covered \"$covered\"\n",
+          "command": "set -eu\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"letters\":\"\",\"ran\":0,\"red\":0,\"manual\":0,\"covered\":0,\"manual_pending\":false,\"green\":true,\"pending\":[],\"pending_digest\":\"\"}'\n    exit 0\nfi\n# The resolver and its manifest are the trunk's: a change may not choose the gates that judge it.\nscript=$(mktemp \"${TMPDIR:-/tmp}/sailor-gates.XXXXXX\")\nmanifest=$(mktemp \"${TMPDIR:-/tmp}/sailor-manifest.XXXXXX\")\ncovered=$(mktemp \"${TMPDIR:-/tmp}/sailor-covered.XXXXXX\")\napproved=$(mktemp \"${TMPDIR:-/tmp}/sailor-approved.XXXXXX\")\npending=$(mktemp \"${TMPDIR:-/tmp}/sailor-pending.XXXXXX\")\ntrap 'rm -f \"$script\" \"$manifest\" \"$covered\" \"$approved\" \"$pending\"' EXIT\nprintf '%s' \"$CHECKED\" | python3 -c 'import json,sys; print(\"\\n\".join(str(item) for item in json.load(sys.stdin)))' > \"$covered\"\n# A person's green holds for the reviewed change it was given for, however far the trunk has moved since.\nprintf '%s' \"$APPROVED\" | python3 -c 'import json,sys; print(\"\\n\".join(str(line) for record in json.load(sys.stdin) for line in record[\"value\"][\"lines\"]))' > \"$approved\"\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:scripts/run-gates.sh\" > \"$script\" || { echo \"the trunk $TRUNK_COMMIT carries no scripts/run-gates.sh\" >&2; exit 2; }\ngit -C \"$REPO\" show \"$TRUNK_COMMIT:docs/gates.md\" > \"$manifest\" || { echo \"the trunk $TRUNK_COMMIT carries no docs/gates.md\" >&2; exit 2; }\ncd \"$TREE\"\ncode=0\nsummary=$(sh \"$script\" --no-fail-fast --base \"$TRUNK_COMMIT\" --manifest \"$manifest\" --covered \"$covered\" --approved \"$approved\" --pending \"$pending\") || code=$?\n[ \"$code\" -ne 2 ] || exit 2\nprintf '%s' \"$summary\" | python3 -c '\nimport hashlib, json, sys\nsummary = json.loads(sys.stdin.read())\nlines = [line for line in open(sys.argv[1]).read().splitlines() if line]\nsummary[\"pending\"] = lines\nsummary[\"pending_digest\"] = hashlib.sha256(\"\\n\".join(lines).encode()).hexdigest()[:16] if lines else \"\"\nprint(json.dumps(summary))\n' \"$pending\"\nexit \"$code\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -361,6 +394,9 @@
             },
             "CHECKED": {
               "$json": "/reviews/records/0/value/checked"
+            },
+            "APPROVED": {
+              "$json": "/approved_before/records"
             },
             "TRUNK_COMMIT": {
               "$from": "/combined/answer/trunk"
@@ -390,6 +426,15 @@
               },
               "green": {
                 "type": "boolean"
+              },
+              "pending": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pending_digest": {
+                "type": "string"
               }
             },
             "required": [
@@ -399,7 +444,9 @@
               "manual",
               "covered",
               "manual_pending",
-              "green"
+              "green",
+              "pending",
+              "pending_digest"
             ],
             "allow_extra": false
           }
@@ -502,11 +549,67 @@
         }
       },
       {
+        "id": "manual_recorded",
+        "deps": [
+          "the_request",
+          "the_reviewed",
+          "gates",
+          "manual_green"
+        ],
+        "action": "store_write",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_equals",
+          "pointer": "/gates/answer/manual_pending",
+          "value": true
+        },
+        "with": {
+          "collection": "manual-gates",
+          "key": {
+            "$join": [
+              {
+                "$from": "/the_request/branch"
+              },
+              "@",
+              {
+                "$from": "/the_reviewed/answer/commit"
+              },
+              "@",
+              {
+                "$from": "/gates/answer/pending_digest"
+              }
+            ]
+          },
+          "value": {
+            "repo": {
+              "$from": "/the_request/repo"
+            },
+            "branch": {
+              "$from": "/the_request/branch"
+            },
+            "commit": {
+              "$from": "/the_reviewed/answer/commit"
+            },
+            "lines": {
+              "$from": "/gates/answer/pending"
+            }
+          },
+          "written_by": "integrate-on-the-trunk"
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "policy",
         "deps": [
           "the_request",
           "gates",
-          "manual_green"
+          "manual_green",
+          "manual_recorded"
         ],
         "action": "delivery_policy",
         "max_attempts": 1,
@@ -655,72 +758,63 @@
           "policy",
           "integration_authorized"
         ],
-        "action": "shell_check",
+        "action": "candidate_gate",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# The policy is the file the trunk commits, read with git: a sailor on PATH never decides who authorizes.\ntrusted_policy() {\n    policy_commit=$(git -C \"$REPO\" rev-parse --verify --quiet \"$TRUNK^{commit}\") || { echo \"the trunk $TRUNK does not exist in this tree: no trusted policy to read\" >&2; exit 1; }\n    policy_text=$(git -C \"$REPO\" show \"$policy_commit:.sailor/delivery-policy.json\") || { echo \"$TRUNK at $policy_commit carries no .sailor/delivery-policy.json\" >&2; exit 1; }\n    printf '%s' \"$policy_text\" | POLICY_COMMIT=\"$policy_commit\" python3 -c '\nimport json, os, sys\ndef no_constant(name):\n    raise ValueError(\"%s is not JSON\" % name)\ntry:\n    policy = json.loads(sys.stdin.read(), parse_constant=no_constant)\nexcept ValueError as error:\n    sys.exit(\"the delivery policy is not JSON: %s\" % error)\nif not isinstance(policy, dict):\n    sys.exit(\"the delivery policy is not an object\")\nlines = []\nfor field in (\"merge\", \"push\", \"release\"):\n    if policy.get(field) not in (\"auto\", \"ask\"):\n        sys.exit(\"the delivery policy does not say auto or ask for %s\" % field)\n    lines.append(\"%s: %s\" % (field, policy[field]))\nlines.append(os.environ[\"POLICY_COMMIT\"])\nprint(\"\\n\".join(lines))\n'\n}\n# A lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote \"$REMOTE_NAME\" \"$1\") || { echo \"cannot read $1 on $REMOTE_NAME: nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\ncd \"$REPO\"\ntrusted_scan() {\n    git -C \"$REPO\" show \"$TRUNK:scripts/privacy-scan.sh\" 2>/dev/null | cmp -s - \"$REPO/scripts/privacy-scan.sh\" || { echo \"scripts/privacy-scan.sh in this tree differs from the one the trusted trunk commits: the gate refuses to judge with it\" >&2; exit 2; }\n}\ntrusted_scan\npolicy_now=$(trusted_policy) || exit 1\npolicy_was=$(printf '%s' \"$POLICY_READ\" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(\"merge: %s\\npush: %s\\nrelease: %s\\n%s\" % (p[\"merge\"], p[\"push\"], p[\"release\"], p[\"read_from\"]))')\n[ \"$policy_now\" = \"$policy_was\" ] || { echo \"the delivery policy changed since it was read: the authorization in flight no longer holds; run the flow again\" >&2; exit 1; }\ngit fetch --quiet \"$REMOTE_NAME\"\ntrunk_now=$(git rev-parse --verify \"refs/remotes/$REMOTE_NAME/$BASE^{commit}\") || { echo \"cannot read $REMOTE_NAME/$BASE after the fetch\" >&2; exit 2; }\n[ \"$trunk_now\" = \"$BASE_COMMIT\" ] || [ \"$ALREADY\" = true ] || { echo \"the trunk moved since the combined tree was built on $BASE_COMMIT: run the integration again\" >&2; exit 1; }\nbranch_now=$(git rev-parse --verify \"refs/heads/$BRANCH^{commit}\") || { echo \"cannot read the branch $BRANCH\" >&2; exit 2; }\n[ \"$branch_now\" = \"$COMMIT\" ] || { echo \"the branch head differs from the reviewed commit $COMMIT\" >&2; exit 1; }\nremote_head=$(read_remote_ref \"refs/heads/$BRANCH\")\n[ \"$ALREADY\" = true ] || [ \"$remote_head\" = \"$COMMIT\" ] || { echo \"the remote branch head ${remote_head:-nothing} differs from the reviewed commit $COMMIT: the pull request no longer shows what was reviewed\" >&2; exit 1; }\nset +e\nif [ -n \"$SCAN_BASE\" ]; then \"$REPO/scripts/privacy-scan.sh\" \"$REF\" \"$SCAN_BASE\" >&2; else \"$REPO/scripts/privacy-scan.sh\" \"$REF\" >&2; fi\ncode=$?\nset -e\n[ \"$code\" -eq 0 ] || { echo \"publication gate: privacy-scan exited $code on $REF; nothing leaves\" >&2; exit \"$code\"; }\nprintf '{\"ref\":\"%s\",\"privacy_exit\":0}' \"$REF\"\n",
-          "env": {
-            "REMOTE_NAME": {
-              "$from": "/the_request/remote"
-            },
-            "REPO": {
-              "$from": "/the_request/repo"
-            },
-            "REF": {
-              "$from": "/combined/answer/candidate"
-            },
-            "SCAN_BASE": {
-              "$from": "/combined/answer/trunk"
-            },
-            "POLICY_READ": {
-              "$json": "/policy"
-            },
-            "BASE": {
-              "$from": "/the_request/base"
-            },
-            "BRANCH": {
-              "$from": "/the_request/branch"
-            },
-            "BASE_COMMIT": {
-              "$from": "/combined/answer/trunk"
-            },
-            "COMMIT": {
-              "$from": "/the_reviewed/answer/commit"
-            },
-            "ALREADY": {
-              "$json": "/combined/answer/already"
-            },
-            "TRUNK": {
-              "$from": "/the_request/trunk"
-            }
+          "repo": {
+            "$from": "/the_request/repo"
           },
-          "timeout_secs": 300,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "ref": {
-                "type": "string"
-              },
-              "privacy_exit": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "ref",
-              "privacy_exit"
-            ],
-            "allow_extra": false
+          "remote": {
+            "$from": "/the_request/remote"
+          },
+          "base": {
+            "$from": "/the_request/base"
+          },
+          "candidate": {
+            "$from": "/combined/answer/candidate"
+          },
+          "scan": "scripts/privacy-scan.sh",
+          "scan_base": {
+            "$from": "/combined/answer/trunk"
+          },
+          "policy_read": {
+            "$from": "/policy"
+          },
+          "trunk_was": {
+            "$from": "/combined/answer/trunk"
+          },
+          "already": {
+            "$from": "/combined/answer/already"
+          },
+          "branch": {
+            "$from": "/the_request/branch"
+          },
+          "reviewed": {
+            "$from": "/the_reviewed/answer/commit"
           }
         },
         "needs": [
-          "python3"
+          "git"
         ],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "privacy_exit": {
+              "type": "number"
+            },
+            "ref": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "privacy_exit",
+            "ref"
+          ],
+          "allow_extra": false
         }
       },
       {
@@ -749,7 +843,7 @@
           "type": "any"
         },
         "with": {
-          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch --quiet \"$REMOTE_NAME\"\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
+          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch -q --no-tags \"$REMOTE_NAME\"\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true,\"at\":\"%s\"}' \"$COMMIT\" \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -770,11 +864,15 @@
               },
               "posted": {
                 "type": "boolean"
+              },
+              "at": {
+                "type": "string"
               }
             },
             "required": [
               "attested",
-              "posted"
+              "posted",
+              "at"
             ],
             "allow_extra": false
           }
@@ -847,7 +945,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\n# An inherited GH_REPO would point a call at another repository: it goes before the first gh call.\nunset GH_REPO\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\nenv -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    token=$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$who\") && [ -n \"$token\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    if [ -n \"${FORGE_REPO:-}\" ]; then\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN GH_REPO=\"$FORGE_REPO\" GH_TOKEN=\"$token\" gh \"$@\"\n    else\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_REPO GH_TOKEN=\"$token\" gh \"$@\"\n    fi\n}\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"merged\":\"\",\"asked\":false}'\n    exit 0\nfi\n# **THE TRUNK REFUSES A PUSH.** The merge commit is the forge's to make, and it\n# makes none until every check it requires is green, so this waits for them\n# rather than asking and reading a refusal.\ntries=0\nwhile :; do\n    pending=$(forge pr checks \"$NUMBER\" --json bucket --jq '[.[] | select(.bucket == \"pending\")] | length') || { echo \"cannot read the checks of pull request $NUMBER\" >&2; exit 2; }\n    [ \"$pending\" = 0 ] && break\n    tries=$((tries + 1))\n    [ \"$tries\" -lt 120 ] || { echo \"$pending check(s) of pull request $NUMBER are still pending after an hour: nothing is merged\" >&2; exit 1; }\n    sleep 30\ndone\n# A skipped check is not a passed one, but neither is it a refusal: only a\n# bucket the forge calls fail or cancel stops the merge.\nred=$(forge pr checks \"$NUMBER\" --json bucket,name --jq '[.[] | select(.bucket == \"fail\" or .bucket == \"cancel\") | .name] | join(\", \")')\n[ -z \"$red\" ] || { echo \"the forge reports these checks not green on pull request $NUMBER: $red\" >&2; exit 1; }\nforge pr merge \"$NUMBER\" --merge >&2\nprintf '{\"merged\":\"%s\",\"asked\":true}' \"$COMMIT\"\n",
+          "command": "set -eu\ncd \"$REPO\"\n# An inherited GH_REPO would point a call at another repository: it goes before the first gh call.\nunset GH_REPO\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\nenv -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$forge_as\" >/dev/null || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n[ -z \"${FORGE_REPO:-}\" ] || export GH_REPO=\"$FORGE_REPO\"\n# An empty --user or an empty GH_TOKEN makes gh answer as the machine's active account.\nforge() {\n    who=$(git -C \"$REPO\" config --get sailor.forgeAs) && [ -n \"$who\" ] || { echo \"sailor.forgeAs vanished from this tree: refusing\" >&2; exit 1; }\n    token=$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$who\") && [ -n \"$token\" ] || { echo \"no forge token for $who: refusing\" >&2; exit 1; }\n    if [ -n \"${FORGE_REPO:-}\" ]; then\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN GH_REPO=\"$FORGE_REPO\" GH_TOKEN=\"$token\" gh \"$@\"\n    else\n        env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_REPO GH_TOKEN=\"$token\" gh \"$@\"\n    fi\n}\nif [ \"$ALREADY\" = true ]; then\n    printf '{\"merged\":\"\",\"asked\":false}'\n    exit 0\nfi\n# **THE TRUNK REFUSES A PUSH.** The merge commit is the forge's to make, and it\n# makes none until every check it requires is green, so this waits for them\n# rather than asking and reading a refusal.\n# One hour for every wait together.\ntries=0\nsettle() {\n    while :; do\n        pending=$(forge pr checks \"$NUMBER\" --json bucket --jq '[.[] | select(.bucket == \"pending\")] | length') || { echo \"cannot read the checks of pull request $NUMBER\" >&2; exit 2; }\n        [ \"$pending\" = 0 ] && break\n        tries=$((tries + 1))\n        [ \"$tries\" -lt 120 ] || { echo \"$pending check(s) of pull request $NUMBER are still pending after an hour: nothing is merged\" >&2; exit 1; }\n        sleep \"$POLL_SECS\"\n    done\n}\nsettle\n# A check that gave up waiting for the attestation is asked once more.\nstale=$(forge pr checks \"$NUMBER\" --json bucket,completedAt,link --jq \"[.[] | select((.bucket == \\\"fail\\\" or .bucket == \\\"cancel\\\") and .completedAt < \\\"$ATTESTED_AT\\\" and (.link | test(\\\"/runs/[0-9]+/\\\"))) | .link | capture(\\\"/runs/(?<id>[0-9]+)/\\\").id] | unique | .[]\") || { echo \"cannot read the checks of pull request $NUMBER\" >&2; exit 2; }\nif [ -n \"$stale\" ]; then\n    for run in $stale; do\n        forge run rerun \"$run\" --failed >&2 || { echo \"cannot ask run $run again\" >&2; exit 2; }\n    done\n    sleep \"$POLL_SECS\"\n    settle\nfi\n# A skipped check is not a passed one, but neither is it a refusal: only a\n# bucket the forge calls fail or cancel stops the merge.\nred=$(forge pr checks \"$NUMBER\" --json bucket,name --jq '[.[] | select(.bucket == \"fail\" or .bucket == \"cancel\") | .name] | join(\", \")')\n[ -z \"$red\" ] || { echo \"the forge reports these checks not green on pull request $NUMBER: $red\" >&2; exit 1; }\nforge pr merge \"$NUMBER\" --merge --match-head-commit \"$COMMIT\" >&2\nprintf '{\"merged\":\"%s\",\"asked\":true}' \"$COMMIT\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -863,6 +961,10 @@
             },
             "ALREADY": {
               "$json": "/combined/answer/already"
+            },
+            "POLL_SECS": "30",
+            "ATTESTED_AT": {
+              "$from": "/attest/answer/at"
             }
           },
           "timeout_secs": 3900,
@@ -905,7 +1007,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ngit -C \"$REPO\" fetch --quiet \"$REMOTE_NAME\"\nremote=$(git -C \"$REPO\" rev-parse \"refs/remotes/$REMOTE_NAME/$BASE\")\ngit -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$remote\" || { echo \"the remote $BASE at $remote does not carry the reviewed $COMMIT\" >&2; exit 1; }\nif [ \"$ALREADY\" != true ]; then\n    # **THE CANDIDATE'S ID IS NEVER ON THE TRUNK**: the forge writes its own\n    # merge commit. What has to match is the tree, or what landed is not what\n    # the gates were run on.\n    landed=$(git -C \"$REPO\" rev-parse \"$remote^{tree}\")\n    validated=$(git -C \"$REPO\" rev-parse \"$CANDIDATE^{tree}\")\n    [ \"$landed\" = \"$validated\" ] || { echo \"the trunk at $remote carries tree $landed, not the $validated the gates were run on\" >&2; exit 1; }\nfi\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
+          "command": "set -eu\ngit -C \"$REPO\" fetch -q --no-tags \"$REMOTE_NAME\"\nremote=$(git -C \"$REPO\" rev-parse \"refs/remotes/$REMOTE_NAME/$BASE\")\ngit -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$remote\" || { echo \"the remote $BASE at $remote does not carry the reviewed $COMMIT\" >&2; exit 1; }\nif [ \"$ALREADY\" != true ]; then\n    # **THE CANDIDATE'S ID IS NEVER ON THE TRUNK**: the forge writes its own\n    # merge commit. What has to match is the tree, or what landed is not what\n    # the gates were run on.\n    landed=$(git -C \"$REPO\" rev-parse \"$remote^{tree}\")\n    validated=$(git -C \"$REPO\" rev-parse \"$CANDIDATE^{tree}\")\n    [ \"$landed\" = \"$validated\" ] || { echo \"the trunk at $remote carries tree $landed, not the $validated the gates were run on\" >&2; exit 1; }\nfi\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -1010,7 +1112,8 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "even_after_a_break": true,
+        "when": { "kind": "pointer_exists", "pointer": "/combined" },
         "with": {
           "command": "set -eu\n[ -n \"$TREE\" ] || exit 0\ngit -C \"$REPO\" worktree unlock \"$TREE\" 2>/dev/null || true\ngit -C \"$REPO\" worktree remove --force \"$TREE\"\n",
           "env": {
@@ -1042,6 +1145,14 @@
       {
         "step": "policy",
         "dependency": "manual_green"
+      },
+      {
+        "step": "manual_recorded",
+        "dependency": "manual_green"
+      },
+      {
+        "step": "policy",
+        "dependency": "manual_recorded"
       },
       {
         "step": "ref_gate",

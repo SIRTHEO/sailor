@@ -147,7 +147,7 @@ type WhoHoldsWhat = (Vec<PathBuf>, Vec<(u32, PathBuf)>);
 /// nobody in it, and neither is an `lsof` that lists nothing. The sweep asked
 /// this and the named close did not: fault 267.
 fn what_the_machine_says() -> Result<WhoHoldsWhat, String> {
-    let Some(occupied) = who_is_standing() else {
+    let Some(occupied) = machine::who_is_standing() else {
         return Err(catalogue::say(
             "cli.worktree.cannot_ask_who_is_standing",
             &[],
@@ -326,32 +326,6 @@ pub fn render_left_behind(left: &[IdentityLeftBehind], now: i64) -> String {
         .join("\n")
 }
 
-/// **HISTORY AND GIT CANNOT SEE A PERSON.** A clean tree whose work the trunk
-/// holds reads exactly like a finished one, and the sweep took down the tree a
-/// live session was working in (fault 167).
-pub fn occupied_trees(rows: impl Iterator<Item = (String, bool)>) -> Vec<PathBuf> {
-    rows.filter(|(at, open)| *open && !at.is_empty())
-        .map(|(at, _)| PathBuf::from(at))
-        .collect()
-}
-
-/// **A STORE THAT IS NOT THERE IS NOT ONE THAT WILL NOT OPEN**: a machine that
-/// never tracked a terminal has nobody standing anywhere, and refusing there
-/// would be a sweep that never sweeps.
-pub fn who_is_standing() -> Option<Vec<PathBuf>> {
-    let Ok(path) = sessions::Sessions::default_path() else {
-        return Some(Vec::new());
-    };
-    if !path.exists() {
-        return Some(Vec::new());
-    }
-    let rows = sessions::Sessions::open(path).ok()?.terminals().ok()?;
-    Some(occupied_trees(
-        rows.into_iter()
-            .map(|row| (row.worktree, row.closed_at.is_none())),
-    ))
-}
-
 /// Who holds a tree, read from the machine and handed in so the rule is tested
 /// without arranging the machine: terminals standing in a tree, every process
 /// with its directory, the owner the chain of possession names for a row Sailor
@@ -367,7 +341,7 @@ pub struct Holders<'a> {
 /// hold is named and stays: this is the gesture that must never lose work.
 /// `occupied` is handed in and never read in here: a condition read from the
 /// machine can only be tested by arranging the machine, and such a test never
-/// gets written. [`who_is_standing`] is what the command line hands it.
+/// gets written. [`machine::who_is_standing`] is what the command line hands it.
 pub fn sweep(
     repo: &Path,
     store: &dyn OpenTrees,

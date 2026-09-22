@@ -332,60 +332,50 @@
           "the_pin",
           "review"
         ],
-        "action": "shell_check",
+        "action": "review_verdict",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nsailor_now=$(shasum -a 256 < \"$SAILOR_BIN\") || { echo \"cannot read the sailor the review was to be closed with, $SAILOR_BIN\" >&2; exit 2; }\n[ \"${sailor_now%% *}\" = \"$SAILOR_SHA\" ] || { echo \"the sailor at $SAILOR_BIN changed while the review was open (sha256 ${sailor_now%% *}, not $SAILOR_SHA): the verdict it recorded is not taken\" >&2; exit 2; }\nprintf '%s' \"$VERDICT\" | HEAD_COMMIT=\"$HEAD_COMMIT\" python3 -c '\nimport json, os, sys\nverdict = json.loads(sys.stdin.read())\nif not isinstance(verdict, dict):\n    sys.exit(\"the verdict is not one JSON object\")\nif verdict.get(\"commit\") != os.environ[\"HEAD_COMMIT\"]:\n    sys.exit(\"the verdict names commit %r, not the pinned %s\" % (verdict.get(\"commit\"), os.environ[\"HEAD_COMMIT\"]))\nif verdict.get(\"verdict\") not in (\"clean\", \"findings\"):\n    sys.exit(\"the verdict is neither clean nor findings\")\nfindings = verdict.get(\"findings\", [])\nchecked = verdict.get(\"checked\", [])\nif not isinstance(findings, list) or not isinstance(checked, list):\n    sys.exit(\"findings and checked are lists\")\nif verdict[\"verdict\"] == \"findings\" and not findings:\n    sys.exit(\"a verdict of findings names none\")\nif not checked:\n    sys.exit(\"the verdict lists nothing it checked\")\nprint(json.dumps({\"commit\": verdict[\"commit\"], \"verdict\": verdict[\"verdict\"], \"findings\": len(findings), \"checked\": len(checked)}))\n'\n",
-          "env": {
-            "VERDICT": {
-              "$json": "/review"
-            },
-            "HEAD_COMMIT": {
-              "$from": "/the_pin/answer/head"
-            },
-            "SAILOR_BIN": {
-              "$from": "/the_sailor/sailor"
-            },
-            "SAILOR_SHA": {
-              "$from": "/the_sailor/sha256"
-            }
+          "verdict": {
+            "$from": "/review"
           },
-          "timeout_secs": 30,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "commit": {
-                "type": "string"
-              },
-              "verdict": {
-                "type": "string"
-              },
-              "findings": {
-                "type": "number"
-              },
-              "checked": {
-                "type": "number"
-              }
-            },
-            "required": [
-              "commit",
-              "verdict",
-              "findings",
-              "checked"
-            ],
-            "allow_extra": false
+          "commit": {
+            "$from": "/the_pin/answer/head"
+          },
+          "sailor": {
+            "$from": "/the_sailor/sailor"
+          },
+          "sha256": {
+            "$from": "/the_sailor/sha256"
           }
         },
-        "needs": [
-          "python3",
-          "shasum"
-        ],
+        "needs": [],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "commit": {
+              "type": "string"
+            },
+            "verdict": {
+              "type": "string"
+            },
+            "findings": {
+              "type": "number"
+            },
+            "checked": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "commit",
+            "verdict",
+            "findings",
+            "checked"
+          ],
+          "allow_extra": false
         },
         "required": true
       },
@@ -421,16 +411,16 @@
               "$from": "/the_request/branch"
             },
             "commit": {
-              "$from": "/verdict_bound/answer/commit"
+              "$from": "/verdict_bound/commit"
             },
             "base_commit": {
               "$from": "/the_pin/answer/base_commit"
             },
             "verdict": {
-              "$from": "/verdict_bound/answer/verdict"
+              "$from": "/verdict_bound/verdict"
             },
             "findings": {
-              "$from": "/verdict_bound/answer/findings"
+              "$from": "/verdict_bound/findings"
             },
             "checked": {
               "$from": "/review/checked"
@@ -463,7 +453,8 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "even_after_a_break": true,
+        "when": { "kind": "pointer_exists", "pointer": "/reviewer_tree" },
         "with": {
           "command": "set -eu\ngit -C \"$REPO\" worktree unlock \"$TREE\" 2>/dev/null || true\ngit -C \"$REPO\" worktree remove \"$TREE\"\n",
           "env": {
