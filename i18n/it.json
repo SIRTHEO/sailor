@@ -1296,7 +1296,6 @@
   "window.workspace.no_rules": "nessuna dichiarata",
   "window.workspace.no_checks": "nessuno dichiarato",
   "window.workspace.no_equipment": "nessuna dichiarata",
-  "window.field.nothing_open": "Niente aperto",
   "window.field.pick_one": "Scegline uno a sinistra, e si apre qui.",
   "window.field.standing_here": "la finestra sta qui",
   "window.not_yet.flows": "I flussi non sono ancora in questa finestra: stanno ancora al loro posto.",
