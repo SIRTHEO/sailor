@@ -65,8 +65,8 @@ struct GateSpec {
     in_service: Value,
     #[serde(default)]
     walked_on: String,
-    /// A draft is gated before its branch is pushed: the remote holds nothing
-    /// of it to compare yet, and the push reads the remote for itself.
+    /// A gate that stands before its own push: the remote holds nothing of
+    /// the candidate to compare yet, and the push reads the remote for itself.
     #[serde(default)]
     before_the_push: Value,
 }
