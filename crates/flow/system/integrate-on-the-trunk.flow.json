@@ -1147,6 +1147,14 @@
         "dependency": "manual_green"
       },
       {
+        "step": "manual_recorded",
+        "dependency": "manual_green"
+      },
+      {
+        "step": "policy",
+        "dependency": "manual_recorded"
+      },
+      {
         "step": "ref_gate",
         "dependency": "integration_authorized"
       },
