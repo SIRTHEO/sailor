@@ -7441,3 +7441,174 @@ tr[data-followable]:hover {
   margin: 0;
   padding-left: var(--space-4);
 }
+
+/* ===========================================================================
+   THE WINDOW — the column picks which list, the panel picks which thing, the
+   field holds what is open. Every screen is these three filled differently,
+   which is why none of them carries a navigation of its own.
+   =========================================================================== */
+
+.window-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-0);
+  color: var(--ink);
+}
+
+/* The two rigid columns come to 350px, and the field is what this window is
+   for: under a narrow window the panel steps out of the way rather than
+   leaving the field 25 pixels wide. */
+.window-shell__columns {
+  display: grid;
+  grid-template-columns: 58px 292px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.window-shell__footing {
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.window-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 12px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--line);
+}
+
+/* The icons carry no state: a mark meaning «something waits» belongs to the row
+   it happened on, and the column is also the only way to four other lists. */
+.window-rail__button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+
+.window-rail__button:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.window-rail__button[aria-current] {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.window-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface-0);
+}
+
+.window-panel__head {
+  padding: 20px 20px 12px;
+}
+
+.window-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.window-panel__name {
+  margin: 0;
+  font-size: var(--text-large);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.window-panel__list {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.window-scope {
+  display: flex;
+  border: 1px solid var(--line);
+}
+
+.window-scope__button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: var(--text-body);
+}
+
+.window-scope__button[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.window-scope__count {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.window-field {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-0);
+}
+
+.window-field__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-body);
+}
+
+.window-field__name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.window-field__note {
+  color: var(--muted);
+}
+
+.window-field__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.window-field__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* PROHIBITION 11 ON THIS WINDOW: the panel is a list, and a list one can
+   reopen is worth less than a field one can read. */
+@media (width <= 700px) {
+  .window-shell__columns {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .window-panel {
+    display: none;
+  }
+}

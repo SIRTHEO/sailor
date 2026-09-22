@@ -223,3 +223,15 @@ This document records the architectural decision records (ADRs) and permanent co
 **Consequences.** The number cannot grow, so the debt is frozen the day this lands and is paid file by file, each payment lowering the seed in the commit that makes it. A suite moved out shortens the file it leaves, so the two ratchets fall together without either one naming the other.
 
 **And why the ceiling was built twice.** `docs/gates.md` is what a worker, a reviewer and the integration all read, and it named six of the fifteen ratchets standing in the tree. Whoever reads the list therefore runs a shorter one than the trunk does and meets the rest in the report — and in this case built a ceiling that already existed, having read the list and found none in it. `every_declared_check_names_a_test_that_exists` kept the list from naming a test that is gone; `every_ratchet_is_named_in_the_gates` now keeps the tree from holding a ratchet the list never names. The list is complete in both directions, or one of the two goes red.
+
+## ADR-023: A column of icons is not a row of words
+
+**Status:** accepted
+
+**Context.** `desktop/src/primarynav.test.ts` holds the primary navigation at three places, and `places.ts` records why: a person scans and does not read a list to find their place, `World.tsx` draws one button per row of `PLACES`, and past the third the row becomes a list. The fourth place — the one that answers «why» — was cut from the list and left reachable from the run that generated it. The rule was measured on a row of words.
+
+The design accepted on the canvas puts five lists in a column of icons: workspaces, flows, terminals, data, keys. Two of the five are surfaces the product has never had. The store holds ten tables and three commands — `ledger_tables`, `ledger_query`, `ledger_held` — that no screen opens, and the columns that make a call answerable rather than opaque are written and read by nobody: the model asked against the model that answered, the retry chain, the cost against the cost declared, the bytes seen against the bytes discarded, and on a step what it said, why, and what it refused. A product built to stop the work being a black box kept its own evidence where only a query could reach it.
+
+**Decision.** The count of three governs the row it was measured on, and nothing else: `PLACES`, drawn by `World.tsx`. A column of icons is a different surface — it is scanned, and its entries are not read one after another to find a place — and it carries five, named one by one in `desktop/src/window/lists.test.ts` so a regression says which entry broke the count. Neither judge is a weaker copy of the other: one counts a row, one names a column.
+
+**Consequences.** Two surfaces, two judges, and the column is where the store stops being a thing a person has to know the path to. The row stays at three for as long as it exists; when the old shell goes, its judge goes with it rather than being widened to forgive a column it was never measuring.
