@@ -177,27 +177,34 @@ fn a_version_tag_that_disagrees_stops_the_release_and_says_why() {
 }
 
 /// A git call that talks to a remote: its verb, and the first word after the
-/// verb and its flags, the remote it reaches. A line parts into commands at
-/// shell punctuation, so a call inside `$(...)` is seen (fault 273), and quotes
-/// are dropped rather than parted at, so `--force-with-lease="a:b"` stays a flag.
+/// verb and its flags, the remote it reaches. The verb stands right after git
+/// and its options, so a message that says fetch is no call. A line parts into
+/// commands at shell punctuation, so a call inside `$(...)` is seen (fault
+/// 273), and quotes are dropped rather than parted at, so
+/// `--force-with-lease="a:b"` stays a flag.
 fn git_call_in(line: &str) -> Option<(String, String)> {
     if line.trim_start().starts_with('#') {
         return None;
     }
-    line.split(|c: char| "()`;|&".contains(c)).find_map(|command| {
-        let words: Vec<String> = command
-            .split_whitespace()
-            .map(|word| word.replace(['"', '\''], ""))
-            .collect();
-        let git = words.iter().position(|word| word == "git")?;
-        let verb = git
-            + 1
-            + words[git + 1..]
-                .iter()
-                .position(|word| matches!(word.as_str(), "fetch" | "ls-remote" | "push"))?;
-        let remote = words[verb + 1..].iter().find(|word| !word.starts_with('-'))?;
-        Some((words[verb].clone(), remote.clone()))
-    })
+    line.split(|c: char| "()`;|&".contains(c))
+        .find_map(|command| {
+            let words: Vec<String> = command
+                .split_whitespace()
+                .map(|word| word.replace(['"', '\''], ""))
+                .collect();
+            let mut rest = words.iter().skip_while(|word| *word != "git").skip(1);
+            let verb = loop {
+                let word = rest.next()?;
+                if word == "-C" || word == "-c" {
+                    rest.next();
+                } else if !word.starts_with(['-', '$']) {
+                    break word;
+                }
+            };
+            matches!(verb.as_str(), "fetch" | "ls-remote" | "push").then_some(())?;
+            let remote = rest.find(|word| !word.starts_with('-'))?;
+            Some((verb.clone(), remote.clone()))
+        })
 }
 
 fn remote_named_in(line: &str) -> Option<String> {
@@ -221,7 +228,8 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
             let command = step["with"]["command"].as_str().unwrap_or_default();
             read += usize::from(!command.is_empty());
             let literal = command.lines().any(|line| {
-                remote_named_in(line).as_deref() == Some("origin") || line.contains("refs/remotes/origin/")
+                remote_named_in(line).as_deref() == Some("origin")
+                    || line.contains("refs/remotes/origin/")
             });
             if literal {
                 named.push(format!("{}: {}", path.display(), step["id"]));
@@ -235,8 +243,14 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
     );
     for (line, remote) in [
         ("git fetch --quiet origin", Some("origin")),
-        (r#"listed=$(git -C "$REPO" ls-remote origin "$1") || exit 2"#, Some("origin")),
-        (r#"echo "fetch failed"; git -C "$REPO" fetch -q origin"#, Some("origin")),
+        (
+            r#"listed=$(git -C "$REPO" ls-remote origin "$1") || exit 2"#,
+            Some("origin"),
+        ),
+        (
+            r#"echo "fetch failed"; git -C "$REPO" fetch -q origin"#,
+            Some("origin"),
+        ),
         ("git push --push-option=ci.skip origin main", Some("origin")),
         (
             r#"git "$@" push --force-with-lease="refs/heads/$BRANCH:$remote" origin"#,
@@ -246,8 +260,12 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
             r#"git "$@" push --force-with-lease="refs/heads/$BRANCH:$remote" "$REMOTE_NAME""#,
             Some("$REMOTE_NAME"),
         ),
-        (r#"git fetch -q x || { echo "cannot push origin by hand"; }"#, Some("x")),
+        (
+            r#"git fetch -q x || { echo "cannot push origin by hand"; }"#,
+            Some("x"),
+        ),
         ("# git fetch origin, as a comment", None),
+        (r#"git commit -m "fetch origin first""#, None),
     ] {
         assert_eq!(remote_named_in(line).as_deref(), remote, "{line}");
     }
