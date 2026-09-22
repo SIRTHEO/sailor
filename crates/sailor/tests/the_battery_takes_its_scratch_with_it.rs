@@ -1,0 +1,124 @@
+//! **THE BATTERY WROTE NO END FOR WHAT IT MADE.** The tests name the temporary
+//! directory in 278 places, and inherited it is the root every session shares:
+//! 16.032 directories weighing 807 MB had piled up, one set per run and per
+//! pid. The gates hand the battery a root of their own and take it away. This
+//! reads the three lines out of the script and *runs* them: a test that looked
+//! for the words would pass on a trap that fires on no signal.
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn gates_script() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the crate sits two levels under the root")
+        .join("scripts/run-gates.sh")
+}
+
+/// The lines the script gives the battery its root with, taken from the script
+/// and not copied here: a copy would keep passing after the script changed.
+fn how_the_root_is_given(text: &str) -> String {
+    let opened = text
+        .find("gates_under=")
+        .expect("the gates make a temporary root of their own");
+    let closed = text[opened..]
+        .find("export TMPDIR")
+        .expect("the gates export the root they made")
+        + opened
+        + "export TMPDIR".len();
+    text[opened..closed].to_owned()
+}
+
+/// Run those lines, then a body, under a parent temporary directory of this
+/// test's own — so what the script does is measured, never described.
+fn under_the_gates_root(label: &str, body: &str) -> (String, PathBuf) {
+    under_a_root(label, body, false)
+}
+
+fn under_a_root(label: &str, body: &str, trailing_slash: bool) -> (String, PathBuf) {
+    let text = std::fs::read_to_string(gates_script()).expect("the gates script is readable");
+    // The name carries the run *and* the test: these two run side by side, and
+    // a shared name would have each sweeping the other's parent away.
+    let parent =
+        std::env::temp_dir().join(format!("gates-root-{label}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&parent);
+    std::fs::create_dir_all(&parent).expect("a parent for the root");
+    let handed = if trailing_slash {
+        format!("{}/", parent.display())
+    } else {
+        parent.display().to_string()
+    };
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{}\n{body}", how_the_root_is_given(&text)))
+        .env("TMPDIR", &handed)
+        .output()
+        .expect("the lines run");
+    assert!(
+        output.status.success(),
+        "the gates' own lines failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    (
+        String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+        parent,
+    )
+}
+
+#[test]
+fn the_battery_is_handed_a_root_of_the_run_and_not_the_shared_one() {
+    let (said, parent) = under_the_gates_root("handed", "printf '%s' \"$TMPDIR\"");
+    assert!(
+        said.starts_with(&parent.display().to_string()) && said != parent.display().to_string(),
+        "the battery must be handed a root of this run's own, under {}, and it was handed {said}",
+        parent.display()
+    );
+    let _ = std::fs::remove_dir_all(&parent);
+    workspace::measured(1, "gates script read for the root it hands the battery");
+}
+
+/// The one that matters: what a test writes into that root is gone afterwards.
+/// Without the trap this passes the line above and still leaves the mess.
+#[test]
+fn what_the_battery_leaves_in_it_goes_when_the_run_goes() {
+    let (said, parent) = under_the_gates_root(
+        "swept",
+        "mkdir -p \"$TMPDIR/prova-something-1\"; printf '%s' \"$TMPDIR\"",
+    );
+    assert!(
+        !Path::new(&said).exists(),
+        "the root {said} outlived the run that made it: the battery's scratch is piling up again"
+    );
+    assert_eq!(
+        std::fs::read_dir(&parent)
+            .expect("the parent is readable")
+            .count(),
+        0,
+        "nothing of the run may be left beside the root either, in {}",
+        parent.display()
+    );
+    let _ = std::fs::remove_dir_all(&parent);
+    workspace::measured_against(
+        1,
+        "root the gates hand the battery",
+        0,
+        "directories left behind when the run ended",
+    );
+}
+
+/// **FOUND BY RUNNING THE WHOLE BATTERY, NOT BY THE TWO ABOVE.** macOS hands
+/// out a TMPDIR that ends in a slash, and concatenating onto it made
+/// `…/T//sailor-gates-…`. Every test comparing a path it built against one
+/// the system canonicalised then went red, far from here and for no reason of
+/// its own. The two tests above passed throughout: their parent had no
+/// trailing slash, because the shell they ran under handed out none.
+#[test]
+fn a_root_handed_with_a_trailing_slash_makes_no_doubled_separator() {
+    let (said, parent) = under_a_root("slashed", "printf '%s' \"$TMPDIR\"", true);
+    assert!(
+        !said.contains("//"),
+        "the root the battery is handed carries a doubled separator: {said}"
+    );
+    let _ = std::fs::remove_dir_all(&parent);
+    workspace::measured(1, "root read for a doubled separator");
+}
