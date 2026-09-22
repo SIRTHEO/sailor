@@ -13,7 +13,9 @@ fn main() {
     let root = args
         .next()
         .unwrap_or_else(|| panic!("usage: seed_take_the_next_work FIXTURES_ROOT [CHEAP_WORKER_TOOL] [--role-only]"));
-    let root = std::path::PathBuf::from(root);
+    // A queue row names its workspace, and a run reads it from inside that
+    // workspace: a relative root would name a folder that is not there.
+    let root = std::path::absolute(root).expect("resolving the fixtures root");
     let cheap_worker_tool = args.next().unwrap_or_else(|| "claude-code".to_owned());
     let role_only = args.next().as_deref() == Some("--role-only");
     let ledger = Ledger::open(root.join("store")).expect("opening the ledger");
