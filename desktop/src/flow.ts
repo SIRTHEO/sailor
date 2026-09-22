@@ -236,6 +236,9 @@ const ACTION_KIND: Record<string, StepKind> = {
   // The head of a delivered branch pushed up under its archive tag before the
   // branch is deleted: a gesture on the world, like the patch that is applied.
   archive_the_head: "gesture",
+  // The branches whose work is over, read off the remote: it fetches and reads
+  // refs and decides nothing, so it is drawn as the check that it is.
+  finished_branches: "check",
   candidate_gate: "check",
   review_verdict: "check",
   local_choice: "check",

@@ -827,6 +827,7 @@
   "run.failure.the_candidate_is_held": "the candidate was held before it left: the policy, the trunk, the reviewed branch or the binary in service is not what it was when the flow read it",
   "run.failure.the_verdict_is_not_bound": "the reviewer's verdict does not bind the pinned commit: it names another commit, says neither clean nor findings, or lists nothing it checked",
   "run.failure.the_tree_stays": "the tree carrying that branch was left standing: Sailor did not cut it, somebody is in it, it is locked, it is the tree the flow runs from, git would not remove it, or nobody could say who is where",
+  "run.failure.the_finished_branches_are_not_read": "the branches whose work is over were not read: the remote would not answer, or a branch stands at something that is not an object id — an empty list would close nothing, so a lost reading is refused instead of passed on as \u00abnothing to do\u00bb",
   "run.failure.the_head_is_not_archived": "the head of that branch was not kept under its archive tag: no head was proved, the remote cannot be read or cannot be bound to the account that pushes, or the tag is already there naming another commit and an archive tag is never moved",
   "run.failure.tool_unavailable": "that tool is not on this machine",
   "run.failure.patch_refused": "the patch was not applied: it names a file nobody assented to, or one behind the wall no assent opens",
