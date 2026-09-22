@@ -7682,8 +7682,9 @@ tr[data-followable]:hover {
 }
 
 /* The mark is a bar and a weight, never a tint: the tint on this window means
-   a machine is doing something. */
-.window-row[aria-current] {
+   a machine is doing something. It lands on the press, not on the release. */
+.window-row[aria-current],
+.window-row:active {
   background: var(--surface-2);
   box-shadow: inset 3px 0 0 var(--ink);
 }
