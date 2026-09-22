@@ -405,6 +405,7 @@ fn unknown_command_message(name: &str) -> String {
 /// **IT IS HERE AND NOT IN `main` SO A TEST CAN CALL IT.** `main` would close
 /// the suite with itself; this function returns the number and stops.
 pub fn dispatch(args: &[String]) -> i32 {
+    flow::heavy_steps_wait_on(Box::new(machine_cmd::TheMachine));
     match route(args) {
         Route::Help => {
             print_usage();

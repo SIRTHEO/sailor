@@ -1,5 +1,5 @@
 //! A flow started by a sensor: the beat reads, compares with what it kept, and
-//! starts the flow only when the reading changed (ADR-024).
+//! starts the flow only when the reading changed (ADR-025).
 
 use flow::{Action, ActionError, ActionOutcome, ActionRegistry, FlowFile, SharedState};
 use ledger::Ledger;

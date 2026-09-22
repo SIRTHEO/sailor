@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub mod child;
+pub mod turn;
 
 pub use child::{Spec, StartToken, Supervisor};
 

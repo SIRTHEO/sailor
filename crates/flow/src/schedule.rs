@@ -22,17 +22,21 @@ pub enum Recurrence {
     DailyAt { hour: u32, minute: u32 },
 }
 
-/// What a run costs, as declared by whoever writes the flow. It decides nothing
-/// today, and saying so beats letting a reader assume otherwise: a figure the
-/// engine reports, not a brake it applies. It exists because the distinction
-/// was there in the nightly jobs — light ones under the minute, heavy ones up
-/// to twelve — and losing it means losing the ability to say, later, why a
-/// night went wrong.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// What a run or a step costs the machine, as whoever writes the flow declares
+/// it. On a step it decides: a heavy step waits for the machine's turn. On a
+/// schedule it is a figure the beat reports, not a brake it applies.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Weight {
+    #[default]
     Light,
     Heavy,
+}
+
+impl Weight {
+    pub fn is_light(&self) -> bool {
+        *self == Weight::Light
+    }
 }
 
 /// When it runs, how much it weighs, where it may write.

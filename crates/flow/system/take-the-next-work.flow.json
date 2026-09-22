@@ -220,7 +220,7 @@
         "with": {
           "command": "./check.sh",
           "workdir": { "$from": "/worker_tree/records/0/value/path" },
-          "accept": ["failed"],
+          "accept": ["failed", "timed_out"],
           "timeout_secs": 90
         },
         "input_schema": { "type": "any" },

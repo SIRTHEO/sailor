@@ -765,6 +765,7 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
         required: false,
         even_after_a_break: false,
         needs: Vec::new(),
+        weight: flow::Weight::Light,
     };
     let mut first = step("first", &[], None);
     first.with = None;

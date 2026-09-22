@@ -292,6 +292,7 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
         required: false,
         even_after_a_break: false,
         needs: Vec::new(),
+        weight: flow::Weight::Light,
     }])
     .expect("valid graph");
     let mut flows = ui::registry::FlowRegistry::new();

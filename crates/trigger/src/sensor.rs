@@ -1,4 +1,4 @@
-//! A flow that starts because something it watches has changed (ADR-024).
+//! A flow that starts because something it watches has changed (ADR-025).
 //!
 //! The beat is the clock, not the cause: it reads every sensor on each tick,
 //! and a flow starts only when the reading differs from the one kept for it.
