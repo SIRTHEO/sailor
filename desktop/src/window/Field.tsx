@@ -28,3 +28,16 @@ export function Field({
     </section>
   );
 }
+
+/**
+ * **NOTHING OPEN IS NOT A THING CALLED «NOTHING OPEN».** A head over an empty
+ * field names something that is not there, and then the body repeats it: the
+ * field says once what fills it, and carries no head until it holds one.
+ */
+export function FieldEmpty({ say }: { say: string }) {
+  return (
+    <section className="window-field" aria-label={say}>
+      <p className="window-field__empty">{say}</p>
+    </section>
+  );
+}

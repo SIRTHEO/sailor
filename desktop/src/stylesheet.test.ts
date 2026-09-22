@@ -38,8 +38,10 @@ describe("prohibition 1 — three type families, and only those", () => {
 describe("prohibition 2 — two radii and a pill", () => {
   test("no radius written by hand", () => {
     // `border-radius: 2px` on a lane's mark, `50%` on a trigger's. The rule
-    // admits three values, and they are three roles.
-    const allowed = /^var\(--radius(-lg|-pill)?\)$/;
+    // admits three values, and they are three roles — and `0`, which is not a
+    // fourth radius but the way a flat row takes back the one the paint under
+    // every button lays down.
+    const allowed = /^(var\(--radius(-lg|-pill)?\)|0)$/;
     const wrong = declarationsOf("border-radius").filter(({ value }) => !allowed.test(value));
     expect(wrong).toEqual([]);
   });
@@ -98,21 +100,46 @@ describe("prohibition 8 — the sizes stay in the scale", () => {
     expect(under, `a rule painting text under ${FLOOR}px`).toEqual([]);
   });
 
+  /** Drops every `:where(…)`, brackets and all: what is left is what the
+   *  selector weighs. */
+  function unweighed(selector: string): string {
+    let out = selector;
+    for (let at = out.indexOf(":where("); at >= 0; at = out.indexOf(":where(")) {
+      let depth = 0;
+      let end = at + ":where".length;
+      for (; end < out.length; end += 1) {
+        if (out[end] === "(") depth += 1;
+        if (out[end] === ")" && (depth -= 1) === 0) break;
+      }
+      out = out.slice(0, at) + out.slice(end + 1);
+    }
+    return out;
+  }
+
   /** THIS SHEET IS UNLAYERED AND TAILWIND'S UTILITIES ARE NOT, so unlayered
    *  wins whatever the specificity: a rule on bare `button` repaints a shadcn
-   *  button and the component becomes a dependency paid for and inert. */
+   *  button and the component becomes a dependency paid for and inert.
+   *
+   *  AND IT MUST STILL LOSE TO A CLASS. The guard costs weight, so it goes
+   *  inside `:where()`, which weighs nothing: written `:not([data-slot])` it
+   *  outweighed every class in this sheet and won on thirty of the window's
+   *  thirty-two buttons — `aclasswins.test.tsx` measures that on the DOM. */
   test("THE BARE `button` RULE STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF", () => {
     const onEveryButton = sheet.rules
       .map((rule) => rule.selector.trim())
       .filter((selector) =>
         selector
           .split(",")
-          .some((part) => /^button(:[a-z-]+(\([^)]*\))?)*$/.test(part.trim())),
+          .some((part) => /^button(:[a-z-]+(\(.*\))?)*$/.test(unweighed(part.trim()) || part.trim())),
       );
     expect(onEveryButton.length, "nothing paints bare buttons: this guards nothing")
       .toBeGreaterThan(0);
     const unguarded = onEveryButton.filter((selector) => !selector.includes("[data-slot]"));
     expect(unguarded, "a rule that repaints a component styling itself").toEqual([]);
+    const heavier = onEveryButton.filter((selector) =>
+      unweighed(selector).includes("[") || unweighed(selector).includes("."),
+    );
+    expect(heavier, "a rule on every button that outweighs a class on one").toEqual([]);
   });
 
   /** The three weights, and nothing between or beyond them. */

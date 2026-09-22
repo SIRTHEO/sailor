@@ -1296,7 +1296,6 @@
   "window.workspace.no_rules": "none declared",
   "window.workspace.no_checks": "none declared",
   "window.workspace.no_equipment": "none declared",
-  "window.field.nothing_open": "Nothing open",
   "window.field.pick_one": "Pick one on the left, and it opens here.",
   "window.field.standing_here": "the window is standing here",
   "window.not_yet.flows": "The flows are not in this window yet: they are still in their own place.",

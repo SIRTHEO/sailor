@@ -3,7 +3,7 @@ import { useAsk } from "../ask";
 import { projects } from "../workspaces";
 import type { Project } from "../workspaces";
 import { t } from "../i18n";
-import { Field } from "./Field";
+import { Field, FieldEmpty } from "./Field";
 import { LISTS, listEntry } from "./lists";
 import type { ListName } from "./lists";
 import { Panel } from "./Panel";
@@ -62,9 +62,7 @@ export function TheWindow({ native }: { native: boolean }) {
       }
       field={
         open === null ? (
-          <Field name={t("window.field.nothing_open")} note={t("window.field.pick_one")}>
-            <p className="window-panel__empty">{t("window.field.pick_one")}</p>
-          </Field>
+          <FieldEmpty say={t("window.field.pick_one")} />
         ) : (
           <Field name={open.name} note={open.current ? t("window.field.standing_here") : undefined}>
             <WorkspacePage native={native} project={open} />
