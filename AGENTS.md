@@ -185,6 +185,13 @@ Traps already paid for:
 - **`cargo test --tests` does not update the binary** the hooks run.
 - **Compilation can be denied** when swap is high: use `-j 1`, and if it denies
   again **do not declare proved what you have not compiled**.
+- **Heavy work takes the machine's turn, one at a time.** A whole battery, a
+  workspace clippy, a release build: run it as
+  `sailor machine turn -- cargo test --workspace --no-fail-fast`, and it waits,
+  saying for whom, until whatever heavy work asked first is done. A flow step
+  declared `"weight": "heavy"`, `sailor release` and `sailor ratchet` take the
+  turn themselves. On 22/09/2026 three suites started together, each sized its
+  compilers on the memory it saw free, and swap filled: nothing else stops that.
 
 ## How it is written
 

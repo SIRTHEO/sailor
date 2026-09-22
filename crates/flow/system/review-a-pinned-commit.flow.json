@@ -463,7 +463,8 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "when": null,
+        "even_after_a_break": true,
+        "when": { "kind": "pointer_exists", "pointer": "/reviewer_tree" },
         "with": {
           "command": "set -eu\ngit -C \"$REPO\" worktree unlock \"$TREE\" 2>/dev/null || true\ngit -C \"$REPO\" worktree remove \"$TREE\"\n",
           "env": {

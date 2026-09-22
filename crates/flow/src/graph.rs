@@ -1,5 +1,5 @@
 use crate::for_each::FOR_EACH_ACTION;
-use crate::ValueSchema;
+use crate::{ValueSchema, Weight};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
@@ -68,6 +68,10 @@ pub struct Step {
     /// ran, or forgave its own failure leaves the run short of complete.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub required: bool,
+    /// A heavy step waits for the machine's turn before its action starts, and
+    /// holds it until the action ends: one heavy step at a time on the machine.
+    #[serde(default, skip_serializing_if = "Weight::is_light")]
+    pub weight: Weight,
     /// Starts once every dependency has settled, a broken one included, so a
     /// flow gives back what it took when the work in between failed. It is
     /// handed its dependencies by id, those that closed, and under
@@ -694,6 +698,7 @@ mod tests {
         required: false,
         even_after_a_break: false,
             needs: Vec::new(),
+            weight: crate::Weight::Light,
         }
     }
 

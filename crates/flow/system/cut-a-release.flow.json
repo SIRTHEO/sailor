@@ -488,6 +488,7 @@
         ],
         "action": "shell_check",
         "max_attempts": 1,
+        "weight": "heavy",
         "when": null,
         "with": {
           "command": "set -eu\n# Every sailor this command runs is the copy the flow verified, checked again right before it runs.\ntrusted_sailor() {\n    sailor_now=$(shasum -a 256 < \"$SAILOR_BIN\") || { echo \"cannot read the trusted sailor at $SAILOR_BIN\" >&2; exit 2; }\n    [ \"${sailor_now%% *}\" = \"$SAILOR_SHA\" ] || { echo \"the sailor at $SAILOR_BIN changed since the flow verified it: sha256 ${sailor_now%% *}, not $SAILOR_SHA\" >&2; exit 2; }\n    \"$SAILOR_BIN\" \"$@\"\n}\ncd \"$REPO\"\n# The sailor in service builds a detached checkout of exactly the candidate and installs it; it publishes nothing.\nexport SAILOR_SOURCES=\"$REPO\"\nset +e\ntrusted_sailor release sailor --no-push --candidate \"$CANDIDATE\" >&2\nreleased=$?\nset -e\ncase \"$released\" in\n    0) ;;\n    4) echo \"sailor release installed the candidate and warns that the name sailor on PATH finds another copy; this flow calls $SAILOR_BIN and never that name\" >&2 ;;\n    *) echo \"sailor release exited $released\" >&2; exit \"$released\" ;;\nesac\nprintf '{\"built_from\":\"%s\"}' \"$CANDIDATE\"\n",
