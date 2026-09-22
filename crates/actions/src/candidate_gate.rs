@@ -1,8 +1,8 @@
 //! The last gate a candidate passes before it leaves this machine.
 //!
-//! **A FLOW STEP IS NOT A SHELL PROGRAM.** Integration and a release ask the
-//! same questions before anything leaves, so they ask them here, once, and the
-//! answer is a verdict a case can reach without a forge behind it.
+//! **A FLOW STEP IS NOT A SHELL PROGRAM.** A draft, integration and a release
+//! ask the same questions before anything leaves, so they ask them here, once,
+//! and the answer is a verdict a case can reach without a forge behind it.
 
 use crate::process::{run_with_timeout, RunOutcome};
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
@@ -28,6 +28,7 @@ const GATE_FIELDS: &[&str] = &[
     "reviewed",
     "in_service",
     "walked_on",
+    "before_the_push",
 ];
 
 /// A remote that does not answer in this long is one nothing is decided on.
@@ -64,6 +65,10 @@ struct GateSpec {
     in_service: Value,
     #[serde(default)]
     walked_on: String,
+    /// A draft is gated before its branch is pushed: the remote holds nothing
+    /// of it to compare yet, and the push reads the remote for itself.
+    #[serde(default)]
+    before_the_push: Value,
 }
 
 /// The four words of a policy an authorization rests on.
@@ -119,6 +124,9 @@ pub struct Readings {
     pub trunk_was: String,
     pub trunk_now: Option<String>,
     pub already: bool,
+    /// Whether the trunk and the branch were read on the remote: until then,
+    /// only what this machine answers alone is judged.
+    pub remote_read: bool,
     pub heads: Option<Heads>,
     pub service: Option<Service>,
 }
@@ -163,14 +171,19 @@ pub fn what_the_gate_says(readings: &Readings) -> Verdict {
             return Verdict::ServiceChanged(service.sha256.clone());
         }
     }
+    if let Some(heads) = &readings.heads {
+        if heads.local.as_deref() != Some(heads.reviewed.as_str()) {
+            return Verdict::BranchMoved(heads.local.clone());
+        }
+    }
+    if !readings.remote_read {
+        return Verdict::LetTheScanJudge;
+    }
     let moved = readings.trunk_now != as_commit(&readings.trunk_was);
     if moved && (!readings.already || readings.trunk_now.is_none()) {
         return Verdict::TrunkMoved(readings.trunk_now.clone());
     }
     if let Some(heads) = &readings.heads {
-        if heads.local.as_deref() != Some(heads.reviewed.as_str()) {
-            return Verdict::BranchMoved(heads.local.clone());
-        }
         if !readings.already && heads.remote.as_deref() != Some(heads.reviewed.as_str()) {
             return Verdict::RemoteBranchMoved(heads.remote.clone());
         }
@@ -307,7 +320,7 @@ fn refusal(verdict: Verdict, spec: &GateSpec) -> ActionError {
             shown(now)
         ),
         Verdict::BranchMoved(now) => format!(
-            "the branch {} stands at {}, not at the reviewed commit {}",
+            "the branch {} stands at {}, not at the commit {} this delivery pinned",
             spec.branch,
             shown(now),
             spec.reviewed
@@ -331,8 +344,8 @@ fn refusal(verdict: Verdict, spec: &GateSpec) -> ActionError {
     })
 }
 
-/// What this machine answers alone, with the remote taken as unmoved: a gate
-/// that would refuse on these refuses before a transport can hide why.
+/// What this machine answers alone: a gate that would refuse on these refuses
+/// before a transport can hide why.
 fn read_here(spec: &GateSpec) -> Result<Readings, ActionError> {
     let policy_read: PolicyWords = serde_json::from_value(as_answer(&spec.policy_read))
         .map_err(|why| held(format!("the policy the flow read is not a policy: {why}")))?;
@@ -343,15 +356,21 @@ fn read_here(spec: &GateSpec) -> Result<Readings, ActionError> {
         Ok(now) => the_scan(&spec.repo, &spec.scan, &now.read_from),
         Err(_) => the_scan(&spec.repo, &spec.scan, &policy_read.read_from),
     };
+    let heads = (!spec.branch.is_empty()).then(|| Heads {
+        reviewed: spec.reviewed.clone(),
+        local: head_of(&spec.repo, &format!("refs/heads/{}", spec.branch)),
+        remote: None,
+    });
     Ok(Readings {
         candidate: spec.candidate.clone(),
         scan,
         policy_read,
         policy_now,
         trunk_was: spec.trunk_was.clone(),
-        trunk_now: as_commit(&spec.trunk_was),
+        trunk_now: None,
         already: is_yes(&spec.already),
-        heads: None,
+        remote_read: false,
+        heads,
         service: service_of(spec)?,
     })
 }
@@ -367,19 +386,21 @@ fn read_the_remote(spec: &GateSpec, here: Readings) -> Result<Readings, ActionEr
         &spec.repo,
         &format!("refs/remotes/{}/{}", spec.remote, spec.base),
     );
-    let heads = if spec.branch.is_empty() {
-        None
-    } else {
-        let branch = format!("refs/heads/{}", spec.branch);
-        Some(Heads {
-            reviewed: spec.reviewed.clone(),
-            local: head_of(&spec.repo, &branch),
-            remote: remote_head_of(&spec.repo, &spec.remote, &branch)
-                .map_err(|why| held(format!("cannot read {branch} on {}: {why}", spec.remote)))?,
-        })
+    let heads = match here.heads {
+        None => None,
+        Some(heads) => {
+            let branch = format!("refs/heads/{}", spec.branch);
+            Some(Heads {
+                remote: remote_head_of(&spec.repo, &spec.remote, &branch).map_err(|why| {
+                    held(format!("cannot read {branch} on {}: {why}", spec.remote))
+                })?,
+                ..heads
+            })
+        }
     };
     Ok(Readings {
         trunk_now,
+        remote_read: true,
         heads,
         ..here
     })
@@ -443,7 +464,9 @@ impl Action for CandidateGateAction {
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         let here = read_here(&spec)?;
         let_the_scan_judge(what_the_gate_says(&here), &spec)?;
-        let_the_scan_judge(what_the_gate_says(&read_the_remote(&spec, here)?), &spec)?;
+        if !is_yes(&spec.before_the_push) {
+            let_the_scan_judge(what_the_gate_says(&read_the_remote(&spec, here)?), &spec)?;
+        }
         run_the_scan(&spec)?;
         Ok(ActionOutcome::Went(
             json!({ "ref": spec.candidate, "privacy_exit": 0 }),
