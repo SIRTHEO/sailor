@@ -388,7 +388,9 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* Dynamic, not the static viewport: a webview whose chrome moves leaves a
+     strip of ground below the window, and the field scrolls under it. */
+  height: 100dvh;
 }
 
 .bar {
@@ -7613,6 +7615,7 @@ tr[data-followable]:hover {
   font-size: var(--text-small);
   line-height: 1.5;
   color: var(--muted);
+  text-wrap: pretty;
 }
 
 /* NOTHING OPEN IS NOT A THING CALLED «NOTHING OPEN». The field carries no head
@@ -7625,6 +7628,9 @@ tr[data-followable]:hover {
   line-height: 1.6;
   color: var(--muted);
   text-align: center;
+  /* Centred and short: the browser's own break leaves a one-word last line,
+     which reads as a mistake rather than as a sentence. */
+  text-wrap: balance;
 }
 
 /* A NAME RESOLVES SOMEWHERE, and the heading is where. Scanned, not read, so
