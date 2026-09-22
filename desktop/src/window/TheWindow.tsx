@@ -100,7 +100,7 @@ function Workspaces({ native, at }: { native: boolean; at: At }) {
           <FieldEmpty say={t("window.field.pick_one")} />
         ) : (
           <Field name={open.name} note={open.current ? t("window.field.standing_here") : undefined}>
-            <WorkspacePage native={native} project={open} />
+            <WorkspacePage key={open.root} native={native} project={open} />
           </Field>
         )
       }

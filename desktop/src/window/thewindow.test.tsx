@@ -40,6 +40,27 @@ const TWO = [
   { root: "/somewhere/gone-away", name: "gone-away", first_seen: 1, last_seen: 1, standing: "gone", current: false },
 ];
 
+/** Two declared workspaces, each declaring a rule named after itself; answers
+ *  the roots whose declaration was asked, in the order they were asked. */
+function machineDeclaresPerRoot(): string[] {
+  const asked: string[] = [];
+  const projects = ["a-code-project", "a-second-project"].map((name) => ({
+    root: `/somewhere/${name}`, name, first_seen: 1, last_seen: 1, standing: "declared", current: false,
+  }));
+  (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+    core: {
+      invoke: (command: string, args?: { root?: string }) => {
+        if (command === "workspaces") return Promise.resolve(projects);
+        if (command === "flows_here") return Promise.resolve(FLOWS);
+        const root = args?.root ?? "";
+        asked.push(root);
+        return Promise.resolve({ name: root, rules: [`rule-of-${root.split("/").pop()}`], checks: {}, equipment: null });
+      },
+    },
+  };
+  return asked;
+}
+
 describe("the window, as it is mounted", () => {
   test("THE WORKSPACES ARE READ FROM THE MACHINE, not made up", async () => {
     machineAnswers(TWO);
@@ -62,6 +83,28 @@ describe("the window, as it is mounted", () => {
     await waitFor(() => { expect(screen.getByText("/somewhere/a-code-project")).toBeDefined(); });
     // What the declaration does not carry is named, not left blank.
     expect(screen.getAllByText("none declared").length).toBeGreaterThan(0);
+  });
+
+  test("CHOOSING ANOTHER WORKSPACE SHOWS WHAT THAT ONE DECLARES, not what the first one did", async () => {
+    const asked = machineDeclaresPerRoot();
+    render(<TheWindow native />);
+    await waitFor(() => { expect(screen.getByText("a-code-project")).toBeDefined(); });
+    fireEvent.click(screen.getByText("a-code-project"));
+    await waitFor(() => { expect(screen.getByText("rule-of-a-code-project")).toBeDefined(); });
+    fireEvent.click(screen.getByText("a-second-project"));
+    await waitFor(() => { expect(screen.getByText("rule-of-a-second-project")).toBeDefined(); });
+    expect(screen.queryByText("rule-of-a-code-project")).toBeNull();
+    expect(asked.at(-1)).toBe("/somewhere/a-second-project");
+  });
+
+  test("A DECLARATION IS READ ONCE, not on every tick of a clock", async () => {
+    const asked = machineDeclaresPerRoot();
+    render(<TheWindow native />);
+    await waitFor(() => { expect(screen.getByText("a-code-project")).toBeDefined(); });
+    fireEvent.click(screen.getByText("a-code-project"));
+    await waitFor(() => { expect(screen.getByText("rule-of-a-code-project")).toBeDefined(); });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(asked).toEqual(["/somewhere/a-code-project"]);
   });
 
   test("A LIST THAT IS NOT HERE YET SAYS WHERE IT IS, and does not draw an empty one", async () => {

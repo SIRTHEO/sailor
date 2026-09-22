@@ -3,7 +3,7 @@ import { declarationOf } from "../workspaces";
 import type { Project } from "../workspaces";
 import { t } from "../i18n";
 
-const ONCE = 0;
+const ONCE = null;
 
 /**
  * What the workspace itself declares, and nothing this window made up. A key
