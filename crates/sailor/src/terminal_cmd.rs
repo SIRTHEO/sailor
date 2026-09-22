@@ -548,9 +548,16 @@ fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<Stri
         &toolbox::Catalog::load(&toolbox::default_sources(&machine)),
         object.get("engine").and_then(serde_json::Value::as_str),
     )?;
-    object
-        .entry("tree")
-        .or_insert_with(|| serde_json::Value::String(here().display().to_string()));
+    match registered_tree(options, tty) {
+        Some(tree) => {
+            object.insert("tree".to_owned(), serde_json::Value::String(tree));
+        }
+        None => {
+            object
+                .entry("tree")
+                .or_insert_with(|| serde_json::Value::String(here().display().to_string()));
+        }
+    }
     if let Some(store) = options.iter().find(|(name, _)| name == "store") {
         object.insert(
             "store".to_owned(),
@@ -559,6 +566,16 @@ fn deposited(options: &[(String, String)], tty: &str, text: &str) -> Result<Stri
     }
     let answer = actions::mandate::deposited(&written).map_err(|error| error.said)?;
     Ok(answer["head"].as_str().unwrap_or_default().to_owned())
+}
+
+/// The tree the sessions store holds for this terminal: its successor is checked against it.
+fn registered_tree(options: &[(String, String)], tty: &str) -> Option<String> {
+    let path = store_root(options).ok()?.join(sessions::SESSIONS_FILE);
+    if !path.exists() {
+        return None;
+    }
+    let row = sessions::Sessions::open(&path).ok()?.terminal(tty).ok()??;
+    (!row.worktree.is_empty()).then_some(row.worktree)
 }
 
 /// The tree this terminal works in.
@@ -916,6 +933,44 @@ mod tests {
         mandate.written.session = "the-predecessor".to_owned();
         mandate.work.goal = "carry the conduit on".to_owned();
         sessions::mandate::deposit(directory, &mandate).expect("a mandate waits");
+    }
+
+    /// **THE TREE IS THE TERMINAL'S, NOT THE DIRECTORY THE COMMAND RAN IN.** Six
+    /// mandates in a week named a scratch directory, and no successor there could take one.
+    #[test]
+    fn a_mandate_names_the_tree_its_terminal_is_registered_in() {
+        let directory = scratch("mandate-tree");
+        let registered = "/the/tree/the/terminal/is/registered/in";
+        sessions::Sessions::open(directory.join(sessions::SESSIONS_FILE))
+            .expect("a store")
+            .open_terminal(&sessions::Arrival {
+                anchor: sessions::Anchor {
+                    tty: "ttys004".to_owned(),
+                    worktree: registered.to_owned(),
+                    ancestor: None,
+                },
+                session_id: None,
+                transcript_path: None,
+                at: 1,
+            })
+            .expect("the terminal is registered");
+        let options = options_of(&words(&["--store", directory.to_str().expect("a path")]))
+            .expect("pairs");
+        let mandate = serde_json::json!({
+            "tree": "/a/scratch/directory",
+            "session": "a-session",
+            "engine": "claude-code",
+            "line": "claude",
+            "work": {"goal": "a goal", "asked": "an ask", "state": [], "next": "a next step"}
+        })
+        .to_string();
+
+        deposited(&options, "ttys004", &mandate).expect("it is deposited");
+
+        let left = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys004"))
+            .expect("it waits");
+        assert_eq!(left.written.tree, registered);
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     /// **A MANDATE SENT TO A TERMINAL NOBODY HOLDS WOULD WAIT FOR EVER.** The
