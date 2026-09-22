@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The bundle the release assembles around the window's binary. It is kept
+     out of `src-tauri/` itself, where Tauri's own bundler would merge it into
+     what `cargo tauri build` produces: this one belongs to the release, which
+     builds the bare binary and wraps it here. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key><string>English</string>
+  <key>CFBundleDisplayName</key><string>Sailor</string>
+  <!-- The name of the file in Contents/MacOS: a bundle whose executable is
+       named something else opens nothing, and says nothing about why. -->
+  <key>CFBundleExecutable</key><string>sailor-desktop</string>
+  <key>CFBundleIdentifier</key><string>dev.sailor.finestra</string>
+  <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+  <key>CFBundleName</key><string>Sailor</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>0.1.0</string>
+  <key>CFBundleIconFile</key><string>icon.icns</string>
+  <key>LSMinimumSystemVersion</key><string>10.13</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>

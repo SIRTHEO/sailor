@@ -138,9 +138,18 @@ pub const TARGETS: &[Target] = &[
         // that builder producing the same binary.
         features: &["tauri/custom-protocol"],
         built: Built::ByCargo,
-        bundle: None,
+        // A BINARY IS NOT SOMETHING A PERSON OPENS: without this, a release of
+        // the window left a bare file nothing on the machine launches by name.
+        bundle: Some(Bundle {
+            root_rel: "bin/Sailor.app",
+            carries: &[
+                ("desktop/src-tauri/bundle/Info.plist", "Contents/Info.plist"),
+                ("desktop/src-tauri/icons/icon.icns", "Contents/Resources/icon.icns"),
+            ],
+            signed_by: &["codesign", "--force", "--deep", "--sign", "-"],
+        }),
         live_rel: "desktop/src-tauri/target/release/sailor-desktop",
-        safe_rel: "bin/sailor-desktop",
+        safe_rel: "bin/Sailor.app/Contents/MacOS/sailor-desktop",
         stamp_rel: "state/window-binary-commit",
         suite_memo_rel: "state/window-suite-tree",
         service: None,

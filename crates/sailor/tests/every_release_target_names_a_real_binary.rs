@@ -190,6 +190,67 @@ fn every_bundle_holds_the_binary_it_signs() {
     }
 }
 
+/// **A BUNDLE STARTS THE FILE ITS PLIST NAMES.** `CFBundleExecutable` is what
+/// macOS looks for inside `Contents/MacOS`; when it names anything else the
+/// bundle is assembled, signed and installed, and opening it does nothing at
+/// all — the same shape of silence as a dot without `LSUIElement`.
+#[test]
+fn every_bundle_names_the_binary_it_starts() {
+    let mut checked = 0;
+    for candidate in release::TARGETS {
+        let Some(bundle) = candidate.bundle else {
+            continue;
+        };
+        let Some((plist_rel, _)) = bundle
+            .carries
+            .iter()
+            .find(|(_, into)| *into == "Contents/Info.plist")
+        else {
+            panic!(
+                "target '{}' is a bundle carrying no Info.plist: without one the system does not \
+                 know what to start",
+                candidate.name
+            );
+        };
+        let plist = std::fs::read_to_string(repository_root().join(plist_rel))
+            .unwrap_or_else(|error| panic!("cannot read {plist_rel}: {error}"));
+        let starts = after_the_key(&plist, "CFBundleExecutable").unwrap_or_else(|| {
+            panic!("target '{}' carries a plist naming no executable", candidate.name)
+        });
+        let installed = candidate
+            .safe_rel
+            .rsplit('/')
+            .next()
+            .expect("a path has a last segment");
+        assert_eq!(
+            starts, installed,
+            "target '{}' installs '{}' and its plist starts '{starts}': opening the bundle would \
+             do nothing",
+            candidate.name, candidate.safe_rel
+        );
+        let holds_the_binary = candidate
+            .safe_rel
+            .starts_with(&format!("{}/Contents/MacOS/", bundle.root_rel));
+        assert!(
+            holds_the_binary,
+            "target '{}' installs its binary at '{}', where the plist's name is not looked for",
+            candidate.name, candidate.safe_rel
+        );
+        checked += 1;
+    }
+    assert!(checked > 0, "no bundled target: this test guards nothing");
+}
+
+/// The string of the `<string>` following a `<key>`, which is all this file
+/// needs of a property list.
+fn after_the_key(plist: &str, key: &str) -> Option<String> {
+    let at = plist.find(&format!("<key>{key}</key>"))? + key.len() + 11;
+    let rest = &plist[at..];
+    let opens = rest.find("<string>")? + "<string>".len();
+    let closes = rest.find("</string>")?;
+    Some(rest[opens..closes].trim().to_string())
+}
+
 /// The page a target declares exists, and carries its `package.json`. Without
 /// this, `page_rel` is a string the way `bin` was one, and the release finds
 /// out inside the clone of HEAD after it has already compiled.
