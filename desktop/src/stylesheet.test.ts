@@ -512,3 +512,34 @@ describe("the narrow window budgets its height", () => {
     expect(narrowBlock()).toMatch(/\.canvas\s*\{[^}]*min-height:\s*0/);
   });
 });
+
+/** The rules written inside every `@media` block: the sheet's parser leaves
+ *  at-rules out, and a width is exactly where a panel would be hidden. */
+function rulesInsideMedia(): Array<{ selector: string; declarations: Array<[string, string]> }> {
+  const found: Array<{ selector: string; declarations: Array<[string, string]> }> = [];
+  for (let at = stylesheetSource.indexOf("@media"); at !== -1; at = stylesheetSource.indexOf("@media", at + 1)) {
+    const open = stylesheetSource.indexOf("{", at);
+    let depth = 1;
+    let close = open + 1;
+    while (close < stylesheetSource.length && depth > 0) {
+      if (stylesheetSource[close] === "{") depth += 1;
+      if (stylesheetSource[close] === "}") depth -= 1;
+      close += 1;
+    }
+    found.push(...parseStylesheet(stylesheetSource.slice(open + 1, close - 1)).rules);
+  }
+  return found;
+}
+
+describe("the window's panel", () => {
+  test("NO WIDTH HIDES THE PANEL: it is the only way to choose what the field holds", () => {
+    // Below 700px the panel was set to `display: none`, and nothing drew it
+    // back: the field said «pick one on the left» with nothing on the left.
+    const hidden = [...sheet.rules, ...rulesInsideMedia()].filter(
+      (rule) =>
+        /\.window-panel(?![\w-])/.test(rule.selector) &&
+        rule.declarations.some(([name, value]) => name === "display" && value.trim() === "none"),
+    );
+    expect(hidden.map((rule) => rule.selector)).toEqual([]);
+  });
+});

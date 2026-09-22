@@ -7769,14 +7769,10 @@ tr[data-followable]:hover {
   overflow-wrap: anywhere;
 }
 
-/* PROHIBITION 11 ON THIS WINDOW: the panel is a list, and a list one can
-   reopen is worth less than a field one can read. */
+/* A narrow window narrows the panel and never hides it: the panel is the
+   only way to choose what the field holds. */
 @media (width <= 700px) {
   .window-shell__columns {
-    grid-template-columns: 58px minmax(0, 1fr);
-  }
-
-  .window-panel {
-    display: none;
+    grid-template-columns: 58px 200px minmax(0, 1fr);
   }
 }
