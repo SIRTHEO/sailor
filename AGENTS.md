@@ -277,9 +277,12 @@ Traps already paid for:
   21/09/2026 a session took one down with `git worktree remove` after a clean
   `lsof` reading, and a person's live session went with it: the session had been
   started with `cd <another tree> && claude`, so no process stood in the tree. Name
-  it and leave it. **A reading taken inside the sandbox is not a reading**: `lsof`
-  and `ps` there cannot see other processes and answer empty, which is «I could
-  not look», never «nobody is here».
+  it and leave it. The register says who opened it: `sailor worktree create`
+  writes the tree down as it cuts it, and the flow that closes finished work
+  takes down only a tree it finds written there, so one cut with `git worktree
+  add` is named at the end and never taken down. **A reading taken inside the
+  sandbox is not a reading**: `lsof` and `ps` there cannot see other processes
+  and answer empty, which is «I could not look», never «nobody is here».
 - **The shape of the name has a judge, and the judge is pure.** There are three
   shapes and nothing else: the trunk; `work/<what-it-does>` with lowercase,
   digits and hyphens in the topic; `worktree-agent-<id>`, which is written by

@@ -288,6 +288,31 @@ fn a_tree_sailor_never_cut_is_named_and_never_taken_down() {
     assert!(gone, "written down and let go, the tree was still kept:\n{again}");
 }
 
+/// **A TREE CUT BY THE GESTURE A PERSON TYPES IS ONE SAILOR ANSWERS FOR.** It
+/// was cut and never written down, so the flow that closes finished work could
+/// only name it: the branch merged and the tree stayed.
+#[test]
+fn a_tree_cut_for_a_branch_is_written_down_as_it_is_cut() {
+    let scratch = a_scratch("written-as-cut");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+
+    let said = sailor::worktree_cmd::cut_and_written_down(
+        &repo,
+        "work/scritto-subito",
+        None,
+        &store as &dyn OpenTrees,
+    )
+    .expect("the tree is cut");
+    let rows = store.trees_left_open().expect("the rows");
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert!(
+        rows.iter().any(|row| row.path == said && row.step == "work/scritto-subito"),
+        "the tree {said} was cut and not written down: {rows:?}"
+    );
+}
+
 /// A tree cut minutes ago is somebody's first gesture, whoever wrote it down.
 #[test]
 fn a_tree_cut_less_than_an_hour_ago_stays_whoever_cut_it() {

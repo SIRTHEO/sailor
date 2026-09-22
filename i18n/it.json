@@ -826,7 +826,7 @@
   "run.failure.test_command_not_runnable": "il comando di prova del compito non è partito: cargo c'è su questa macchina?",
   "run.failure.the_candidate_is_held": "il candidato è stato fermato prima di partire: la politica, il tronco, il ramo revisionato o il binario in servizio non sono più quelli letti dal flusso",
   "run.failure.the_verdict_is_not_bound": "il verdetto del revisore non si lega al commit fissato: nomina un altro commit, non dice né clean né findings, o non elenca niente di controllato",
-  "run.failure.the_tree_stays": "l’albero che porta quel ramo resta in piedi: qualcuno è dentro, è bloccato, è l’albero da cui gira il flusso, git non ha voluto rimuoverlo, oppure nessuno ha potuto dire chi sta dove",
+  "run.failure.the_tree_stays": "l’albero che porta quel ramo resta in piedi: non l’ha tagliato Sailor, qualcuno è dentro, è bloccato, è l’albero da cui gira il flusso, git non ha voluto rimuoverlo, oppure nessuno ha potuto dire chi sta dove",
   "run.failure.tool_unavailable": "lo strumento non c'è su questa macchina",
   "run.failure.patch_refused": "la patch non è stata applicata: nomina un file a cui nessuno ha dato assenso, o uno dietro la parete che nessun assenso apre",
   "run.failure.publication_refused": "la scansione della repository ha rifiutato il candidato, quindi non è stato pubblicato niente",

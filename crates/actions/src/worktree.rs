@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use workspace::standing::WhoIsIn;
-use workspace::Worktree;
+use workspace::{OpenTrees, Worktree};
 
 pub const CLOSE_THE_WORKTREE_ACTION: &str = "close_the_worktree";
 
@@ -37,6 +37,7 @@ struct CloseSpec {
 pub enum WhatBecomesOfIt {
     NoTreeCarriesIt,
     ItIsWhereTheFlowRuns(PathBuf),
+    NotCutBySailor(PathBuf),
     SomebodyIsIn(PathBuf, WhoIsIn),
     Locked(PathBuf),
     TakeItDown(PathBuf),
@@ -49,6 +50,7 @@ pub fn what_becomes_of_it(
     branch: &str,
     terminals: &[PathBuf],
     processes: &[(u32, PathBuf)],
+    written_down: &[PathBuf],
 ) -> WhatBecomesOfIt {
     let Some(found) = trees
         .iter()
@@ -62,6 +64,12 @@ pub fn what_becomes_of_it(
         || workspace::standing::canonical(repo).starts_with(&here)
     {
         return WhatBecomesOfIt::ItIsWhereTheFlowRuns(at);
+    }
+    if !written_down
+        .iter()
+        .any(|cut| workspace::standing::canonical(cut) == here)
+    {
+        return WhatBecomesOfIt::NotCutBySailor(at);
     }
     match workspace::standing::who_is_in(&at, terminals, processes) {
         WhoIsIn::Nobody => {}
@@ -94,6 +102,14 @@ fn who_holds_what() -> Result<WhoHoldsWhat, ActionError> {
     Ok((terminals, processes))
 }
 
+/// The trees Sailor wrote down as it cut them: the only ones it takes down.
+fn the_register() -> Result<ledger::Ledger, ActionError> {
+    let directory = ledger::default_directory()
+        .ok_or_else(|| stays("no register of trees can be found".to_owned()))?;
+    ledger::Ledger::open(&directory)
+        .map_err(|why| stays(format!("the register of trees cannot be opened: {why}")))
+}
+
 struct CloseTheWorktreeAction;
 
 impl Action for CloseTheWorktreeAction {
@@ -106,6 +122,13 @@ impl Action for CloseTheWorktreeAction {
             .map(|main| PathBuf::from(&main.path))
             .unwrap_or_else(|| spec.repo.clone());
         let (terminals, processes) = who_holds_what()?;
+        let register = the_register()?;
+        let written_down = register
+            .trees_left_open()
+            .map_err(|why| stays(format!("the register of trees cannot be read: {why}")))?
+            .into_iter()
+            .map(|row| PathBuf::from(row.path))
+            .collect::<Vec<_>>();
         let at = match what_becomes_of_it(
             &trees,
             &top,
@@ -113,6 +136,7 @@ impl Action for CloseTheWorktreeAction {
             &spec.branch,
             &terminals,
             &processes,
+            &written_down,
         ) {
             WhatBecomesOfIt::NoTreeCarriesIt => {
                 return Ok(ActionOutcome::Went(json!({ "removed": "" })))
@@ -122,6 +146,12 @@ impl Action for CloseTheWorktreeAction {
                     "the tree holding {} is the one this flow runs from ({}): name another \
                      checkout of the repository as repo instead",
                     spec.branch,
+                    at.display()
+                )))
+            }
+            WhatBecomesOfIt::NotCutBySailor(at) => {
+                return Err(stays(format!(
+                    "{} was not cut by Sailor, so it is named and left to whoever cut it",
                     at.display()
                 )))
             }
@@ -154,6 +184,13 @@ impl Action for CloseTheWorktreeAction {
         };
         workspace::remove_at(&spec.repo, &at)
             .map_err(|why| stays(format!("git would not take {} down: {why}", at.display())))?;
+        let taken_down = workspace::standing::canonical(&at);
+        for cut in written_down
+            .iter()
+            .filter(|cut| workspace::standing::canonical(cut) == taken_down)
+        {
+            let _ = register.tree_closed(&cut.to_string_lossy());
+        }
         Ok(ActionOutcome::Went(
             json!({ "removed": at.to_string_lossy() }),
         ))

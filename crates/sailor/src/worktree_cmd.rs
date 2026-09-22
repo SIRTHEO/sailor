@@ -83,12 +83,10 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             Ok(render(&trees))
         }
         [command, branch] if command == "create" => {
-            let path = create(&repo, branch, None)?;
-            Ok(format!("{}", path.display()))
+            cut_and_written_down(&repo, branch, None, &a_store()?)
         }
         [command, branch, name] if command == "create" => {
-            let path = create(&repo, branch, Some(name))?;
-            Ok(format!("{}", path.display()))
+            cut_and_written_down(&repo, branch, Some(name), &a_store()?)
         }
         [command, name] if command == "remove" => remove_one(&repo, name, &IndexTending::of(&repo)),
         [command] if command == "names" => {
@@ -156,6 +154,31 @@ fn what_the_machine_says() -> Result<WhoHoldsWhat, String> {
     let standing = machine::where_processes_stand()
         .map_err(|why| catalogue::say("cli.worktree.cannot_see_processes", &[("why", &why)]))?;
     Ok((occupied, standing))
+}
+
+/// A tree for a branch, written down as it is cut: what Sailor did not write
+/// down it never takes down, so a tree it forgot would be left to nobody.
+pub fn cut_and_written_down(
+    repo: &Path,
+    branch: &str,
+    name: Option<&str>,
+    register: &dyn OpenTrees,
+) -> Result<String, String> {
+    let path = create(repo, branch, name)?;
+    let written = register.tree_opened(&OpenTree {
+        path: path.to_string_lossy().into_owned(),
+        repo: repo.to_string_lossy().into_owned(),
+        run: String::new(),
+        step: branch.to_owned(),
+        opened_by_pid: std::process::id(),
+        opened_at: now(),
+        opened_by_born_at: None,
+    });
+    if let Err(why) = written {
+        let _ = workspace::remove_at(repo, &path);
+        return Err(why);
+    }
+    Ok(format!("{}", path.display()))
 }
 
 fn a_store() -> Result<Ledger, String> {
