@@ -3975,7 +3975,9 @@ dependencies = [
 name = "trigger"
 version = "0.1.0"
 dependencies = [
+ "catalogue",
  "flow",
+ "ledger",
  "serde",
  "serde_json",
  "toolbox",
