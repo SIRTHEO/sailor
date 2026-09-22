@@ -34,6 +34,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` (both suites, always both)
 - A first-execution timeout (`engine_timed_out` on a fresh temp-file engine) is rerun once and said aloud
 - `cargo test -p actions -j 1 --test a_candidate_leaves_only_through_the_gate` — the last gate before a draft, integration, a release or closing the work lets a candidate leave, proved without a forge or a binary in service
+- `cargo test -p actions -j 1 --test a_verdict_binds_only_the_pinned_commit` — a review is recorded only when its verdict names the pinned commit, says clean or findings, lists what it checked, and was closed with the sailor the flow verified
 
 ## D. When `crates/profiles`, the login probe or a launch changes
 
