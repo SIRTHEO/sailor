@@ -308,7 +308,8 @@ fn a_tree_cut_for_a_branch_is_written_down_as_it_is_cut() {
     let _ = std::fs::remove_dir_all(&scratch);
 
     assert!(
-        rows.iter().any(|row| row.path == said && row.step == "work/scritto-subito"),
+        rows.iter()
+            .any(|row| row.path == said && row.step == "work/scritto-subito"),
         "the tree {said} was cut and not written down: {rows:?}"
     );
 }

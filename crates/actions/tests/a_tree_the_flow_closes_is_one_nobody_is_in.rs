@@ -34,7 +34,15 @@ fn cut() -> Vec<PathBuf> {
 }
 
 fn decide(trees: &[Worktree], branch: &str) -> WhatBecomesOfIt {
-    what_becomes_of_it(trees, Path::new(TOP), Path::new(TOP), branch, &[], &[], &cut())
+    what_becomes_of_it(
+        trees,
+        Path::new(TOP),
+        Path::new(TOP),
+        branch,
+        &[],
+        &[],
+        &cut(),
+    )
 }
 
 #[test]
@@ -84,7 +92,15 @@ fn the_linked_tree_named_as_repo_is_never_taken_down() {
     let trees = [tree(TOP, Some("main")), tree("/trees/work", Some("work"))];
     for repo in ["/trees/work", "/trees/work/crates"] {
         assert_eq!(
-            what_becomes_of_it(&trees, Path::new(TOP), Path::new(repo), "work", &[], &[], &cut()),
+            what_becomes_of_it(
+                &trees,
+                Path::new(TOP),
+                Path::new(repo),
+                "work",
+                &[],
+                &[],
+                &cut()
+            ),
             WhatBecomesOfIt::ItIsWhereTheFlowRuns(PathBuf::from("/trees/work")),
             "repo {repo}"
         );
@@ -152,7 +168,10 @@ fn a_terminal_in_a_neighbour_tree_is_not_in_this_one() {
 /// carries: a workspace a person opened by hand is named and left to them.
 #[test]
 fn a_tree_sailor_never_wrote_down_is_named_and_left() {
-    let trees = [tree(TOP, Some("main")), tree("/elsewhere/work", Some("work"))];
+    let trees = [
+        tree(TOP, Some("main")),
+        tree("/elsewhere/work", Some("work")),
+    ];
     assert_eq!(
         decide(&trees, "work"),
         WhatBecomesOfIt::NotCutBySailor(PathBuf::from("/elsewhere/work"))
@@ -276,7 +295,10 @@ mod on_a_real_repository {
         let (class, said) = close(&primary).expect_err("a tree nobody wrote down stays");
         assert_eq!(class, "the_tree_stays", "{said}");
         assert!(said.contains("not cut by Sailor"), "{said}");
-        assert!(linked.join(".git").exists(), "the unwritten tree is still there");
+        assert!(
+            linked.join(".git").exists(),
+            "the unwritten tree is still there"
+        );
         written_down(&primary, &linked);
 
         let (class, said) = close(&linked).expect_err("the tree named as repo stays");
