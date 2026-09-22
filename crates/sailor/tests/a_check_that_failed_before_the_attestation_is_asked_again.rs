@@ -209,7 +209,7 @@ fn a_check_that_gave_up_before_the_attestation_is_asked_again_and_the_merge_goes
     assert!(merged.status.success(), "{}", said(&merged));
     assert_eq!(
         forge.calls(),
-        "run rerun 111 --failed\npr merge 7 --merge\n"
+        "run rerun 111 --failed\npr merge 7 --merge --match-head-commit abc123\n"
     );
 }
 
@@ -238,7 +238,7 @@ fn the_moment_is_the_one_attest_answered_not_the_clock() {
     assert!(merged.status.success(), "{}", said(&merged));
     assert_eq!(
         forge.calls(),
-        "run rerun 111 --failed\npr merge 7 --merge\n"
+        "run rerun 111 --failed\npr merge 7 --merge --match-head-commit abc123\n"
     );
 }
 
@@ -267,7 +267,7 @@ fn a_run_asked_again_is_waited_for_before_the_merge() {
     assert!(merged.status.success(), "{}", said(&merged));
     assert_eq!(
         forge.calls(),
-        "run rerun 111 --failed\npr merge 7 --merge\n"
+        "run rerun 111 --failed\npr merge 7 --merge --match-head-commit abc123\n"
     );
 }
 
@@ -370,5 +370,5 @@ fn all_green_merges_without_asking_anything_again() {
     );
     let merged = forge.merge();
     assert!(merged.status.success(), "{}", said(&merged));
-    assert_eq!(forge.calls(), "pr merge 7 --merge\n");
+    assert_eq!(forge.calls(), "pr merge 7 --merge --match-head-commit abc123\n");
 }
