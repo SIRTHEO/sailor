@@ -611,6 +611,8 @@ fn named(row: &sessions::TerminalRow, here: &str) -> String {
 struct StillOpen {
     waiting: Vec<ledger::WaitingRun>,
     ask_again: Vec<ledger::WaitingRun>,
+    /// How many of either list were born in another tree: counted, not named.
+    elsewhere: usize,
     remembered: Vec<actions::memory::Memory>,
     page: Option<PageOnDisk>,
     page_unseen: Option<PageUnseen>,
@@ -2222,6 +2224,66 @@ mod tests {
         );
     }
 
+    /// **A RUN WAITS IN THE TREE IT WAS BORN IN.** Every terminal was greeted
+    /// with every tree's waiting runs, 367 times in a week for runs it could not
+    /// take up; the others are counted and pointed at, not named.
+    #[test]
+    fn the_greeting_names_only_the_runs_born_in_this_tree() {
+        let scratch = Scratch::new("corse-dell-albero");
+        let checkout = scratch.directory.join("a-checkout");
+        std::fs::create_dir_all(&checkout).expect("the tree");
+        let init = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&checkout)
+            .args(["init", "--quiet"])
+            .status()
+            .expect("git");
+        assert!(init.success());
+        let real = checkout.canonicalize().expect("real").display().to_string();
+        let ledger = ledger::Ledger::open(scratch.directory.join("ledger")).expect("a ledger");
+        for (run_id, worktree) in [
+            ("born-here-1", Some(real.as_str())),
+            ("born-elsewhere-1", Some("/elsewhere/other")),
+            ("born-nowhere-1", None),
+        ] {
+            ledger
+                .record_run(&ledger::RunRecord {
+                    run_id: run_id.to_owned(),
+                    kind: "flow".to_owned(),
+                    entity: "a-flow".to_owned(),
+                    parent_run_id: None,
+                    started_by: "test".to_owned(),
+                    status: "waiting".to_owned(),
+                    total_cost_micros: 0,
+                    error: None,
+                    started_at: 1,
+                    ended_at: None,
+                    worktree: worktree.map(str::to_owned),
+                    stop_reason: None,
+                })
+                .expect("recorded");
+        }
+        let started = Started {
+            engine: None,
+            profile_home: None,
+            worktree: checkout.clone(),
+            home: None,
+        };
+
+        let found = still_open_in(&ledger, None, &started, "ttysTEST").expect("open");
+        let said = what_is_still_open(&found).expect("something to say");
+
+        let named: Vec<_> = found
+            .waiting
+            .iter()
+            .map(|run| run.run_id.as_str())
+            .collect();
+        assert_eq!(named, vec!["born-here-1", "born-nowhere-1"]);
+        assert_eq!(found.elsewhere, 1);
+        assert!(!said.contains("born-elsewhere-1"), "{said}");
+        assert!(said.contains("sailor flow list"), "{said}");
+    }
+
     /// The page's address travels in the greeting **only while the file is
     /// there**: a path to nothing is a promise nobody keeps. **Its memories do
     /// not travel at all**: the greeting is paid again on every call of the
@@ -2637,6 +2699,7 @@ mod tests {
             run_id: run_id.to_owned(),
             entity: flow.to_owned(),
             waiting_since: 1_000,
+            tree: String::new(),
         }
     }
 
