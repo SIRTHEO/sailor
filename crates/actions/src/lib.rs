@@ -26,6 +26,7 @@
 pub mod apply;
 pub mod bench;
 pub mod budget;
+pub mod candidate_gate;
 pub mod cooldown;
 pub mod delivery;
 pub mod digest;
