@@ -858,7 +858,7 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote origin \"$1\") || { code=$?; echo \"cannot read $1 on origin: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nremote=$(read_remote_ref \"refs/heads/$BASE\")\n[ \"$remote\" = \"$CANDIDATE\" ] || { echo \"the remote $BASE reads ${remote:-nothing}, not the candidate $CANDIDATE\" >&2; exit 1; }\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
+          "command": "set -eu\n# git ls-remote's own exit is checked before its answer is read: a lost transport is not an empty ref.\nread_remote_ref() {\n    listed=$(git -C \"$REPO\" ls-remote \"$REMOTE_NAME\" \"$1\") || { code=$?; echo \"cannot read $1 on $REMOTE_NAME: git ls-remote exited $code, so nothing is decided on an empty answer\" >&2; exit 2; }\n    printf '%s\\n' \"$listed\" | awk -v ref=\"$1\" '$2 == ref { print $1 }'\n}\nremote=$(read_remote_ref \"refs/heads/$BASE\")\n[ \"$remote\" = \"$CANDIDATE\" ] || { echo \"the remote $BASE reads ${remote:-nothing}, not the candidate $CANDIDATE\" >&2; exit 1; }\nprintf '{\"remote_trunk\":\"%s\"}' \"$remote\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
@@ -868,6 +868,9 @@
             },
             "CANDIDATE": {
               "$from": "/the_candidate/answer/candidate"
+            },
+            "REMOTE_NAME": {
+              "$from": "/the_request/remote"
             }
           },
           "timeout_secs": 60,
