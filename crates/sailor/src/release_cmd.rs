@@ -218,6 +218,7 @@ fn release(selected: &Target, options: &Options) -> Result<i32, String> {
         println!("{said}");
     }
 
+    let _turn = crate::machine_cmd::the_machine_for(&format!("sailor release {}", selected.name))?;
     let temporary = make_temporary_tree()?;
     let building = candidate.as_ref().map(|chosen| chosen.revision.as_str());
     // Taken before the checkout, or a release starting meanwhile would find

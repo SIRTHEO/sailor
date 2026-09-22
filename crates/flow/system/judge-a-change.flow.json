@@ -39,6 +39,7 @@
         "deps": ["trigger"],
         "action": "judge_change",
         "max_attempts": 1,
+        "weight": "heavy",
         "when": null,
         "with": {
           "launch": { "$from": "/text" }
