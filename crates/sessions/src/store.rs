@@ -547,6 +547,20 @@ impl Sessions {
         Ok(rows)
     }
 
+    /// The last time a session announced one of these events, if it ever did.
+    pub fn last_event_of(&self, session: &str, names: &[&str]) -> Result<Option<i64>, SessionError> {
+        let mut last = None;
+        for name in names {
+            let at: Option<i64> = self.connection.query_row(
+                "SELECT MAX(occurred_at) FROM terminal_events WHERE session_id = ?1 AND name = ?2",
+                params![session, name],
+                |row| row.get(0),
+            )?;
+            last = last.max(at);
+        }
+        Ok(last)
+    }
+
     /// Which sessions followed one another on a terminal, in the order they
     /// were seen. The `terminals` row carries only the last: the succession is
     /// asked of the queue, which is never rewritten.

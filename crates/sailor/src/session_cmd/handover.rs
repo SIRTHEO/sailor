@@ -299,7 +299,15 @@ pub(super) fn the_ask_still_standing(
     let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
     let line = request.options.get("cli").map(String::as_str);
     let drop = the_drop_for(&catalog, &machine.env, line, tty);
-    the_ask_of(ledger, ledger.directory(), tty, session, &drop)
+    let compacting: Vec<&str> = catalog
+        .descriptors
+        .iter()
+        .filter_map(|loaded| loaded.descriptor.event_for("compacting"))
+        .collect();
+    let compacted = request
+        .store
+        .and_then(|sessions| sessions.last_event_of(session, &compacting).ok().flatten());
+    the_ask_of(ledger, ledger.directory(), tty, session, &drop, compacted)
 }
 
 /// The same question with everything it reads named, so it can be answered
@@ -310,6 +318,7 @@ fn the_ask_of(
     tty: &str,
     session: &str,
     drop: &str,
+    compacted: Option<i64>,
 ) -> Option<String> {
     let asked = ledger.read_record(ASKS, tty).ok().flatten()?;
     if asked.value.get("state").and_then(serde_json::Value::as_str) != Some(OBLIGE) {
@@ -328,11 +337,11 @@ fn the_ask_of(
     // on filling and the run writes a fresher request each time: asking again
     // for what is already on disk teaches whoever reads it to stop reading.
     match sessions::mandate::read(&sessions::mandate::address_in(store, tty)) {
-        Some(left) if left.taken.is_none() => {
+        Some(left) if left.taken.is_none() && speaks_for(&left.written, session, compacted) => {
             return Some(catalogue::say("cli.session.the_mandate_is_waiting", &[]));
         }
         // Taken, and asked for again since: the successor filled up in its turn.
-        Some(left) if left.written.at >= asked.written_at => return None,
+        Some(left) if left.taken.is_some() && left.written.at >= asked.written_at => return None,
         _ => {}
     }
     let tokens = asked
@@ -344,6 +353,14 @@ fn the_ask_of(
         "cli.session.the_mandate_is_asked_for",
         &[("tokens", &tokens.to_string()), ("drop", drop)],
     ))
+}
+
+/// **AN UNTAKEN MANDATE ANSWERS ONLY FOR THE CONTEXT THAT WROTE IT.** One left
+/// by another session on this terminal, or written before this session was
+/// compacted, describes work nobody here remembers: a fresh one is asked for.
+fn speaks_for(written: &sessions::mandate::Written, session: &str, compacted: Option<i64>) -> bool {
+    let same_author = written.session.is_empty() || session.is_empty() || written.session == session;
+    same_author && compacted.is_none_or(|at| written.at > at)
 }
 
 /// Where a run leaves the request, and the standing that makes one.
@@ -695,12 +712,26 @@ mod tests {
             })
             .expect("the ask is written");
 
-        let mine = the_ask_of(&ledger, &directory, "ttys015", "the-session-that-was-measured", "")
-            .expect("the session that was measured is told it is full");
+        let mine = the_ask_of(
+            &ledger,
+            &directory,
+            "ttys015",
+            "the-session-that-was-measured",
+            "",
+            None,
+        )
+        .expect("the session that was measured is told it is full");
         assert!(mine.contains("345732"), "{mine}");
 
         assert_eq!(
-            the_ask_of(&ledger, &directory, "ttys015", "the-one-that-took-the-number-after", ""),
+            the_ask_of(
+                &ledger,
+                &directory,
+                "ttys015",
+                "the-one-that-took-the-number-after",
+                "",
+                None
+            ),
             None,
             "a later session on the same tty number inherits nothing of the one before"
         );
@@ -810,7 +841,7 @@ mod tests {
             })
             .expect("the ask is written");
 
-        let asked = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "");
+        let asked = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "", None);
         assert!(
             asked.is_some_and(|said| said.contains("260000")),
             "unanswered, it is asked"
@@ -820,7 +851,7 @@ mod tests {
         mandate.written.tty = "ttys001".to_owned();
         mandate.written.at = 101;
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
-        let waiting = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "")
+        let waiting = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "", None)
             .expect("it says what stands now");
         assert!(
             !waiting.contains("260000"),
@@ -844,9 +875,44 @@ mod tests {
                 written_at: 200,
             })
             .expect("the later ask is written");
-        let again = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "")
+        let again = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "", None)
             .expect("it is asked again");
         assert!(again.contains("300000"), "{again}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// An untaken mandate another session left on this terminal, or one this
+    /// session wrote before it was compacted, does not answer the ask.
+    #[test]
+    fn only_a_mandate_written_by_this_context_is_said_to_be_waiting() {
+        let directory =
+            std::env::temp_dir().join(format!("sailor-ask-own-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ASKS.to_owned(),
+                key: "ttys003".to_owned(),
+                value: serde_json::json!({"state": OBLIGE, "tokens": 270_000u64}),
+                written_by: "a-run".to_owned(),
+                written_at: 300,
+            })
+            .expect("the ask is written");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys003".to_owned();
+        mandate.written.session = "the-one-before".to_owned();
+        mandate.written.at = 100;
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+
+        let foreign = the_ask_of(&ledger, &directory, "ttys003", "the-one-here", "", None);
+        assert!(foreign.is_some_and(|said| said.contains("270000")));
+
+        let before = the_ask_of(&ledger, &directory, "ttys003", "the-one-before", "", Some(150));
+        assert!(before.is_some_and(|said| said.contains("270000")));
+
+        let after = the_ask_of(&ledger, &directory, "ttys003", "the-one-before", "", Some(50));
+        assert!(after.is_some_and(|said| !said.contains("270000")));
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -869,7 +935,7 @@ mod tests {
             .expect("the ask is written");
 
         assert_eq!(
-            the_ask_of(&ledger, &directory, "ttys002", "whoever-is-here", ""),
+            the_ask_of(&ledger, &directory, "ttys002", "whoever-is-here", "", None),
             None
         );
         let _ = std::fs::remove_dir_all(&directory);
