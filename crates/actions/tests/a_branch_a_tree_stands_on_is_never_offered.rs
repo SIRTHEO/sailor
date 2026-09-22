@@ -4,7 +4,8 @@
 //! trees' ground for deletion while looking exactly as green as this one.
 
 use actions::finished::{as_an_item, branches_trees_hold, merged_branches};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 /// What `git branch --merged <trunk> --list 'work/*'` prints: the branch this
 /// checkout is on carries `*`, one another worktree holds carries `+`.
@@ -59,62 +60,88 @@ fn an_item_carries_the_mandate_close_the_work_reads() {
     assert_eq!(mandate["branch"], "work/a-change");
 }
 
-/// **PROVED BY RUNNING IT.** Eight green readings said nothing about the one
-/// thing that breaks: what the action answers against a real repository with
-/// real worktrees. It runs here against the tree the test is in, and skips
-/// where that tree declares no trunk, so it measures or says it did not.
-#[test]
-fn against_a_real_tree_it_offers_no_branch_a_tree_holds() {
-    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the crate sits two levels under the root");
-    if workspace::declared_trunk(repo).is_err() {
-        workspace::measured_nothing("this tree declares no trunk to read branches against");
-        return;
+/// A repository with a trunk, a policy on it, a finished branch nobody holds
+/// and a finished branch a second worktree stands on. Built here rather than
+/// read off this machine: a reading that only ran where the machine happened
+/// to have thirteen locked trees would measure nothing anywhere else.
+struct Scratch(PathBuf);
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
+}
+
+fn git(at: &Path, args: &[&str]) -> String {
+    let out = Command::new("git").arg("-C").arg(at).args(args).output().expect("git runs");
+    assert!(
+        out.status.success(),
+        "git {args:?} in {}: {}",
+        at.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+fn a_tree_with_finished_work() -> (Scratch, PathBuf) {
+    let at = std::env::temp_dir().join(format!("finished-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&at);
+    std::fs::create_dir_all(at.join("tree")).expect("the tree's directory");
+    let scratch = Scratch(at.clone());
+    let (remote, tree) = (at.join("origin.git"), at.join("tree"));
+    git(&at, &["init", "-q", "--bare", "origin.git"]);
+    git(&at, &["init", "-q", "-b", "main", "tree"]);
+    git(&tree, &["config", "user.email", "sailor@example.invalid"]);
+    git(&tree, &["config", "user.name", "Sailor"]);
+    git(&tree, &["config", "sailor.trunk", "main"]);
+    std::fs::create_dir_all(tree.join(".sailor")).expect("the policy's directory");
+    std::fs::write(
+        tree.join(".sailor/delivery-policy.json"),
+        r#"{"merge":"ask","push":"ask","release":"ask","remote":"origin"}"#,
+    )
+    .expect("a policy on the trunk");
+    std::fs::write(tree.join("a-file"), "the work\n").expect("a file");
+    git(&tree, &["add", "-A"]);
+    git(&tree, &["commit", "-q", "-m", "the work"]);
+    git(&tree, &["remote", "add", "origin", &remote.to_string_lossy()]);
+    git(&tree, &["push", "-q", "origin", "main"]);
+    // Two branches finished at the trunk: one free, one a second tree stands on.
+    for branch in ["work/free-to-close", "work/a-tree-stands-on-it"] {
+        git(&tree, &["branch", branch, "main"]);
+    }
+    git(&tree, &["worktree", "add", "-q", &at.join("second").to_string_lossy(), "work/a-tree-stands-on-it"]);
+    (scratch, tree)
+}
+
+/// **PROVED BY RUNNING IT.** Against this repository the action reads the
+/// branches, the policy and the worktrees the way it will on a real tree.
+#[test]
+fn against_a_real_repository_a_held_branch_is_kept_back_and_a_free_one_offered() {
+    let (_scratch, tree) = a_tree_with_finished_work();
     let mut registry = flow::ActionRegistry::default();
     actions::finished::register_finished_branches(&mut registry);
     let said = match registry
         .get("finished_branches")
         .expect("the action is registered")
         .execute(
-            &serde_json::json!({"repo": repo.to_string_lossy(), "prefix": "work/"}),
+            &serde_json::json!({"repo": tree.to_string_lossy(), "prefix": "work/"}),
             &flow::SharedState::new(),
-        ) {
-        Ok(flow::ActionOutcome::Went(said)) => said,
-        other => {
-            workspace::measured_nothing(&format!("the reading could not be taken here: {other:?}"));
-            return;
-        }
+        )
+        .expect("the reading is taken")
+    {
+        flow::ActionOutcome::Went(said) => said,
+        other => panic!("the reading did not go: {other:?}"),
     };
-    let held: Vec<&str> = said["held_by_a_tree"]
-        .as_array()
-        .expect("the held branches are listed")
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .collect();
-    let offered: Vec<&str> = said["branches"]
-        .as_array()
-        .expect("the free branches are listed")
-        .iter()
-        .filter_map(serde_json::Value::as_str)
-        .collect();
-    for branch in &held {
-        assert!(
-            !offered.contains(branch),
-            "{branch} is held by a tree and was offered for closing anyway"
-        );
-    }
     assert_eq!(
-        offered.len(),
-        said["items"].as_array().map_or(0, Vec::len),
-        "every branch offered carries one mandate, and no mandate names none"
+        said["branches"],
+        serde_json::json!(["work/free-to-close"]),
+        "only the branch no tree stands on is offered: {said}"
     );
-    workspace::measured_against(
-        offered.len(),
-        "finished branches offered",
-        held.len(),
-        "held by a tree and kept back",
+    assert_eq!(
+        said["held_by_a_tree"],
+        serde_json::json!(["work/a-tree-stands-on-it"]),
+        "the branch a worktree stands on is named and kept back: {said}"
     );
+    assert_eq!(said["items"].as_array().map_or(0, Vec::len), 1);
+    workspace::measured_against(1, "finished branch offered", 1, "held by a tree and kept back");
 }
