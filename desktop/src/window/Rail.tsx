@@ -6,11 +6,6 @@ import { t } from "../i18n";
  * The icons carry no state. A mark that means «something is waiting» belongs to
  * the row it happened on; on the column it would tint an icon that is also the
  * only way to reach four other lists.
- *
- * **THE NAME IS SAID TWICE, TO TWO DIFFERENT PEOPLE.** `aria-label` says it to
- * a reader, `title` to a pointer. With the bar and the column of places hidden
- * this rail is the whole navigation, and with only the first of the two a
- * sighted mouse user learns which icon is Data by clicking it.
  */
 export function Rail({
   place,
@@ -28,6 +23,7 @@ export function Rail({
             key={entry.id}
             type="button"
             className="window-rail__button"
+            // The name twice: to a reader, and to a pointer resting on it.
             aria-label={entry.name}
             title={entry.name}
             aria-current={entry.id === place ? "page" : undefined}

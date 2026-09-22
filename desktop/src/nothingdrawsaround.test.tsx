@@ -30,11 +30,10 @@ beforeEach(() => {
 });
 
 /**
- * **THE CHUNK HAS TO ARRIVE BEFORE THE DOM CAN BE READ.** Everything this file
- * looks at lives behind the Suspense around `SailorScreen`, and that chunk now
- * carries the window, the pane and xterm. On a cold or loaded runner the
- * default 1000 ms of `waitFor` runs out while the chunk is still in flight, and
- * the check goes red without the product having changed.
+ * **THE CHUNK HAS TO ARRIVE BEFORE THE DOM CAN BE READ.** What this file looks
+ * at lives behind the Suspense around `SailorScreen`, and that chunk now
+ * carries the window, the pane and xterm: the default 1000 ms runs out while it
+ * is still in flight, and the check goes red with the product unchanged.
  */
 const CHUNK_ARRIVES = { timeout: 5000 };
 
