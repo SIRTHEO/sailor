@@ -75,7 +75,10 @@ fn registry(manual_pending: bool) -> ActionRegistry {
             "merge": "allow", "push": "allow", "release": "allow", "forge": "forge", "remote": "origin",
             "read_from": "main", "asks_publication": "allow", "asks_integration": "allow", "asks_release": "allow",
         })));
-    actions.register("candidate_gate", Answers(json!({"privacy_exit": 0, "ref": "c0ffee"})));
+    actions.register(
+        "candidate_gate",
+        Answers(json!({"privacy_exit": 0, "ref": "c0ffee"})),
+    );
     actions
 }
 
@@ -139,7 +142,13 @@ fn with_no_line_left_to_a_person_the_run_still_reaches_the_merge() {
 #[test]
 fn a_person_s_green_is_recorded_before_the_run_goes_on() {
     let (decisions, records) = outcomes(true);
-    for step in ["manual_gates", "manual_green", "manual_recorded", "policy", "merge_request"] {
+    for step in [
+        "manual_gates",
+        "manual_green",
+        "manual_recorded",
+        "policy",
+        "merge_request",
+    ] {
         assert_eq!(
             outcome_of(&records, step),
             Some(Outcome::Went),
