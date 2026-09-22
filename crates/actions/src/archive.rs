@@ -97,10 +97,22 @@ pub fn how_it_is_bound(url: &str, push_as: Option<&str>, token: Option<&str>) ->
 /// line: an argument is readable by every process on the machine.
 const TOKEN_IN_THE_ENVIRONMENT: &str = "SAILOR_PUSH_TOKEN";
 
+/// git runs a `!` helper as `<helper> get`, and a bare `printf` takes that
+/// `get` for a second argument and repeats its format around it: the last
+/// password line git reads is then the word «get». The body is a function so
+/// that what git hands it is ignored.
 const HELPER: &str = concat!(
-    "credential.helper=!printf \"username=x-access-token\\npassword=%s\\n\" ",
-    "\"$SAILOR_PUSH_TOKEN\""
+    "credential.helper=!f() { printf \"username=x-access-token\\npassword=%s\\n\" ",
+    "\"$SAILOR_PUSH_TOKEN\"; }; f"
 );
+
+/// The helper alone, without the key git reads it under: what a test runs.
+pub fn credential_helper() -> &'static str {
+    HELPER
+        .split_once('=')
+        .map(|(_, body)| body)
+        .unwrap_or(HELPER)
+}
 
 fn token_from(argv: &[String]) -> Result<String, ActionError> {
     let (command, arguments) = argv
