@@ -356,6 +356,7 @@ pub(super) fn welcome(
     open: &Result<Option<StillOpen>, String>,
     announced: &Result<(), String>,
     handed_on: Option<String>,
+    standing: &crate::instructions_cmd::Standing,
 ) -> String {
     let mut text = catalogue::say(
         "cli.session.welcome",
@@ -393,6 +394,29 @@ pub(super) fn welcome(
             "cli.session.rules_gone",
             &[("files", &gone.join(", "))],
         ));
+    }
+    // What the person asks of every session comes right after the tree's own
+    // rules, which it never outranks.
+    match standing {
+        crate::instructions_cmd::Standing::None => {}
+        crate::instructions_cmd::Standing::Words(words) => {
+            text.push('\n');
+            text.push_str(&catalogue::say("cli.session.standing", &[("words", words)]));
+        }
+        crate::instructions_cmd::Standing::TooLong { chars, path } => {
+            text.push('\n');
+            text.push_str(&catalogue::say(
+                "cli.session.standing_too_long",
+                &[
+                    ("chars", &chars.to_string()),
+                    (
+                        "most",
+                        &crate::instructions_cmd::THE_MOST_A_SESSION_IS_HANDED.to_string(),
+                    ),
+                    ("path", &path.display().to_string()),
+                ],
+            ));
+        }
     }
     if let Some(said) = store.and_then(|store| neighbours(arrival, store)) {
         text.push('\n');

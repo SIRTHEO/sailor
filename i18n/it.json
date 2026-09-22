@@ -1304,5 +1304,17 @@
   "flow.sensor.unchanged": "il sensore legge ciò che aveva letto l'ultima volta",
   "flow.sensor.cooling": "il sensore legge un cambiamento, e la pausa lo trattiene per altri {seconds} secondi",
   "flow.sensor.absolute_workdir": "la workdir «{workdir}» del sensore è assoluta: un flusso che lavora in un posto fisso altrove lavora in quello sbagliato. Scrivila relativa alla radice del progetto",
-  "flow.sensor.no_root": "la workdir «{workdir}» del sensore parte dalla radice del progetto, e il battito non ne ha trovata nessuna risalendo da dove gira"
+  "flow.sensor.no_root": "la workdir «{workdir}» del sensore parte dalla radice del progetto, e il battito non ne ha trovata nessuna risalendo da dove gira",
+  "cli.command.instructions": "ciò che chiedi a ogni sessione che apri, consegnato a ciascuna quando parte",
+  "cli.instructions.says": "mostra le istruzioni permanenti consegnate a ogni sessione, e dove sono tenute",
+  "cli.instructions.form.set": "tiene come istruzioni permanenti il testo di un file, o dello standard input con -",
+  "cli.instructions.form.clear": "toglie le istruzioni permanenti: le sessioni partono senza",
+  "cli.instructions.none": "nessuna istruzione permanente: le sessioni partono senza. Starebbero in {path}",
+  "cli.instructions.held": "ogni sessione che apri riceve questi {chars} caratteri quando parte, tenuti in {path}. Arrivano alle sessioni che Sailor saluta, non ai passi di un flusso:",
+  "cli.instructions.set": "tenute in {path}: {chars} caratteri, consegnati a ogni sessione che apri dalla sua prossima partenza",
+  "cli.instructions.cleared": "tolto {path}: le sessioni partono senza istruzioni permanenti",
+  "cli.instructions.empty": "il testo è vuoto: non ho tenuto niente. `sailor instructions clear` le toglie",
+  "cli.instructions.too_long": "{chars} caratteri, oltre i {most} che una sessione riceve: niente arriva a una sessione finché non sono più corte ({path})",
+  "cli.session.standing": "La persona per cui lavori ha lasciato istruzioni permanenti per ogni sessione che apre, con `sailor instructions`. Seguile nel modo in cui rispondi e lavori con lei; dove contraddicono le regole di questo albero, vincono le regole dell'albero.\n--- istruzioni permanenti ---\n{words}\n--- fine delle istruzioni permanenti ---",
+  "cli.session.standing_too_long": "Ci sono istruzioni permanenti in {path}, ma contano {chars} caratteri, oltre i {most} che una sessione riceve: non te ne è arrivata nessuna. Dillo alla persona, perché è con `sailor instructions` che le accorcia."
 }

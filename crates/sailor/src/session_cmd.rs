@@ -577,6 +577,9 @@ fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
             ),
             &announced,
             handed_on(request, &arrival),
+            &ledger::sailor_home()
+                .map(|home| crate::instructions_cmd::standing_under(&home))
+                .unwrap_or(crate::instructions_cmd::Standing::None),
         )));
     }
     Ok(Report::spoken(described(&arrival)))
@@ -2131,7 +2134,14 @@ mod tests {
     /// The greeting on its own, with no register to ask: these cases are about
     /// what the text says, and the neighbours have their own in `sessions`.
     fn welcome_of(arrival: &Arrival) -> String {
-        welcome(arrival, None, &Ok(None), &Ok(()), None)
+        welcome(
+            arrival,
+            None,
+            &Ok(None),
+            &Ok(()),
+            None,
+            &crate::instructions_cmd::Standing::None,
+        )
     }
 
     /// What Sailor remembers is said at the start, count and the latest labels:
@@ -2656,7 +2666,14 @@ mod tests {
             ..Default::default()
         }));
 
-        let said = welcome(&arriving_in(&scratch), None, &open, &Ok(()), None);
+        let said = welcome(
+            &arriving_in(&scratch),
+            None,
+            &open,
+            &Ok(()),
+            None,
+            &crate::instructions_cmd::Standing::None,
+        );
 
         assert!(
             said.contains("un-flusso-1788423534"),
@@ -2751,13 +2768,21 @@ mod tests {
         let scratch = Scratch::new("deposito-cieco");
         let arrival = arriving_in(&scratch);
 
-        let quiet = welcome(&arrival, None, &Ok(None), &Ok(()), None);
+        let quiet = welcome(
+            &arrival,
+            None,
+            &Ok(None),
+            &Ok(()),
+            None,
+            &crate::instructions_cmd::Standing::None,
+        );
         let blind = welcome(
             &arrival,
             None,
             &Err("the file belongs to somebody else".to_owned()),
             &Ok(()),
             None,
+            &crate::instructions_cmd::Standing::None,
         );
 
         assert_ne!(
