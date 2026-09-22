@@ -1312,8 +1312,6 @@
   "window.rail.terminals": "Terminali",
   "window.rail.data": "Dati",
   "window.rail.keys": "Chiavi",
-  "window.scope.here": "Qui",
-  "window.scope.all": "Tutto",
   "window.outside_the_shell": "Fuori dal guscio dell'applicazione non c'è nessuna macchina a cui chiedere.",
   "window.looking": "Sto guardando…",
   "window.workspaces.none": "Nessun workspace è ancora stato dichiarato.",

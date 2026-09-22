@@ -9,7 +9,7 @@ import { TerminalPane, useStir } from "../TerminalPane";
 import { Field, FieldEmpty, FieldHeld } from "./Field";
 import { FlowPage } from "./FlowPage";
 import { FlowRows } from "./FlowRows";
-import { LISTS, listEntry } from "./lists";
+import { listEntry } from "./lists";
 import type { ListName } from "./lists";
 import { Panel } from "./Panel";
 import { heldTerminal } from "./terminalgroups";
@@ -231,6 +231,3 @@ function Waiting({ asked }: { asked: { state: "asking" } | { state: "mute"; why:
     </p>
   );
 }
-
-/** The five names, so a caller can tell what the column offers without React. */
-export const OFFERED: ListName[] = LISTS.map((entry) => entry.id);

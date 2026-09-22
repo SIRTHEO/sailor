@@ -4,7 +4,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Field } from "./Field";
 import { Panel } from "./Panel";
 import { LISTS } from "./lists";
-import { ScopeSwitch } from "./ScopeSwitch";
 import { Window } from "./Window";
 
 afterEach(cleanup);
@@ -18,7 +17,7 @@ function shell(place: Parameters<typeof Window>[0]["place"], onPlace = vi.fn()) 
     <Window
       place={place}
       onPlace={onPlace}
-      panel={<Panel title="Workspaces" scope={null}>
+      panel={<Panel title="Workspaces">
         <div>a-code-project</div>
       </Panel>}
       field={<Field name="work/some-branch" note="3 terminals, 1 page">
@@ -67,24 +66,5 @@ describe("the window stands on three columns", () => {
     expect(screen.getByRole("heading", { name: "Workspaces" })).toBeDefined();
     expect(screen.getByLabelText("work/some-branch")).toBeDefined();
     expect(screen.getByText("3 terminals, 1 page")).toBeDefined();
-  });
-});
-
-describe("the scope switch", () => {
-  test("OUTSIDE A WORKSPACE IT IS NOT DRAWN, rather than drawn with one side", () => {
-    const { container } = render(
-      <ScopeSwitch scope="all" inAWorkspace={false} counts={{ here: "0", all: "118" }} onScope={vi.fn()} />,
-    );
-    expect(container.firstChild).toBeNull();
-  });
-
-  test("inside one, each side carries its own count", () => {
-    render(
-      <ScopeSwitch scope="all" inAWorkspace counts={{ here: "41", all: "118" }} onScope={vi.fn()} />,
-    );
-    const here = screen.getByRole("button", { name: /Here/ });
-    expect(here.getAttribute("aria-pressed")).toBe("false");
-    expect(here.textContent).toContain("41");
-    expect(screen.getByRole("button", { name: /All/ }).getAttribute("aria-pressed")).toBe("true");
   });
 });

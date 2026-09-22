@@ -7,13 +7,11 @@ import type { ReactNode } from "react";
 export function Panel({
   title,
   action,
-  scope,
   children,
 }: {
   title: string;
   /** One button at most, and it is what this list is for: a new one. */
   action?: ReactNode;
-  scope?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -23,7 +21,6 @@ export function Panel({
           <h1 className="window-panel__name">{title}</h1>
           {action}
         </div>
-        {scope}
       </div>
       <div className="window-panel__list">{children}</div>
     </div>

@@ -1312,8 +1312,6 @@
   "window.rail.terminals": "Terminals",
   "window.rail.data": "Data",
   "window.rail.keys": "Keys",
-  "window.scope.here": "Here",
-  "window.scope.all": "All",
   "window.outside_the_shell": "Outside the desktop shell there is no machine to ask.",
   "window.looking": "Looking…",
   "window.workspaces.none": "No workspace has been declared yet.",
