@@ -89,9 +89,9 @@ fn step(id: &str) -> Step {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
         needs: Vec::new(),
         weight: flow::Weight::Light,
-        at_the_end: false,
     }
 }
 

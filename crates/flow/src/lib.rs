@@ -33,7 +33,7 @@ pub use executor::{
     WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::{CapKind, FlowFile, Provenance};
-pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step};
+pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step, BROKEN_FIELD};
 pub use machine_turn::{heavy_steps_wait_on, HeldTurn, MachineTurns, MACHINE_TURN, MACHINE_TURN_VARIABLE};
 pub use record::{
     canonical_text, digest_input, truncate_said, AttemptRelation, Holder, HolderIdentity, Outcome,

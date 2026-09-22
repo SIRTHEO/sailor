@@ -130,7 +130,7 @@ fn step(id: &str, action: &str, deps: Vec<String>) -> Step {
         decides_done: false,
         required: false,
         weight: flow::Weight::Light,
-        at_the_end: false,
+        even_after_a_break: false,
         with: None,
         needs: Vec::new(),
     }
@@ -497,8 +497,8 @@ fn a_run_stopped_by_the_cap_still_closes_what_it_opened() {
     let mut actions = flow::ActionRegistry::default();
     actions.register("costs", CostsMoney { store: Arc::clone(&store), micros: 150, times: Arc::clone(&paid) });
     actions.register("free", CostsMoney { store: Arc::clone(&store), micros: 0, times: Arc::clone(&closed) });
-    let mut close = step("close", "free", vec!["open".to_owned()]);
-    close.at_the_end = true;
+    let mut close = step("close", "free", vec!["open".to_owned(), "more".to_owned()]);
+    close.even_after_a_break = true;
     let graph = Graph::new(vec![
         step("open", "costs", vec![]),
         step("more", "costs", vec!["open".to_owned()]),

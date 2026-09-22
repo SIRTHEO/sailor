@@ -997,12 +997,13 @@
         "id": "release_tree",
         "deps": [
           "the_request",
-          "combined"
+          "combined",
+          "merged_on_host"
         ],
         "action": "shell_check",
         "max_attempts": 1,
-        "at_the_end": true,
-        "when": null,
+        "even_after_a_break": true,
+        "when": { "kind": "pointer_exists", "pointer": "/combined" },
         "with": {
           "command": "set -eu\n[ -n \"$TREE\" ] || exit 0\ngit -C \"$REPO\" worktree unlock \"$TREE\" 2>/dev/null || true\ngit -C \"$REPO\" worktree remove --force \"$TREE\"\n",
           "env": {

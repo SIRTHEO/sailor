@@ -150,7 +150,7 @@ fn step(id: &str, deps: Vec<String>) -> Step {
         decides_done: false,
         required: false,
         weight: flow::Weight::Light,
-        at_the_end: false,
+        even_after_a_break: false,
         with: None,
         needs: Vec::new(),
     }

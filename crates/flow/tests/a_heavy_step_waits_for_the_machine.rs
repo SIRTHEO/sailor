@@ -76,7 +76,7 @@ fn step(id: &str, deps: &[&str], weight: flow::Weight) -> Step {
         required: false,
         needs: Vec::new(),
         weight,
-        at_the_end: false,
+        even_after_a_break: false,
     }
 }
 

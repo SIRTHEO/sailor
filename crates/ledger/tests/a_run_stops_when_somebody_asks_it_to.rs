@@ -68,9 +68,9 @@ fn graph_of_one_step() -> Graph {
         stops_when: None,
         decides_done: false,
         required: false,
+        even_after_a_break: false,
         needs: Vec::new(),
         weight: flow::Weight::Light,
-        at_the_end: false,
     }])
     .expect("a valid graph")
 }
