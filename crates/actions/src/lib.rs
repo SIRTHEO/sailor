@@ -45,6 +45,7 @@ pub mod notes;
 pub mod presence;
 pub mod price_every_call;
 pub mod reserve;
+pub mod review_verdict;
 pub mod search;
 pub mod session_fill;
 pub mod store;
