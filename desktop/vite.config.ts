@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 
 // **THE WINDOW CARRIES ONE CATALOGUE, NOT EVERY LANGUAGE THERE IS.** Both
 // shipped in every build: 201 kB of the chunk that loads before anything is
@@ -42,9 +42,10 @@ export default defineConfig({
     fs: {
       allow: [
         ".",
-        // Named although `.` holds it: in a worktree it is a link into the
-        // main checkout, and unnamed the window opens without its typeface.
-        "./node_modules",
+        // Named, and RESOLVED: in a worktree `node_modules` is a link into
+        // the main checkout, the request arrives under the real path, and
+        // unnamed the window opens without its typeface.
+        realpathSync(fileURLToPath(new URL("./node_modules", import.meta.url))),
         "../crates/flow/system",
         "../crates/flow/src",
         "../crates/ledger/src",
