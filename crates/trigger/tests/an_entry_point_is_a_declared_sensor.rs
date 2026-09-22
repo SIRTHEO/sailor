@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use trigger::sensor::{kept_for, refusal_of, sense, Sensed, Sensor};
+use trigger::sensor::{kept_for, read, refusal_of, sense, Eyes, Sensed, Sensor};
 
 /// Reads whatever the test last put in its hand, and declares it only reads.
 struct Reading(Arc<Mutex<Value>>);
@@ -77,6 +77,42 @@ impl Action for Writing {
     }
 }
 
+/// Hands back its own input, as far as it knows `workdir`.
+struct Echoing;
+
+impl Action for Echoing {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        Ok(ActionOutcome::Went(input.clone()))
+    }
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        true
+    }
+}
+
+/// The same, for an action whose input has no place for a `workdir`.
+struct Closed;
+
+impl Action for Closed {
+    fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
+        Ok(ActionOutcome::Went(input.clone()))
+    }
+    fn unknown_fields(&self, declared: &Value) -> Vec<String> {
+        declared
+            .as_object()
+            .map(|fields| fields.keys().filter(|key| *key != "collection").cloned().collect())
+            .unwrap_or_default()
+    }
+    fn may_spend(&self, _declared: Option<&Value>) -> bool {
+        false
+    }
+    fn only_reads(&self, _declared: Option<&Value>) -> bool {
+        true
+    }
+}
+
 struct World {
     ledger: Ledger,
     registry: Arc<ActionRegistry>,
@@ -98,6 +134,8 @@ impl World {
         registry.register("hanging", Hanging);
         registry.register("spending", Spending);
         registry.register("writing", Writing);
+        registry.register("echoing", Echoing);
+        registry.register("closed", Closed);
         World {
             ledger: Ledger::open(&scratch).expect("a scratch ledger"),
             registry: Arc::new(registry),
@@ -111,14 +149,22 @@ impl World {
         *self.watched.lock().expect("the reading") = value;
     }
 
+    fn eyes(&self, root: Option<&str>) -> Eyes {
+        Eyes {
+            registry: Arc::clone(&self.registry),
+            root: root.map(PathBuf::from),
+            timeout: Duration::from_millis(300),
+        }
+    }
+
     fn beat(&mut self, sensor: &Sensor, now: i64) -> Sensed {
+        let eyes = self.eyes(None);
         let started = &mut self.started;
         sense(
             &self.ledger,
             "watching-flow",
             sensor,
-            &self.registry,
-            Duration::from_millis(300),
+            &eyes,
             now,
             &mut |text| {
                 started.push(text.to_owned());
@@ -282,4 +328,28 @@ fn the_trigger_step_of_a_sensor_flow_hands_the_change_downstream_as_a_record() {
     };
     assert_eq!(signal["kind"], "sensor");
     assert_eq!(signal["carried"]["after"], "b2");
+}
+
+#[test]
+fn a_sensor_works_where_a_step_of_its_flow_would() {
+    let world = World::new("workdir");
+    let eyes = world.eyes(Some("/a/project"));
+    let echo = |action: &str, with: Value| {
+        let sensor = Sensor {
+            action: action.to_owned(),
+            with,
+            pointer: None,
+            cooldown_secs: 0,
+        };
+        read(&sensor, &eyes)
+    };
+
+    let absent = echo("echoing", json!({})).expect("it reads");
+    assert_eq!(absent["workdir"], "/a/project", "an absent workdir is the root");
+    let relative = echo("echoing", json!({"workdir": "crates/flow"})).expect("it reads");
+    assert_eq!(relative["workdir"], "/a/project/crates/flow");
+    let refused = echo("echoing", json!({"workdir": "/elsewhere"})).expect_err("absolute");
+    assert!(refused.contains("/elsewhere"), "{refused}");
+    let closed = echo("closed", json!({"collection": "c"})).expect("it reads");
+    assert!(closed.get("workdir").is_none(), "no field its action never asked for: {closed}");
 }

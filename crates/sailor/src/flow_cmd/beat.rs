@@ -161,7 +161,7 @@ fn last_runs() -> LastRuns {
 /// three read fresh. Killed at any instant and restarted, the next beat decides
 /// exactly what it would have decided without the interruption — which is the
 /// one property a thing that runs forever has to have on a machine that sleeps.
-pub(super) fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
+pub fn tick_flows(sources: &[FlowSource]) -> Result<String, String> {
     tick_flows_with(
         sources,
         last_runs(),
@@ -353,7 +353,11 @@ fn sense_the_watchers(
             return (said, 0, watching.len());
         }
     };
-    let registry = std::sync::Arc::new(registry::default_registry(Some(ledger.clone()), None));
+    let eyes = trigger::sensor::Eyes {
+        registry: std::sync::Arc::new(registry::default_registry(Some(ledger.clone()), None)),
+        root: super::run_and_resume::workspace_root(),
+        timeout: trigger::sensor::SENSOR_TIMEOUT,
+    };
     let (mut ran, mut held) = (0, 0);
     for (name, id, sensor) in watching {
         let sensed = match sensor {
@@ -365,8 +369,7 @@ fn sense_the_watchers(
                 &ledger,
                 id,
                 sensor,
-                &registry,
-                trigger::sensor::SENSOR_TIMEOUT,
+                &eyes,
                 now,
                 &mut |text| start(name, Some(text)),
             ),

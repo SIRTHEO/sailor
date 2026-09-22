@@ -5,10 +5,11 @@
 //! State is compared, not signals counted, so two changes between ticks are one
 //! run carrying the first reading and the last.
 
-use flow::{ActionOutcome, ActionRegistry, FlowFile, SharedState};
+use flow::{Action, ActionOutcome, ActionRegistry, FlowFile, SharedState, WORKDIR_FIELD};
 use ledger::{Ledger, StoreRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
@@ -154,22 +155,68 @@ pub fn refusal_of(flow: &FlowFile, registry: &ActionRegistry) -> Option<String> 
     ))
 }
 
+/// What a sensor is read with: the actions, the project root a run of the
+/// same flow would work in, and how long to wait.
+pub struct Eyes {
+    pub registry: Arc<ActionRegistry>,
+    pub root: Option<PathBuf>,
+    pub timeout: Duration,
+}
+
+/// The sensor's input with its `workdir` placed the way a step's is: relative
+/// hangs off the root, absolute is refused, and absent is offered the root
+/// only by an action that does not call the field unknown.
+fn positioned(action: &dyn Action, with: &Value, root: Option<&Path>) -> Result<Value, String> {
+    let Value::Object(fields) = with else {
+        return Ok(with.clone());
+    };
+    let mut fields = fields.clone();
+    match fields.get(WORKDIR_FIELD) {
+        Some(Value::String(declared)) => {
+            if declared.starts_with('/') || declared.starts_with("~/") {
+                return Err(catalogue::say(
+                    "flow.sensor.absolute_workdir",
+                    &[("workdir", declared)],
+                ));
+            }
+            let Some(root) = root else {
+                return Err(catalogue::say("flow.sensor.no_root", &[("workdir", declared)]));
+            };
+            let placed = root.join(declared).display().to_string();
+            fields.insert(WORKDIR_FIELD.to_owned(), placed.into());
+        }
+        Some(_) => {}
+        None => {
+            if let Some(root) = root {
+                let mut offered = fields.clone();
+                offered.insert(WORKDIR_FIELD.to_owned(), root.display().to_string().into());
+                let offered = Value::Object(offered);
+                if !action.unknown_fields(&offered).iter().any(|field| field == WORKDIR_FIELD) {
+                    return Ok(offered);
+                }
+            }
+        }
+    }
+    Ok(Value::Object(fields))
+}
+
 /// Runs the sensor once and returns what it read.
 ///
 /// **THE ACTION IS NOT KILLED ON A TIMEOUT**, only left behind: an action has
 /// no handle to stop it by, and a `shell_check` enforces its own limit anyway.
-pub fn read(
-    sensor: &Sensor,
-    registry: &Arc<ActionRegistry>,
-    timeout: Duration,
-) -> Result<Value, String> {
+pub fn read(sensor: &Sensor, eyes: &Eyes) -> Result<Value, String> {
+    let registry = &eyes.registry;
+    let timeout = eyes.timeout;
     if let Some(refused) = sensor.refusal(registry) {
         return Err(refused);
     }
+    let input = match registry.get(&sensor.action) {
+        Some(action) => positioned(action, &sensor.with, eyes.root.as_deref())?,
+        None => sensor.with.clone(),
+    };
     let (send, receive) = mpsc::channel();
     let registry = Arc::clone(registry);
     let action = sensor.action.clone();
-    let input = sensor.with.clone();
     std::thread::spawn(move || {
         let outcome = match registry.get(&action) {
             Some(found) => found.execute(&input, &SharedState::new()),
@@ -331,8 +378,7 @@ pub fn sense(
     ledger: &Ledger,
     flow_id: &str,
     sensor: &Sensor,
-    registry: &Arc<ActionRegistry>,
-    timeout: Duration,
+    eyes: &Eyes,
     now: i64,
     start: &mut dyn FnMut(&str) -> Result<String, String>,
 ) -> Sensed {
@@ -346,7 +392,7 @@ pub fn sense(
             }
         }
     };
-    let reading = read(sensor, registry, timeout);
+    let reading = read(sensor, eyes);
     let kept_or_blind = |kept: &Kept, said: String| match keep(ledger, flow_id, kept, now) {
         Ok(()) => said,
         Err(error) => catalogue::say("flow.sensor.could_not_remember", &[("error", &error)]),

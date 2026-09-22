@@ -1297,5 +1297,7 @@
   "flow.sensor.could_not_remember": "la lettura del sensore non si è potuta tenere o rileggere dal deposito: {error}",
   "flow.sensor.baseline": "prima lettura tenuta come quella con cui confrontare; non è partito nulla",
   "flow.sensor.unchanged": "il sensore legge ciò che aveva letto l'ultima volta",
-  "flow.sensor.cooling": "il sensore legge un cambiamento, e la pausa lo trattiene per altri {seconds} secondi"
+  "flow.sensor.cooling": "il sensore legge un cambiamento, e la pausa lo trattiene per altri {seconds} secondi",
+  "flow.sensor.absolute_workdir": "la workdir «{workdir}» del sensore è assoluta: un flusso che lavora in un posto fisso altrove lavora in quello sbagliato. Scrivila relativa alla radice del progetto",
+  "flow.sensor.no_root": "la workdir «{workdir}» del sensore parte dalla radice del progetto, e il battito non ne ha trovata nessuna risalendo da dove gira"
 }

@@ -1297,5 +1297,7 @@
   "flow.sensor.could_not_remember": "the sensor's reading could not be kept or read back from the store: {error}",
   "flow.sensor.baseline": "first reading kept as the one to compare against; nothing started",
   "flow.sensor.unchanged": "the sensor reads what it read last time",
-  "flow.sensor.cooling": "the sensor reads a change, and the cooldown holds it for {seconds} more seconds"
+  "flow.sensor.cooling": "the sensor reads a change, and the cooldown holds it for {seconds} more seconds",
+  "flow.sensor.absolute_workdir": "the sensor's workdir «{workdir}» is absolute: a flow that works in one fixed place works in the wrong one elsewhere. Write it relative to the project root",
+  "flow.sensor.no_root": "the sensor's workdir «{workdir}» hangs off the project root, and the beat found none walking up from where it runs"
 }
