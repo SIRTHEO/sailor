@@ -601,7 +601,7 @@
           "type": "any"
         },
         "with": {
-          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch --quiet \"$REMOTE_NAME\"\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
+          "command": "set -eu\n# The list of private names lives only on this machine, so the forge cannot post\n# this check for itself. Until it is posted the request stays blocked and the\n# host says nothing about why.\ncd \"$REPO\"\ngit -C \"$REPO\" fetch -q --no-tags \"$REMOTE_NAME\"\n\"$REPO/scripts/attest-private-names.sh\" \"$COMMIT\" >&2\nprintf '{\"attested\":\"%s\",\"posted\":true}' \"$COMMIT\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"

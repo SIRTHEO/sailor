@@ -194,6 +194,7 @@ fn remote_named_in(line: &str) -> Option<&str> {
 fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
     let system = workspace_root().join("crates/flow/system");
     let mut named = Vec::new();
+    let mut read = 0;
     for entry in std::fs::read_dir(&system).expect("the shipped flows") {
         let path = entry.expect("an entry").path();
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -204,6 +205,7 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
         };
         for step in flow["graph"]["steps"].as_array().into_iter().flatten() {
             let command = step["with"]["command"].as_str().unwrap_or_default();
+            read += usize::from(!command.is_empty());
             let literal = command.lines().any(|line| {
                 remote_named_in(line) == Some("origin") || line.contains("refs/remotes/origin/")
             });
@@ -212,9 +214,45 @@ fn no_shipped_step_reaches_a_remote_by_a_name_it_was_not_given() {
             }
         }
     }
+    workspace::measured(read, "shell steps of the shipped flows read for a remote");
     assert!(
         named.is_empty(),
         "steps that name the remote instead of reading it: {named:#?}"
     );
     assert_eq!(remote_named_in("git fetch --quiet origin"), Some("origin"));
+}
+
+/// No step reads a tag it fetches whole, yet whether such a fetch takes the
+/// tags is the machine's git configuration to say: under `tagOpt = --tags` a
+/// tag the remote rewrote fails it with nothing on stderr. Every whole fetch
+/// says it leaves the tags where they are.
+#[test]
+fn no_shipped_fetch_follows_the_remote_tags() {
+    let system = workspace_root().join("crates/flow/system");
+    let mut following = Vec::new();
+    let mut fetches = 0;
+    for entry in std::fs::read_dir(&system).expect("the shipped flows") {
+        let path = entry.expect("an entry").path();
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(flow) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        for step in flow["graph"]["steps"].as_array().into_iter().flatten() {
+            let command = step["with"]["command"].as_str().unwrap_or_default();
+            for line in command.lines() {
+                let fetch = line.split_whitespace().any(|word| word == "fetch");
+                fetches += usize::from(fetch && remote_named_in(line).is_some());
+                if fetch && remote_named_in(line).is_some() && !line.contains("--no-tags") {
+                    following.push(format!("{}: {}", path.display(), step["id"]));
+                }
+            }
+        }
+    }
+    workspace::measured(fetches, "fetches of a whole remote in the shipped flows");
+    assert!(
+        following.is_empty(),
+        "steps whose fetch follows the remote tags: {following:#?}"
+    );
 }
