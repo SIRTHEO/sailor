@@ -42,6 +42,9 @@ export default defineConfig({
     fs: {
       allow: [
         ".",
+        // Named although `.` holds it: in a worktree it is a link into the
+        // main checkout, and unnamed the window opens without its typeface.
+        "./node_modules",
         "../crates/flow/system",
         "../crates/flow/src",
         "../crates/ledger/src",
