@@ -26,8 +26,23 @@ fn locked(path: &str, branch: &str) -> Worktree {
     }
 }
 
+/// Every tree the cases name, as Sailor wrote it down when it cut it.
+fn cut() -> Vec<PathBuf> {
+    ["/trees/work", "/trees/w", "/trees/other"]
+        .map(PathBuf::from)
+        .to_vec()
+}
+
 fn decide(trees: &[Worktree], branch: &str) -> WhatBecomesOfIt {
-    what_becomes_of_it(trees, Path::new(TOP), Path::new(TOP), branch, &[], &[])
+    what_becomes_of_it(
+        trees,
+        Path::new(TOP),
+        Path::new(TOP),
+        branch,
+        &[],
+        &[],
+        &cut(),
+    )
 }
 
 #[test]
@@ -77,7 +92,15 @@ fn the_linked_tree_named_as_repo_is_never_taken_down() {
     let trees = [tree(TOP, Some("main")), tree("/trees/work", Some("work"))];
     for repo in ["/trees/work", "/trees/work/crates"] {
         assert_eq!(
-            what_becomes_of_it(&trees, Path::new(TOP), Path::new(repo), "work", &[], &[]),
+            what_becomes_of_it(
+                &trees,
+                Path::new(TOP),
+                Path::new(repo),
+                "work",
+                &[],
+                &[],
+                &cut()
+            ),
             WhatBecomesOfIt::ItIsWhereTheFlowRuns(PathBuf::from("/trees/work")),
             "repo {repo}"
         );
@@ -95,7 +118,8 @@ fn a_tree_with_a_terminal_recorded_in_it_is_kept() {
             Path::new(TOP),
             "work",
             &terminals,
-            &[]
+            &[],
+            &cut()
         ),
         WhatBecomesOfIt::SomebodyIsIn(
             PathBuf::from("/trees/work"),
@@ -115,7 +139,8 @@ fn a_tree_a_process_stands_in_is_kept_and_the_process_is_named() {
             Path::new(TOP),
             "work",
             &[],
-            &standing
+            &standing,
+            &cut()
         ),
         WhatBecomesOfIt::SomebodyIsIn(PathBuf::from("/trees/work"), WhoIsIn::AProcess(4242))
     );
@@ -132,9 +157,24 @@ fn a_terminal_in_a_neighbour_tree_is_not_in_this_one() {
             Path::new(TOP),
             "work",
             &terminals,
-            &[]
+            &[],
+            &cut()
         ),
         WhatBecomesOfIt::TakeItDown(PathBuf::from("/trees/work"))
+    );
+}
+
+/// **A TREE SAILOR NEVER CUT IS NOT SAILOR'S TO TAKE DOWN**, whatever branch it
+/// carries: a workspace a person opened by hand is named and left to them.
+#[test]
+fn a_tree_sailor_never_wrote_down_is_named_and_left() {
+    let trees = [
+        tree(TOP, Some("main")),
+        tree("/elsewhere/work", Some("work")),
+    ];
+    assert_eq!(
+        decide(&trees, "work"),
+        WhatBecomesOfIt::NotCutBySailor(PathBuf::from("/elsewhere/work"))
     );
 }
 
@@ -160,7 +200,8 @@ fn somebody_in_a_locked_tree_is_named_before_the_lock() {
             Path::new(TOP),
             "work",
             &[],
-            &standing
+            &standing,
+            &cut()
         ),
         WhatBecomesOfIt::SomebodyIsIn(PathBuf::from("/trees/work"), WhoIsIn::AProcess(7))
     );
@@ -220,9 +261,49 @@ mod on_a_real_repository {
         }
     }
 
+    /// The ledger `a_repository` pointed the action at, beside the two trees.
+    fn its_ledger(primary: &Path) -> PathBuf {
+        primary.parent().expect("the scratch").join("ledger")
+    }
+
+    fn written_down(primary: &Path, linked: &Path) {
+        use workspace::OpenTrees;
+        let register = ledger::Ledger::open(its_ledger(primary)).expect("the register");
+        register
+            .tree_opened(&workspace::OpenTree {
+                path: linked.to_string_lossy().into_owned(),
+                repo: primary.to_string_lossy().into_owned(),
+                run: String::new(),
+                step: String::new(),
+                opened_by_pid: 1,
+                opened_at: 0,
+                opened_by_born_at: None,
+            })
+            .expect("the register takes it");
+    }
+
+    fn still_open(primary: &Path, linked: &Path) -> bool {
+        use workspace::OpenTrees;
+        ledger::Ledger::open(its_ledger(primary))
+            .expect("the register")
+            .trees_left_open()
+            .expect("the rows")
+            .iter()
+            .any(|row| Path::new(&row.path) == linked)
+    }
+
     #[test]
     fn the_linked_tree_goes_when_the_primary_is_named_and_stays_when_it_is() {
         let (primary, linked) = a_repository("both");
+
+        let (class, said) = close(&primary).expect_err("a tree nobody wrote down stays");
+        assert_eq!(class, "the_tree_stays", "{said}");
+        assert!(said.contains("not cut by Sailor"), "{said}");
+        assert!(
+            linked.join(".git").exists(),
+            "the unwritten tree is still there"
+        );
+        written_down(&primary, &linked);
 
         let (class, said) = close(&linked).expect_err("the tree named as repo stays");
         assert_eq!(class, "the_tree_stays", "{said}");
@@ -234,5 +315,9 @@ mod on_a_real_repository {
 
         close(&primary).expect("named from the primary, the linked tree is taken down");
         assert!(!linked.exists(), "the linked tree is gone");
+        assert!(
+            !still_open(&primary, &linked),
+            "its row still counts as open"
+        );
     }
 }
