@@ -50,24 +50,42 @@ fn a_tag_naming_another_commit_is_named_back() {
     );
 }
 
+const OVER_HTTPS: &str = "https://a-host.example/owner/repo.git";
+const TOKEN_COMMAND: &str = "print-a-token --user";
+
 #[test]
 fn only_a_remote_that_can_be_bound_to_an_account_is_pushed_to() {
     assert_eq!(
-        how_it_is_bound("/srv/origin.git", None),
+        how_it_is_bound("/srv/origin.git", None, None),
         HowItIsBound::NothingToBind
     );
+    // The account is the last word of the command that prints its token.
     assert_eq!(
-        how_it_is_bound("https://github.com/owner/repo.git", Some("someone")),
-        HowItIsBound::AsThisAccount("someone".to_owned())
+        how_it_is_bound(OVER_HTTPS, Some("someone"), Some(TOKEN_COMMAND)),
+        HowItIsBound::AsThisAccount(vec![
+            "print-a-token".to_owned(),
+            "--user".to_owned(),
+            "someone".to_owned(),
+        ])
     );
-    // The machine's own credentials are never the fallback.
+    // The machine's own credentials are never the fallback: neither half alone
+    // binds the push.
+    for (who, token) in [
+        (None, Some(TOKEN_COMMAND)),
+        (Some("someone"), None),
+        (Some(""), Some(TOKEN_COMMAND)),
+        (Some("someone"), Some("   ")),
+    ] {
+        assert_eq!(
+            how_it_is_bound(OVER_HTTPS, who, token),
+            HowItIsBound::Unbindable(OVER_HTTPS.to_owned()),
+            "bound with who={who:?} token={token:?}"
+        );
+    }
+    // A transport this action cannot bind at all, however it is declared.
     assert_eq!(
-        how_it_is_bound("https://github.com/owner/repo.git", None),
-        HowItIsBound::Unbindable("https://github.com/owner/repo.git".to_owned())
-    );
-    assert_eq!(
-        how_it_is_bound("git@github.com:owner/repo.git", Some("someone")),
-        HowItIsBound::Unbindable("git@github.com:owner/repo.git".to_owned())
+        how_it_is_bound("ssh://a-host.example/owner/repo.git", Some("someone"), Some(TOKEN_COMMAND)),
+        HowItIsBound::Unbindable("ssh://a-host.example/owner/repo.git".to_owned())
     );
 }
 

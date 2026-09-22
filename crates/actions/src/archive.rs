@@ -1,11 +1,9 @@
 //! The head of a delivered branch kept, under `archive/<branch>`, before the
-//! branch itself comes down.
-//!
-//! **A FLOW STEP IS NOT A SHELL PROGRAM.** Written in `close-the-work` this
-//! was another thousand characters on the step that deletes the remote branch,
-//! the credential helper of `sailor.pushAs` quoted a second time inside a
-//! string. Here the decision is a function three tests can ask, and the push
-//! is the only line that needs a remote.
+//! branch itself comes down. **A FLOW STEP IS NOT A SHELL PROGRAM**: written
+//! into `close-the-work` this was another thousand characters on the step that
+//! deletes the remote branch. Which host the account lives on is not written
+//! here (ADR-020): the tree declares the command line that prints a token in
+//! `sailor.pushToken`, the way it declares its index server.
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
@@ -62,47 +60,73 @@ pub fn what_becomes_of_the_tag(listed: &str, tag: &str, head: &str) -> WhatBecom
     }
 }
 
+/// Where a tree declares the command line that prints the token of an account,
+/// the way `sailor.pushAs` declares who pushes: words split on whitespace, the
+/// account appended as the last word.
+pub const PUSH_TOKEN: &str = "sailor.pushToken";
+
 /// How a push over this remote is bound to an account. A path or a `file://`
-/// carries no credentials; anything that is neither that nor http(s) cannot be
-/// bound to `sailor.pushAs`, so this action refuses it rather than pushing as
-/// whoever the machine happens to be.
+/// carries no credentials; anything else is bound to `sailor.pushAs` through
+/// the declared token command, and a remote this action cannot bind that way
+/// is refused rather than pushed to as whoever the machine happens to be.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HowItIsBound {
     NothingToBind,
-    AsThisAccount(String),
+    AsThisAccount(Vec<String>),
     Unbindable(String),
 }
 
-pub fn how_it_is_bound(url: &str, push_as: Option<&str>) -> HowItIsBound {
+pub fn how_it_is_bound(url: &str, push_as: Option<&str>, token: Option<&str>) -> HowItIsBound {
     if url.starts_with('/') || url.starts_with("file://") {
         return HowItIsBound::NothingToBind;
     }
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return HowItIsBound::Unbindable(url.to_owned());
     }
-    match push_as {
-        Some(who) if !who.is_empty() => HowItIsBound::AsThisAccount(who.to_owned()),
+    match (push_as, token) {
+        (Some(who), Some(line)) if !who.is_empty() && line.split_whitespace().next().is_some() => {
+            let mut argv: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
+            argv.push(who.to_owned());
+            HowItIsBound::AsThisAccount(argv)
+        }
         _ => HowItIsBound::Unbindable(url.to_owned()),
     }
 }
 
-/// The helper git is handed for one call: it prints the token of the named
-/// account and nothing else, so the push never reaches for the machine's own.
-fn helper_for(who: &str) -> String {
-    format!(
-        "!f() {{ printf \"%s\\n\" username=x-access-token; printf \"password=%s\\n\" \
-         \"$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"{who}\")\"; }}; f"
-    )
+/// The token reaches git through the environment, never through a command
+/// line: an argument is readable by every process on the machine.
+const TOKEN_IN_THE_ENVIRONMENT: &str = "SAILOR_PUSH_TOKEN";
+
+const HELPER: &str = concat!(
+    "credential.helper=!printf \"username=x-access-token\\npassword=%s\\n\" ",
+    "\"$SAILOR_PUSH_TOKEN\""
+);
+
+fn token_from(argv: &[String]) -> Result<String, ActionError> {
+    let (command, arguments) = argv
+        .split_first()
+        .ok_or_else(|| not_archived(format!("{PUSH_TOKEN} declares no command")))?;
+    let output = Command::new(command)
+        .args(arguments)
+        .output()
+        .map_err(|why| not_archived(format!("{PUSH_TOKEN} would not run: {why}")))?;
+    let token = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    if !output.status.success() || token.is_empty() {
+        return Err(not_archived(format!(
+            "no token for the account that pushes: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(token)
 }
 
-fn git_at(repo: &Path, bound: &HowItIsBound) -> Command {
+fn git_at(repo: &Path, token: Option<&str>) -> Command {
     let mut command = Command::new("git");
     command.arg("-C").arg(repo);
-    if let HowItIsBound::AsThisAccount(who) = bound {
+    if let Some(token) = token {
+        command.env(TOKEN_IN_THE_ENVIRONMENT, token);
         command.arg("-c").arg("credential.helper=");
-        command
-            .arg("-c")
-            .arg(format!("credential.helper={}", helper_for(who)));
+        command.arg("-c").arg(HELPER);
     }
     command
 }
@@ -132,15 +156,25 @@ impl Action for ArchiveTheHeadAction {
         let url = read_config(&spec.repo, &format!("remote.{}.url", spec.remote)).ok_or_else(
             || not_archived(format!("the tree has no remote named {}", spec.remote)),
         )?;
-        let bound = how_it_is_bound(&url, read_config(&spec.repo, "sailor.pushAs").as_deref());
-        if let HowItIsBound::Unbindable(url) = &bound {
-            return Err(not_archived(format!(
-                "{} is {url}: a push over it cannot be bound to sailor.pushAs, so it is refused",
-                spec.remote
-            )));
-        }
+        let bound = how_it_is_bound(
+            &url,
+            read_config(&spec.repo, "sailor.pushAs").as_deref(),
+            read_config(&spec.repo, PUSH_TOKEN).as_deref(),
+        );
+        let token = match &bound {
+            HowItIsBound::Unbindable(url) => {
+                return Err(not_archived(format!(
+                    "a push to {} at {url} cannot be bound to an account: it is bound over \
+                     http(s), through sailor.pushAs and {PUSH_TOKEN}, and one of the three is \
+                     missing",
+                    spec.remote
+                )))
+            }
+            HowItIsBound::NothingToBind => None,
+            HowItIsBound::AsThisAccount(argv) => Some(token_from(argv)?),
+        };
         let tag = tag_for(&spec.branch);
-        let listed = git_at(&spec.repo, &bound)
+        let listed = git_at(&spec.repo, token.as_deref())
             .args(["ls-remote", &spec.remote, &tag])
             .output()
             .map_err(|why| not_archived(format!("git ls-remote would not run: {why}")))?;
@@ -163,7 +197,7 @@ impl Action for ArchiveTheHeadAction {
                 )))
             }
             WhatBecomesOfTheTag::PushIt => {
-                let pushed = git_at(&spec.repo, &bound)
+                let pushed = git_at(&spec.repo, token.as_deref())
                     .args(["push", &spec.remote, &format!("{}:{tag}", spec.head)])
                     .output()
                     .map_err(|why| not_archived(format!("git push would not run: {why}")))?;

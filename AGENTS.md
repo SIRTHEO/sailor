@@ -79,7 +79,8 @@ being counted.
 forge and remote), `.sailor/index.json` (the names its code index uses),
 `.sailor/tools.d/*.json` (the tools it offers), and the `sailor.*` keys of its
 git configuration — `sailor.trunk`, `sailor.forgeAs`, `sailor.pushAs`,
-`sailor.indexServer`. What none of these declares, the product names as missing
+`sailor.pushToken` (the command line that prints that account's token, the
+account appended as its last word), `sailor.indexServer`. What none of these declares, the product names as missing
 and stops over. **It never falls back to a value that happens to be right
 here**, which is the whole of ADR-013 applied outside engines.
 
