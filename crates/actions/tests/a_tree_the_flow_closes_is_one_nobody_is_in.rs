@@ -261,10 +261,14 @@ mod on_a_real_repository {
         }
     }
 
+    /// The ledger `a_repository` pointed the action at, beside the two trees.
+    fn its_ledger(primary: &Path) -> PathBuf {
+        primary.parent().expect("the scratch").join("ledger")
+    }
+
     fn written_down(primary: &Path, linked: &Path) {
         use workspace::OpenTrees;
-        let register = ledger::Ledger::open(ledger::default_directory().expect("a ledger"))
-            .expect("the register");
+        let register = ledger::Ledger::open(its_ledger(primary)).expect("the register");
         register
             .tree_opened(&workspace::OpenTree {
                 path: linked.to_string_lossy().into_owned(),
@@ -278,9 +282,9 @@ mod on_a_real_repository {
             .expect("the register takes it");
     }
 
-    fn still_open(linked: &Path) -> bool {
+    fn still_open(primary: &Path, linked: &Path) -> bool {
         use workspace::OpenTrees;
-        ledger::Ledger::open(ledger::default_directory().expect("a ledger"))
+        ledger::Ledger::open(its_ledger(primary))
             .expect("the register")
             .trees_left_open()
             .expect("the rows")
@@ -311,6 +315,9 @@ mod on_a_real_repository {
 
         close(&primary).expect("named from the primary, the linked tree is taken down");
         assert!(!linked.exists(), "the linked tree is gone");
-        assert!(!still_open(&linked), "its row still counts as open");
+        assert!(
+            !still_open(&primary, &linked),
+            "its row still counts as open"
+        );
     }
 }
