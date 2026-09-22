@@ -9,11 +9,11 @@ Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplev
 | # | what the person does | what they must see |
 |---|---|---|
 | 1 | `sailor version` | the version and the commit the binary was built from; they match the release note |
-| 2 | `sh flows/tests/make-fixtures.sh` then `cargo run -q -j 1 -p sailor --example seed_take_the_next_work -- target/fixtures fake-cheap-worker` | fixtures written; «seeded .../target/fixtures/store»; the `CHEAP_WORKER` role names the fake worker of step 6, so no step of the journey calls a paid engine |
+| 2 | `sh flows/tests/make-fixtures.sh` then `cargo run -q -j 1 -p sailor --example seed_take_the_next_work -- target/fixtures fake-cheap-worker`, then the `export` line the script prints | fixtures written, with the fake worker and its descriptor; «seeded .../target/fixtures/store»; the `CHEAP_WORKER` role names the fake worker, so no step of the journey calls a paid engine |
 | 3 | `(cd target/fixtures/alpha && sailor workspace init)` and the same for `beta` | «wrote .../sailor.json» twice |
 | 4 | `sailor profiles list` | one row per engine, each reading authenticated, authenticated with identity unverified, or not authenticated; no row is silent |
-| 5 | `(cd target/fixtures/alpha && SAILOR_LEDGER=$SAILOR_REPO/target/fixtures/store sailor flow check take-the-next-work)` | «missing actions: none»; «tools asked for: fake-cheap-worker» and the sound command lines are listed |
-| 6 | `(cd target/fixtures/alpha && SAILOR_LEDGER=... sailor flow run take-the-next-work alpha)` with a descriptor of id `fake-cheap-worker` under `SAILOR_TOOL_DESCRIPTORS`, whose command writes the file the check names | the run ends «complete»; `alpha`'s queue row is closed |
+| 5 | `(cd target/fixtures/alpha && sailor flow check take-the-next-work)`, in the environment step 2 exported | «missing actions: none»; «tools asked for: fake-cheap-worker» and the sound command lines are listed |
+| 6 | `(cd target/fixtures/alpha && sailor flow run take-the-next-work alpha)`, in the same environment: the fake worker writes the file the check names | the run ends «complete»; `alpha`'s queue row is closed |
 | 7 | the same for `beta` (its check names a file the worker is never told to write) | the run ends «waiting» at `handoff`; the row carries the reason the acceptance did not pass |
 | 8 | the window (`cd desktop && npm run desktop`, with the same `SAILOR_LEDGER`) | the parked `beta` row is visible with its reason and a way to open the run; nothing else claims attention |
 | 9 | `sailor step approve --run <beta run id> --step handoff --as <name>` | the row leaves the attention list on the next beat; the run ends |
