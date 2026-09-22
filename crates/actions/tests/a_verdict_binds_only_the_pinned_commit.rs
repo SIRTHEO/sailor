@@ -10,6 +10,10 @@ use std::path::PathBuf;
 
 const PINNED: &str = "c0ffee";
 
+/// The review flow as it is shipped: the step under proof is read from it, so
+/// the schema the executor enforces at runtime is the one the test runs on.
+const SHIPPED: &str = include_str!("../../flow/system/review-a-pinned-commit.flow.json");
+
 fn clean() -> Value {
     json!({ "commit": PINNED, "verdict": "clean", "findings": [], "checked": ["the gates"] })
 }
@@ -152,6 +156,24 @@ fn the_step_answers_with_the_counts_the_record_keeps() {
     );
 }
 
+/// The step as the shipped review declares it, standing alone: its own
+/// dependencies and the values it is pointed at belong to that run, and what is
+/// under proof here is the schema it declares and the word it is required to
+/// say — the two halves that have to agree and are written in different files.
+fn the_shipped_step() -> flow::Step {
+    let file: flow::FlowFile = serde_json::from_str(SHIPPED).expect("the shipped flow parses");
+    let mut step = file
+        .graph
+        .steps()
+        .iter()
+        .find(|step| step.id == "verdict_bound")
+        .expect("the shipped flow declares the step that binds the verdict")
+        .clone();
+    step.deps = Vec::new();
+    step.with = None;
+    step
+}
+
 /// The shipped review declares this step `required`, and the executor counts a
 /// required step as passed only by the word it reads in the step's answer: a
 /// bound verdict, clean or with findings, must leave the run complete.
@@ -162,25 +184,8 @@ fn a_required_step_that_binds_a_verdict_lets_the_run_complete() {
         json!({ "commit": PINNED, "verdict": "findings", "findings": ["a defect"], "checked": ["the gates"] }),
     ] {
         let (sailor, sha256) = a_sailor(verdict["verdict"].as_str().expect("a word"));
-        let step = flow::Step {
-            id: "verdict_bound".to_owned(),
-            deps: Vec::new(),
-            input_schema: flow::ValueSchema::Any,
-            output_schema: flow::ValueSchema::Any,
-            with: None,
-            when: None,
-            action: "review_verdict".to_owned(),
-            max_attempts: 1,
-            ask_again_after_secs: None,
-            retry_after_secs: None,
-            phase: None,
-            stops_when: None,
-            decides_done: false,
-            required: true,
-            even_after_a_break: false,
-            needs: Vec::new(),
-            weight: flow::Weight::Light,
-        };
+        let step = the_shipped_step();
+        assert!(step.required, "the shipped step is required");
         let graph = flow::Graph::new(vec![step]).expect("a one-step graph");
         let mut registry = flow::ActionRegistry::default();
         actions::review_verdict::register_review_verdict(&mut registry);

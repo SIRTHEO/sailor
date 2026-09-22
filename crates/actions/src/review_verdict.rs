@@ -14,6 +14,14 @@ pub const REVIEW_VERDICT_ACTION: &str = "review_verdict";
 
 const VERDICT_FIELDS: &[&str] = &["verdict", "commit", "sailor", "sha256"];
 
+/// The executor reads the passing word at a pointer into the step's answer;
+/// this action writes the answer, so it names that same field rather than
+/// spelling it again and drifting from it, which is how a review last came to
+/// end failed on a verdict it had recorded.
+fn passing_field() -> &'static str {
+    flow::VERDICT_FIELD.trim_start_matches('/')
+}
+
 pub fn register_review_verdict(registry: &mut flow::ActionRegistry) {
     registry.register(REVIEW_VERDICT_ACTION, ReviewVerdictAction);
 }
@@ -123,13 +131,13 @@ impl Action for ReviewVerdictAction {
         let bound = what_the_verdict_binds(&spec.verdict, &spec.commit).map_err(|refusal| {
             ActionError::new("the_verdict_is_not_bound", said(refusal, &spec.commit))
         })?;
-        Ok(ActionOutcome::Went(json!({
-            "status": "passed",
-            "commit": bound.commit,
-            "verdict": bound.verdict,
-            "findings": bound.findings,
-            "checked": bound.checked,
-        })))
+        let mut answer = serde_json::Map::new();
+        answer.insert(passing_field().to_owned(), json!(flow::VERDICT_PASSED));
+        answer.insert("commit".to_owned(), json!(bound.commit));
+        answer.insert("verdict".to_owned(), json!(bound.verdict));
+        answer.insert("findings".to_owned(), json!(bound.findings));
+        answer.insert("checked".to_owned(), json!(bound.checked));
+        Ok(ActionOutcome::Went(Value::Object(answer)))
     }
 
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {

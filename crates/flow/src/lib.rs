@@ -30,7 +30,7 @@ pub use executor::{
     Unmet,
     AFTER_REFUSAL, AT_ONCE, CURRENT_CAP, CURRENT_FRONT, CURRENT_HOLDER, CURRENT_RUN, CURRENT_STEP,
     CURRENT_WALL,
-    WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
+    VERDICT_FIELD, VERDICT_PASSED, WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::{CapKind, FlowFile, Provenance};
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step, BROKEN_FIELD};
