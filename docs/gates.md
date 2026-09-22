@@ -16,7 +16,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name --test the_publication_boundary_holds --test no_workbench_tool_is_named_in_the_code`
 - `cargo test -p sailor -j 1 --test no_forge_no_remote_no_trunk_is_named_in_the_code --test files_do_not_grow_out_of_scale --test a_source_file_holds_code_not_a_suite --test clippy_only_ever_gets_quieter`
 - `cargo test -p sailor -j 1 --test production_code_does_not_panic_on_purpose --test every_child_process_starts_by_one_road --test tests_read_no_state_of_this_machine`
-- `cargo test -p sailor -j 1 --test every_declared_check_names_a_test_that_exists --test every_ratchet_is_named_in_the_gates` — the two that keep this list honest in both directions
+- `cargo test -p sailor -j 1 --test every_declared_check_names_a_test_that_exists --test every_ratchet_is_named_in_the_gates --test every_section_of_the_gates_is_one_the_runner_reads` — the three that keep this list honest in both directions, and the runner honest about reading all of it
 - `cargo clippy -p <every crate touched> --tests -j 1` — clean
 - `git log main..HEAD --format=%B | grep -E '^(Co-Authored-By|Claude-Session):'` — empty
 - Commits by path, project voice, no model named, no private names in fixtures
