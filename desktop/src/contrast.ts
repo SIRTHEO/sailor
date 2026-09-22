@@ -189,10 +189,9 @@ function carriesColor(property: string, value: string): boolean {
 }
 
 /**
- * **`:where()` WEIGHS NOTHING**, which is the whole reason a sheet reaches for
- * it: `button:where(:not([data-slot]))` paints every button and still loses to
- * any class. Counted as a pseudo-class it would outweigh one, and this model
- * would hand the win to the rule the browser rejects.
+ * **`:where()` WEIGHS NOTHING**, which is why a sheet reaches for it. Counted
+ * as a pseudo-class it would outweigh a class, and this model would hand the
+ * win to the rule a browser rejects.
  */
 function withoutWhere(selector: string): string {
   let out = selector;
