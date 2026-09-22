@@ -1,6 +1,6 @@
 {
   "id": "close-the-work",
-  "description": "Step 10 of docs/the-delivery-loop.md: the holdings of a delivered branch released, every gesture safe to run again. The mandate is one JSON object naming the repo, the branch and the issue, with base and forge_repo optional; an unsaid base is the trunk the repository declares. The proof is the merged pull request of the branch, read from the host so a rerun after the branch is gone still finds it, and the remote trunk must carry both its head and its merge commit before anything is deleted. The closing comment names that commit and passes the publication gate before it leaves; an issue already closed is left as it is. The worktree holding the branch is removed only when it is clean and nobody holds its lock; the local and remote branches are deleted only when the remote trunk carries their tip, and the remote deletion follows the push policy read from the trusted trunk. The run is complete only when the issue reads closed and no worktree, local branch or remote branch is left. Every forge call runs as the account in sailor.forgeAs. What this flow defends against: a different sailor found on PATH, a sailor in service that does not match its recorded sha256, a delivery policy that is missing, is not readable as JSON, or whose merge, push and release fields are not auto or ask, and a remote that cannot be read or has moved. What it does not defend against: whoever can already write to the directory of the sailor in service can replace that binary between its sha256 check and its execution; and whoever closes a handed step, such as authorize_push, does it with the sailor on their own PATH.",
+  "description": "Step 10 of docs/the-delivery-loop.md: the holdings of a delivered branch released, every gesture safe to run again. The mandate is one JSON object naming the repo, the branch and the issue, with base and forge_repo optional; an unsaid base is the trunk the repository declares. The proof is the merged pull request of the branch, read from the host so a rerun after the branch is gone still finds it, and the remote trunk must carry both its head and its merge commit before anything is deleted. The closing comment names that commit and passes the publication gate before it leaves; an issue already closed is left as it is. The worktree holding the branch is removed only when it is clean and nobody holds its lock; the local and remote branches are deleted only when the remote trunk carries their tip, and the remote deletion follows the push policy read from the trusted trunk. The run is complete only when the issue reads closed and no worktree, local branch or remote branch is left. Every forge call runs as the account in sailor.forgeAs. What this flow defends against: a delivery policy that is missing, is not readable as JSON, or whose merge, push and release fields are not auto or ask, and a remote that cannot be read or has moved. It runs no sailor of its own, so it vouches for none. What it does not defend against: whoever closes a handed step, such as authorize_push, does it with the sailor on their own PATH.",
   "inputs": {
     "trigger": {
       "source": "manual",
@@ -140,40 +140,6 @@
         },
         "output_schema": {
           "type": "any"
-        }
-      },
-      {
-        "id": "the_sailor",
-        "deps": [
-          "the_request"
-        ],
-        "action": "sailor_in_service",
-        "max_attempts": 1,
-        "when": null,
-        "with": {},
-        "needs": [],
-        "input_schema": {
-          "type": "any"
-        },
-        "output_schema": {
-          "type": "object",
-          "properties": {
-            "commit": {
-              "type": "string"
-            },
-            "sailor": {
-              "type": "string"
-            },
-            "sha256": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "commit",
-            "sailor",
-            "sha256"
-          ],
-          "allow_extra": false
         }
       },
       {
@@ -411,51 +377,34 @@
         "id": "worktree",
         "deps": [
           "the_request",
-          "the_sailor",
           "issue"
         ],
-        "action": "shell_check",
+        "action": "close_the_worktree",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\n# Every sailor this command runs is the copy the flow verified, checked again right before it runs.\ntrusted_sailor() {\n    sailor_now=$(shasum -a 256 < \"$SAILOR_BIN\") || { echo \"cannot read the trusted sailor at $SAILOR_BIN\" >&2; exit 2; }\n    [ \"${sailor_now%% *}\" = \"$SAILOR_SHA\" ] || { echo \"the sailor at $SAILOR_BIN changed since the flow verified it: sha256 ${sailor_now%% *}, not $SAILOR_SHA\" >&2; exit 2; }\n    \"$SAILOR_BIN\" \"$@\"\n}\nfound=$(git -C \"$REPO\" worktree list --porcelain | awk -v want=\"branch refs/heads/$BRANCH\" '\n    /^worktree / { path = substr($0, 10); locked = 0 }\n    /^locked/ { locked = 1 }\n    $0 == want { hit = path }\n    /^$/ { if (hit != \"\" && out == \"\") { out = hit; lock = locked } hit = \"\" }\n    END { if (hit != \"\" && out == \"\") { out = hit; lock = locked } if (out != \"\") print lock \"\\t\" out }')\nif [ -z \"$found\" ]; then\n    printf '{\"removed\":\"\"}'\n    exit 0\nfi\nlocked=$(printf '%s' \"$found\" | cut -f1); path=$(printf '%s' \"$found\" | cut -f2)\nhere=$(cd \"$(git -C \"$REPO\" rev-parse --show-toplevel)\" && pwd -P)\nthere=$(cd \"$path\" 2>/dev/null && pwd -P || printf '%s' \"$path\")\n[ \"$here\" != \"$there\" ] || { echo \"the worktree holding $BRANCH is the repo this flow runs from: name the primary checkout as repo instead\" >&2; exit 1; }\n# Who stands in the tree is read twice; a reading that cannot answer counts as somebody there.\ncommand -v lsof >/dev/null 2>&1 || { echo \"lsof is not on this machine, so nobody can say no process works in $path: it stays\" >&2; exit 1; }\ncwds=$(lsof -a -d cwd -Fn -w 2>/dev/null) || { echo \"lsof could not list working directories, so $path may be in use: it stays\" >&2; exit 1; }\n[ -n \"$cwds\" ] || { echo \"lsof listed no working directory at all, so $path may be in use: it stays\" >&2; exit 1; }\nstanding=$(printf '%s\\n' \"$cwds\" | sed -n 's/^n//p' | awk -v tree=\"$there/\" 'index($0 \"/\", tree) == 1')\n[ -z \"$standing\" ] || { echo \"a process is working in $path (cwd $standing): it stays\" >&2; exit 1; }\nsessions=$(trusted_sailor session list --json) || { echo \"sailor session list failed, so an open terminal in $path cannot be ruled out: it stays\" >&2; exit 1; }\nterminals=$(printf '%s' \"$sessions\" | THERE=\"$there\" python3 -c '\nimport json, os, sys\ntry:\n    rows = json.load(sys.stdin)\nexcept ValueError:\n    sys.exit(3)\nif not isinstance(rows, list) or any(not isinstance(row, dict) or \"worktree\" not in row or \"closed_at\" not in row for row in rows):\n    sys.exit(3)\nthere = os.environ[\"THERE\"]\nfor row in rows:\n    at = str(row.get(\"worktree\") or \"\")\n    if row.get(\"closed_at\") is None and at and (os.path.realpath(at) + \"/\").startswith(there + \"/\"):\n        print(row.get(\"tty\") or at)\n') || { echo \"sailor session list gave an answer this step cannot read, so an open terminal in $path cannot be ruled out: it stays\" >&2; exit 1; }\n[ -z \"$terminals\" ] || { echo \"an open terminal is recorded in $path ($terminals): it stays\" >&2; exit 1; }\n[ \"$locked\" = 0 ] || { echo \"the worktree $path is locked: whoever holds it unlocks it when they have finished reading\" >&2; exit 1; }\ngit -C \"$REPO\" worktree remove \"$path\" >&2\nprintf '{\"removed\":\"%s\"}' \"$path\"\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_request/repo"
-            },
-            "BRANCH": {
-              "$from": "/the_request/branch"
-            },
-            "SAILOR_BIN": {
-              "$from": "/the_sailor/sailor"
-            },
-            "SAILOR_SHA": {
-              "$from": "/the_sailor/sha256"
-            }
+          "repo": {
+            "$from": "/the_request/repo"
           },
-          "timeout_secs": 120,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "removed": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "removed"
-            ],
-            "allow_extra": false
+          "branch": {
+            "$from": "/the_request/branch"
           }
         },
-        "needs": [
-          "python3",
-          "shasum"
-        ],
+        "needs": [],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "removed": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "removed"
+          ],
+          "allow_extra": false
         }
       },
       {

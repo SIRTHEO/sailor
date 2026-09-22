@@ -42,6 +42,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 
 - `cargo test -p sailor -j 1 --test a_tree_somebody_is_in_is_never_closed --test a_closed_tree_takes_its_index_identity_with_it` — a tree somebody is in is kept, whoever asks
 - `cargo test -p workspace -j 1`
+- `cargo test -p actions -j 1 --test a_tree_the_flow_closes_is_one_nobody_is_in` — the same decision a delivery flow makes, proved without a machine that has trees on it
 
 ## E. When `desktop/` changes
 

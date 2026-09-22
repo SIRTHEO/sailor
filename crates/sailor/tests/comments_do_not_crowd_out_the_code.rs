@@ -35,7 +35,7 @@ const COMMENT_LINES_NOT_IN_ENGLISH: usize = 1;
 /// Comment lines per thousand code lines, per crate, as measured today.
 /// Downwards only; a crate under 100 is where the sweep stops.
 const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
-    ("actions", 205),
+    ("actions", 203),
     ("catalogue", 239),
     ("desktop", 218),
     ("faults", 146),
@@ -55,7 +55,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("toolbox", 261),
     ("trigger", 236),
     ("ui", 184),
-    ("workspace", 114),
+    ("workspace", 113),
 ];
 
 /// Words no English sentence uses, which a sentence in this tree's other

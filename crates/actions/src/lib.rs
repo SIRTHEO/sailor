@@ -50,6 +50,7 @@ pub mod store;
 pub mod terminals;
 pub mod topic_drift;
 pub mod unused_actions;
+pub mod worktree;
 
 mod answer;
 mod candidates;
