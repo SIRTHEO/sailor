@@ -1,14 +1,9 @@
 //! **THE BATTERY WROTE NO END FOR WHAT IT MADE.** The tests name the temporary
-//! directory in 278 places across 200 files, and inherited it is the one every
-//! session on this machine shares: 16.032 directories weighing 807 MB had piled
-//! up there by 22/09/2026, one set per run and per pid. Nobody had to be at
-//! fault — a run simply took a place it did not own and left.
-//!
-//! The gates hand the battery a root of their own instead, and take it away on
-//! the way out. This reads the three lines out of the script itself and *runs*
-//! them: a test that only looked for the words would pass on a trap that fires
-//! on no signal, or on a root that is made and never exported.
-
+//! directory in 278 places, and inherited it is the root every session shares:
+//! 16.032 directories weighing 807 MB had piled up, one set per run and per
+//! pid. The gates hand the battery a root of their own and take it away. This
+//! reads the three lines out of the script and *runs* them: a test that looked
+//! for the words would pass on a trap that fires on no signal.
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

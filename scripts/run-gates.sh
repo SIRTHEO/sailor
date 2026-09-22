@@ -37,7 +37,7 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "gates: not inside a
 # Whoever creates a thing writes its end. The battery names the temporary
 # directory in 278 places, and inherited that is the one every session shares:
 # 16.032 directories weighing 807 MB had piled up there, one set per run and
-# per pid, because a run wrote an end for nothing it made. Measured 22/09/2026:
+# per pid, because a run wrote an end for nothing it made. Measured when written:
 # eleven tests of one module leave eleven behind. A root of this run's own dies
 # with the run, and none of the 278 places has to be touched for that.
 gates_tmp=$(mktemp -d "${TMPDIR:-/tmp}/sailor-gates-XXXXXX") || { echo "gates: no temporary root" >&2; exit 2; }
