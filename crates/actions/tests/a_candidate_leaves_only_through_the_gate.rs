@@ -1,5 +1,5 @@
-//! The last gate a candidate passes before integration or a release lets it
-//! leave. Every case is decided from readings handed in, so a refusal is proved
+//! The last gate a candidate passes before a draft, integration or a release
+//! lets it leave. Every case is decided from readings handed in, so a refusal is proved
 //! without a forge, a remote that moves on cue, or a binary in service.
 
 use actions::candidate_gate::{
@@ -33,6 +33,7 @@ fn integrating() -> Readings {
         trunk_was: TRUNK.to_owned(),
         trunk_now: at(TRUNK),
         already: false,
+        remote_read: true,
         heads: Some(Heads {
             reviewed: REVIEWED.to_owned(),
             local: at(REVIEWED),
@@ -53,6 +54,42 @@ fn releasing() -> Readings {
         }),
         ..integrating()
     }
+}
+
+/// What `open-the-draft-pull-request` reads before its push: no trunk the
+/// candidate was built on, and nothing asked of the remote.
+fn drafting() -> Readings {
+    Readings {
+        trunk_was: String::new(),
+        trunk_now: None,
+        remote_read: false,
+        heads: Some(Heads {
+            reviewed: REVIEWED.to_owned(),
+            local: at(REVIEWED),
+            remote: None,
+        }),
+        ..integrating()
+    }
+}
+
+#[test]
+fn a_draft_before_its_push_goes_to_the_scan_with_nothing_on_the_remote() {
+    assert_eq!(what_the_gate_says(&drafting()), Verdict::LetTheScanJudge);
+}
+
+#[test]
+fn a_draft_whose_branch_moved_since_its_checkpoint_is_held() {
+    let readings = Readings {
+        heads: Some(Heads {
+            local: at("beef00"),
+            ..drafting().heads.expect("heads")
+        }),
+        ..drafting()
+    };
+    assert_eq!(
+        what_the_gate_says(&readings),
+        Verdict::BranchMoved(at("beef00"))
+    );
 }
 
 #[test]
@@ -329,6 +366,13 @@ mod on_a_real_repository {
         })
     }
 
+    fn drafting(repo: &Path, trunk: &str, head: &str) -> Value {
+        let mut input = integrating(repo, trunk, head);
+        input["trunk_was"] = json!("");
+        input["before_the_push"] = json!(true);
+        input
+    }
+
     fn the_gate(input: Value) -> Result<Value, (String, String)> {
         let mut registry = flow::ActionRegistry::default();
         actions::candidate_gate::register_candidate_gate(&mut registry);
@@ -385,6 +429,41 @@ mod on_a_real_repository {
             said.contains("differs from the one the trusted trunk commits"),
             "{said}"
         );
+    }
+
+    /// Before its push a draft asks the remote nothing, so a remote that is
+    /// gone does not hold it: the push reads the remote for itself.
+    #[test]
+    fn a_draft_before_its_push_asks_the_remote_nothing() {
+        let (repo, trunk, head) = a_delivery("draft", "src/change");
+        std::fs::remove_dir_all(repo.parent().expect("the scratch").join("remote.git"))
+            .expect("the remote goes");
+        assert_eq!(
+            the_gate(drafting(&repo, &trunk, &head)),
+            Ok(json!({ "ref": head, "privacy_exit": 0 }))
+        );
+    }
+
+    #[test]
+    fn a_draft_whose_branch_moved_since_its_checkpoint_is_held() {
+        let (repo, trunk, head) = a_delivery("draft-moved", "src/change");
+        git(&repo, &["checkout", "-q", "work"]);
+        let later = commit(&repo, "src/more", "after the checkpoint\n");
+        git(&repo, &["checkout", "-q", "line"]);
+        let (class, said) = the_gate(drafting(&repo, &trunk, &head)).unwrap_err();
+        assert_eq!(class, "the_candidate_is_held");
+        assert!(
+            said.contains(&later) && said.contains("this delivery pinned"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn a_draft_the_scan_refuses_stays_with_what_the_scan_said() {
+        let (repo, trunk, head) = a_delivery("draft-refused", "forbidden");
+        let (class, said) = the_gate(drafting(&repo, &trunk, &head)).unwrap_err();
+        assert_eq!(class, "publication_refused");
+        assert!(said.contains("a forbidden file"), "{said}");
     }
 
     /// A lost transport is not an empty ref: nothing is decided on it.
