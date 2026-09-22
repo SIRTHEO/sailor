@@ -20,7 +20,7 @@ pub fn register_review_verdict(registry: &mut flow::ActionRegistry) {
 
 #[derive(Debug, Deserialize)]
 struct VerdictSpec {
-    /// What the reviewer handed in, as the object or as its JSON.
+    /// What the reviewer handed in: one object, as the review step stored it.
     verdict: Value,
     /// The commit the review was pinned to.
     commit: String,
@@ -52,7 +52,6 @@ pub enum Refusal {
 
 /// The verdict against the pinned commit, with nothing read from the machine.
 pub fn what_the_verdict_binds(verdict: &Value, pinned: &str) -> Result<Bound, Refusal> {
-    let verdict = as_answer(verdict);
     let fields = verdict.as_object().ok_or(Refusal::NotAnObject)?;
     let commit = fields.get("commit").and_then(Value::as_str);
     if commit != Some(pinned) {
@@ -94,14 +93,6 @@ fn said(refusal: Refusal, pinned: &str) -> String {
         Refusal::NotLists => "findings and checked are lists".to_owned(),
         Refusal::FindingsNamedNone => "a verdict of findings names none".to_owned(),
         Refusal::NothingChecked => "the verdict lists nothing it checked".to_owned(),
-    }
-}
-
-/// A reference hands on a value or its JSON, and the flows spell it both ways.
-fn as_answer(said: &Value) -> Value {
-    match said.as_str() {
-        Some(text) => serde_json::from_str(text).unwrap_or(Value::Null),
-        None => said.clone(),
     }
 }
 

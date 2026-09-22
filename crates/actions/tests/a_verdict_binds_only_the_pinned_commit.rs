@@ -26,12 +26,14 @@ fn a_clean_verdict_on_the_pinned_commit_binds_its_counts() {
     );
 }
 
+/// A reviewer's file that holds a JSON string is a string, whatever the string
+/// spells: only an object is a verdict.
 #[test]
-fn a_verdict_handed_on_as_its_json_binds_as_the_object_does() {
+fn a_verdict_handed_in_as_text_is_not_taken() {
     let text = Value::String(clean().to_string());
     assert_eq!(
         what_the_verdict_binds(&text, PINNED),
-        what_the_verdict_binds(&clean(), PINNED)
+        Err(Refusal::NotAnObject)
     );
 }
 
@@ -110,10 +112,19 @@ fn a_verdict_that_is_no_object_is_not_taken() {
     );
 }
 
-fn a_sailor(name: &str) -> (PathBuf, String) {
+/// A stand-in sailor in the temporary directory, gone when the case ends.
+struct Sailor(PathBuf);
+
+impl Drop for Sailor {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn a_sailor(name: &str) -> (Sailor, String) {
     let at = std::env::temp_dir().join(format!("verdict-{name}-{}", std::process::id()));
     std::fs::write(&at, b"a binary").expect("the stand-in sailor");
-    (at, format!("{:x}", Sha256::digest(b"a binary")))
+    (Sailor(at), format!("{:x}", Sha256::digest(b"a binary")))
 }
 
 fn the_step(input: Value) -> Result<Value, (String, String)> {
@@ -134,7 +145,7 @@ fn the_step_answers_with_the_counts_the_record_keeps() {
     let (sailor, sha256) = a_sailor("went");
     assert_eq!(
         the_step(
-            json!({ "verdict": clean(), "commit": PINNED, "sailor": sailor, "sha256": sha256 })
+            json!({ "verdict": clean(), "commit": PINNED, "sailor": sailor.0, "sha256": sha256 })
         ),
         Ok(json!({ "commit": PINNED, "verdict": "clean", "findings": 0, "checked": 1 }))
     );
@@ -143,9 +154,9 @@ fn the_step_answers_with_the_counts_the_record_keeps() {
 #[test]
 fn a_sailor_that_changed_while_the_review_was_open_takes_no_verdict() {
     let (sailor, sha256) = a_sailor("changed");
-    std::fs::write(&sailor, b"another binary").expect("the sailor changes");
+    std::fs::write(&sailor.0, b"another binary").expect("the sailor changes");
     let (class, said) = the_step(
-        json!({ "verdict": clean(), "commit": PINNED, "sailor": sailor, "sha256": sha256 }),
+        json!({ "verdict": clean(), "commit": PINNED, "sailor": sailor.0, "sha256": sha256 }),
     )
     .unwrap_err();
     assert_eq!(class, "not_in_service");
@@ -158,7 +169,7 @@ fn a_verdict_the_step_refuses_says_why() {
     let mut verdict = clean();
     verdict["commit"] = json!("beef00");
     let (class, said) = the_step(
-        json!({ "verdict": verdict, "commit": PINNED, "sailor": sailor, "sha256": sha256 }),
+        json!({ "verdict": verdict, "commit": PINNED, "sailor": sailor.0, "sha256": sha256 }),
     )
     .unwrap_err();
     assert_eq!(class, "the_verdict_is_not_bound");
