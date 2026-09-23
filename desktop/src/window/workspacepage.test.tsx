@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import stylesheetSource from "../styles.css?raw";
 import { parseStylesheet } from "../contrast";
+import type { Project } from "../workspaces";
 import { WorkspacePage } from "./WorkspacePage";
 
 afterEach(() => {
@@ -10,7 +11,14 @@ afterEach(() => {
   delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
 });
 
-const PROJECT = { root: "/somewhere/a-code-project", name: "a-code-project" };
+const PROJECT: Project = {
+  root: "/somewhere/a-code-project",
+  name: "a-code-project",
+  first_seen: 0,
+  last_seen: 0,
+  standing: "declared",
+  current: false,
+};
 
 /** The case the page exists for: the declaration cannot be read, and the
  *  reason is the whole content of the answer. */
