@@ -150,10 +150,29 @@ fn no_two_sections_of_the_gates_carry_the_same_letter() {
     }
 }
 
+/// The manifest written out to `somewhere`, one of its lines left out when a
+/// line is named, and the plan the runner reads from what it finds there.
+fn the_plan_apart_from(
+    root: &Path,
+    lines: &[&str],
+    without: Option<usize>,
+    somewhere: &Path,
+) -> Option<String> {
+    let left: Vec<&str> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(at, line)| (Some(at) != without).then_some(*line))
+        .collect();
+    std::fs::write(somewhere, left.join("\n")).expect("the manifest written out");
+    the_plan_of(root, somewhere)
+}
+
 /// The runner is its own oracle here: the manifest is handed back one line
 /// short and the plan has to come out different. Nothing tells this what a
 /// line of a section looks like, so no mark one opens with can hide it, and
-/// no rule of the runner's is written a second time to be disagreed with.
+/// no rule of the runner's is written a second time to be disagreed with. A
+/// difference counts only under the control: handed the manifest whole from
+/// the same place, the runner has to read it as the manifest.
 #[test]
 fn every_line_a_section_holds_reaches_the_runner() {
     let root = root();
@@ -162,16 +181,16 @@ fn every_line_a_section_holds_reaches_the_runner() {
     let scratch = scratch("shortened");
     let shortened = scratch.join("gates.md");
     let lines: Vec<&str> = manifest.lines().collect();
+    assert!(
+        the_plan_apart_from(&root, &lines, None, &shortened).as_deref() == Some(whole.as_str()),
+        "handed {THE_GATES} whole from elsewhere, the runner read something else: a plan coming \
+         out different below would then say nothing about the line that was taken out"
+    );
     for section in the_sections(&manifest) {
         for index in section.holds {
-            let left: Vec<&str> = lines
-                .iter()
-                .enumerate()
-                .filter_map(|(at, line)| (at != index).then_some(*line))
-                .collect();
-            std::fs::write(&shortened, left.join("\n")).expect("the shortened manifest");
             assert!(
-                the_plan_of(&root, &shortened).as_deref() != Some(whole.as_str()),
+                the_plan_apart_from(&root, &lines, Some(index), &shortened).as_deref()
+                    != Some(whole.as_str()),
                 "«{}» of {THE_GATES} holds «{}», and the runner's plan is the same without \
                  it: the line is read by nobody",
                 section.letter,
