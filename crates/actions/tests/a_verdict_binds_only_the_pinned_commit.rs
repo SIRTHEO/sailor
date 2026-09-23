@@ -152,7 +152,9 @@ fn the_step_answers_with_the_counts_the_record_keeps() {
         the_step(
             json!({ "verdict": clean(), "commit": PINNED, "sailor": sailor.0, "sha256": sha256 })
         ),
-        Ok(json!({ "status": "passed", "commit": PINNED, "verdict": "clean", "findings": 0, "checked": 1 }))
+        Ok(
+            json!({ "status": "passed", "commit": PINNED, "verdict": "clean", "findings": 0, "checked": 1 })
+        )
     );
 }
 

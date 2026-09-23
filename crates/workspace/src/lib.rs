@@ -947,8 +947,8 @@ mod tests {
 
         let cut = create(&repo, "work/scritto-subito", None, &page).expect("a tree");
         let open = page.trees_left_open().expect("the page reads back");
-        let refused = create(&repo, "work/mai-scritto", None, &ARefusal)
-            .expect_err("no page, no tree");
+        let refused =
+            create(&repo, "work/mai-scritto", None, &ARefusal).expect_err("no page, no tree");
         let unwritten = tree_path(&repo, "mai-scritto").exists();
         let listed =
             String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout).into_owned();
@@ -960,7 +960,10 @@ mod tests {
         assert_eq!(open[0].opened_by_pid, std::process::id());
         assert!(!refused.is_empty(), "the refusal said nothing");
         assert!(!unwritten, "the tree is on disk with nobody holding it");
-        assert!(!listed.contains("mai-scritto"), "git still holds it:\n{listed}");
+        assert!(
+            !listed.contains("mai-scritto"),
+            "git still holds it:\n{listed}"
+        );
     }
 
     /// **THE ONE THAT MATTERS.** A tree whose branch the trunk has not got is

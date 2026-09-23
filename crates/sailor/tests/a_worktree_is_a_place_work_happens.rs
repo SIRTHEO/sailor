@@ -194,8 +194,10 @@ fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
     let merged = workspace::create(&repo, "work/gia-dentro", None, &store).expect("a merged tree");
-    let ahead = workspace::create(&repo, "work/ancora-fuori", None, &store).expect("a tree of its own");
-    let dirty = workspace::create(&repo, "work/mai-committato", None, &store).expect("a third tree");
+    let ahead =
+        workspace::create(&repo, "work/ancora-fuori", None, &store).expect("a tree of its own");
+    let dirty =
+        workspace::create(&repo, "work/mai-committato", None, &store).expect("a third tree");
     std::fs::write(ahead.join("answer"), "a night of work\n").expect("work");
     run_git(&ahead, &["add", "answer"]);
     run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]);
@@ -310,8 +312,8 @@ fn a_tree_cut_for_a_branch_is_written_down_as_it_is_cut() {
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
 
-    let cut_at = workspace::create(&repo, "work/scritto-subito", None, &store)
-        .expect("the tree is cut");
+    let cut_at =
+        workspace::create(&repo, "work/scritto-subito", None, &store).expect("the tree is cut");
     let rows = store.trees_left_open().expect("the rows");
     let _ = std::fs::remove_dir_all(&scratch);
 
@@ -346,7 +348,11 @@ fn a_tree_taken_down_by_name_leaves_the_register_with_it() {
     let gone = !cut.exists();
     let _ = std::fs::remove_dir_all(&scratch);
 
-    assert_eq!(listed.len(), 1, "the tree was never written down: {listed:?}");
+    assert_eq!(
+        listed.len(),
+        1,
+        "the tree was never written down: {listed:?}"
+    );
     assert!(gone, "the tree is still on disk:\n{said}");
     assert!(
         after.is_empty(),

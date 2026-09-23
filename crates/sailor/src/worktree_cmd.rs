@@ -82,17 +82,14 @@ fn dispatch(args: &[String]) -> Result<String, String> {
             let trees = list(&repo)?;
             Ok(render(&trees))
         }
-        [command, branch] if command == "create" => {
-            Ok(create(&repo, branch, None, &a_store()?)?.display().to_string())
+        [command, branch] if command == "create" => Ok(create(&repo, branch, None, &a_store()?)?
+            .display()
+            .to_string()),
+        [command, branch, name] if command == "create" => {
+            Ok(create(&repo, branch, Some(name), &a_store()?)?
+                .display()
+                .to_string())
         }
-        [command, branch, name] if command == "create" => Ok(create(
-            &repo,
-            branch,
-            Some(name),
-            &a_store()?,
-        )?
-        .display()
-        .to_string()),
         [command, name] if command == "remove" => {
             remove_one(&repo, name, &a_store()?, &IndexTending::of(&repo))
         }
