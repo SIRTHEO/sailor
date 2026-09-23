@@ -7682,6 +7682,12 @@ tr[data-followable]:hover {
   box-shadow: inset 3px 0 0 var(--ink);
 }
 
+/* Not on `:active`: a weight that changes under the finger reflows the row's
+   text while it is being pressed. */
+.window-row[aria-current] .window-row__name {
+  font-weight: 600;
+}
+
 .window-row__name {
   flex: 1;
   overflow: hidden;
