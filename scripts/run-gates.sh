@@ -13,6 +13,7 @@ set -u
 
 no_fail_fast=0
 list_only=0
+plan_only=""
 base=""
 manifest=""
 covered=""
@@ -21,6 +22,7 @@ pending=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-fail-fast) no_fail_fast=1 ;;
+        --plan) plan_only=yes ;;
         --list) list_only=1 ;;
         --base) base=${2:-}; [ -n "$base" ] || { echo "gates: --base needs a commit" >&2; exit 2; }; shift ;;
         --manifest) manifest=${2:-}; [ -n "$manifest" ] || { echo "gates: --manifest needs a file" >&2; exit 2; }; shift ;;
@@ -46,9 +48,10 @@ applies() {
     case "$1" in
         A) return 0 ;;
         B) printf '%s\n' "$changed" | grep -E -q '\.flow\.json$|(^|/)token-seeds\.json$' ;;
-        C) printf '%s\n' "$changed" | grep -E -q '^crates/actions/|brake' ;;
-        D) printf '%s\n' "$changed" | grep -E -q '^crates/profiles/' ;;
+        C) printf '%s\n' "$changed" | grep -E -q '^crates/actions/' ;;
+        D) printf '%s\n' "$changed" | grep -E -q '^crates/profiles/|^crates/actions/src/probe\.rs$' ;;
         E) printf '%s\n' "$changed" | grep -E -q '^desktop/' ;;
+        E2) printf '%s\n' "$changed" | grep -E -q 'worktree_cmd|^crates/workspace/|sweep' ;;
         *) return 1 ;;
     esac
 }
@@ -57,7 +60,9 @@ crates=$(printf '%s\n' "$changed" | sed -n 's#^crates/\([a-z0-9_-]*\)/.*#-p \1#p
 
 # One line per span or bullet: letter, a tab, "command" or "bullet", a tab, the text.
 plan=$(awk '
-    /^## [A-Z]\./ { letter = substr($2, 1, 1); next }
+    # A letter may carry a digit: «E2.» is its own section, and reading only
+    # the first character dropped every line under it without a word.
+    /^## [A-Z][0-9]*\./ { letter = substr($2, 1, length($2) - 1); next }
     /^## / { letter = ""; next }
     letter != "" && /^- / {
         line = $0; prefix = ""; found = 0
@@ -74,6 +79,14 @@ plan=$(awk '
     }' "$manifest")
 
 printf '%s\n' "$plan" | grep -q "^A$(printf '\t')command$(printf '\t')" || { echo "gates: letter A resolves to no command in $manifest" >&2; exit 2; }
+
+# What was read out of the manifest, before anything is chosen or run: a section
+# this runner cannot see is a gate that never says no, and only printing the
+# plan makes that visible to a test.
+if [ -n "$plan_only" ]; then
+    printf '%s\n' "$plan"
+    exit 0
+fi
 
 export CARGO_TARGET_DIR="$root/target/own"
 TRAILERS="git log main..HEAD --format=%B | grep -E '^(Co-Authored-By|Claude-Session):'"
