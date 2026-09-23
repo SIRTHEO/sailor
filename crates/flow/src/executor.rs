@@ -68,6 +68,10 @@ pub const WALL_REMAINING_SECS: &str = "wall_remaining_secs";
 /// refused. See [`why_it_was_refused`].
 pub const AFTER_REFUSAL: &str = "after_refusal";
 
+/// The failure class of a wait that outlived its deadline: counted apart from
+/// a step that broke, since nobody did the work and nobody refused it.
+pub const HANDOFF_EXPIRED: &str = "handoff_expired";
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct ActionError {
     pub class: String,
@@ -226,6 +230,13 @@ pub trait Action: Send + Sync {
         _shared: &SharedState,
     ) -> Result<EffectStatus, ActionError> {
         Ok(EffectStatus::Unknown("effect_not_inspectable".to_owned()))
+    }
+
+    /// Whether a step this action closed `Waiting` has outlived the time it
+    /// gave itself. `false` by default: a wait nobody bounded is a person's to
+    /// end, and a resume that ended it would decide for them.
+    fn waiting_lapsed(&self, _record: &StepRecord, _shared: &SharedState) -> bool {
+        false
     }
 
     /// The evidence that redoing this action changes nothing the world has
@@ -797,6 +808,13 @@ pub struct Reconciliation {
     /// where "becomes ready again" reads. Here something else reads — something
     /// was undone in the world, and the reader must know.
     pub compensated: Vec<String>,
+    /// The waits nobody ended before their deadline. **A BUCKET OF ITS OWN, AND
+    /// NOT `closed_as_broke`:** that one reads as "becomes ready again", and
+    /// whether a lapsed wait does is `max_attempts`'s answer, not this pass's.
+    /// Every handed step shipped today declares one attempt, so the run fails
+    /// on the same resume, and a reader told it was back among the ready would
+    /// read `failed` on the very next line.
+    pub waits_that_lapsed: Vec<String>,
 }
 
 pub struct ReconciliationRequest<'a> {
@@ -979,8 +997,82 @@ impl InProcessExecutor {
             )?;
             bucket.push(record.step_id.clone());
         }
+        lapse_the_expired_waits(
+            graph,
+            run_id,
+            &records,
+            &*store,
+            actions,
+            shared,
+            clock,
+            &mut report,
+        )?;
         Ok(report)
     }
+}
+
+/// A `Waiting` record is closed, so the loop over open ones never reaches it:
+/// the deadline a handed step declares would govern only the rarer handoff a
+/// person took and dropped. A lapsed wait is ended the way an abandoned one is,
+/// broken, on an attempt of its own since the waiting one is closed; the step's
+/// `max_attempts` then says whether it is offered again or the run fails.
+#[allow(clippy::too_many_arguments)]
+fn lapse_the_expired_waits(
+    graph: &Graph,
+    run_id: &str,
+    records: &[StepRecord],
+    store: &dyn RecordStore,
+    actions: &ActionRegistry,
+    shared: &SharedState,
+    clock: &dyn Clock,
+    report: &mut Reconciliation,
+) -> Result<(), FlowError> {
+    let mut epoch = records.iter().map(|record| record.epoch).max().unwrap_or(0);
+    for step in graph.steps() {
+        let Some(waited) = latest_for(step, records) else {
+            continue;
+        };
+        let lapsed = waited.outcome == Some(Outcome::Waiting)
+            && actions
+                .get(&step.action)
+                .is_some_and(|action| action.waiting_lapsed(waited, shared));
+        if !lapsed {
+            continue;
+        }
+        let now = clock.now()?;
+        epoch += 1;
+        let mut ended = StepRecord::started(
+            run_id,
+            &step.id,
+            waited.attempt + 1,
+            epoch,
+            waited.deps.clone(),
+            waited.input.clone(),
+            waited.gates.clone(),
+            now,
+        );
+        ended.attempt_relation = attempt_relation(records, &ended);
+        ended.species = waited.species;
+        store.append_started(ended)?;
+        store.close(
+            run_id,
+            &step.id,
+            waited.attempt + 1,
+            epoch,
+            closed(
+                Outcome::Broke,
+                None,
+                Some(format!(
+                    "nobody took it on before its deadline; it waited from {}",
+                    waited.started_at
+                )),
+                Some(HANDOFF_EXPIRED),
+                now,
+            ),
+        )?;
+        report.waits_that_lapsed.push(step.id.clone());
+    }
+    Ok(())
 }
 
 impl Executor for InProcessExecutor {

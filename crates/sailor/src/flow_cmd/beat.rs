@@ -384,12 +384,12 @@ fn sense_the_watchers(
     (said, ran, held)
 }
 
-/// What the beat does with the runs parked on a step that answered «not yet».
-///
-/// **A RUN WHOSE FLOW NO LONGER STARTS BY ITSELF IS LET GO, NEVER WOKEN.**
-/// Fifty-six of the fifty-seven parked on this machine belong to a flow that
-/// was switched off by hand after it emptied a live session: waking them would
-/// repeat that harm, and leaving them is the litter fault 163 is about.
+/// Two passes: the runs a step answered «not yet», and the runs whose handover
+/// outlived the deadline its own step declared. **IN THE FIRST, A RUN WHOSE
+/// FLOW NO LONGER STARTS BY ITSELF IS LET GO, NEVER WOKEN** — fifty-six of the
+/// fifty-seven parked belonged to a flow switched off by hand after it emptied
+/// a live session (fault 163). The second ends a wait the flow bounded itself,
+/// and ending a wait starts none of the work that switch was thrown against.
 pub fn ask_the_parked_again(
     sources: &[FlowSource],
     ledger: &Ledger,
@@ -426,7 +426,65 @@ pub fn ask_the_parked_again(
             if closed { "released" } else { "parked" }
         );
     }
+    woken += wake_the_lapsed_handovers(ledger, now, resume, &mut said);
     (said, woken, let_go)
+}
+
+/// Resumes the runs waiting on a handover whose deadline has passed: the
+/// resume ends the wait, and nobody else ever resumes a run parked on a
+/// person who does not come. A run whose handover is still in time, or was
+/// answered, is left to the person, and a child to its parent.
+fn wake_the_lapsed_handovers(
+    ledger: &Ledger,
+    now: i64,
+    resume: Resumer<'_>,
+    said: &mut String,
+) -> usize {
+    let Ok(waiting) = ledger.waiting_runs() else {
+        return 0;
+    };
+    let mut woken = 0;
+    for run in waiting {
+        let Ok(records) = ledger.steps(&run.run_id) else {
+            continue;
+        };
+        let on_its_own = ledger.run_header(&run.run_id).is_ok_and(|header| {
+            header.is_some_and(|header| crate::step_cmd::resumed_on_its_own(&header))
+        });
+        if !on_its_own || !a_handover_lapsed(&records, now) {
+            continue;
+        }
+        woken += 1;
+        let (word, how) = match resume(&run.run_id) {
+            Ok(answer) => ("lapsed", answer),
+            Err(complaint) => ("broke", complaint),
+        };
+        let _ = writeln!(
+            said,
+            "{}\t{word}\t{}",
+            run.entity,
+            how.lines().next().unwrap_or("")
+        );
+    }
+    woken
+}
+
+/// Whether a step of the run still waits, by its latest attempt, past the
+/// deadline its record declares.
+fn a_handover_lapsed(records: &[flow::StepRecord], now: i64) -> bool {
+    let mut latest: BTreeMap<&str, &flow::StepRecord> = BTreeMap::new();
+    for record in records {
+        let newer = latest
+            .get(record.step_id.as_str())
+            .is_none_or(|seen| (record.attempt, record.epoch) > (seen.attempt, seen.epoch));
+        if newer {
+            latest.insert(&record.step_id, record);
+        }
+    }
+    latest.values().any(|record| {
+        record.outcome == Some(flow::Outcome::Waiting)
+            && actions::handoff::deadline_of(record).is_some_and(|deadline| now >= deadline)
+    })
 }
 
 /// The flows a parked run can be woken under: the ones that still start

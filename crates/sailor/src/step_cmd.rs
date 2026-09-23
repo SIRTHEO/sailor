@@ -317,9 +317,89 @@ fn close_step(found: &BTreeMap<String, String>) -> Result<String, String> {
     // line, not of the machine.
     let _ = declared_outcome(found)?;
     let ledger = open_ledger()?;
+    close_a_handed_step(&ledger, found, |_rule, flow, run_id| {
+        crate::flow_cmd::resume_run_in(&ledger, flow, run_id)
+    })
+}
+
+/// The whole of what a door does once its store is open: find the flow the run
+/// declares, write the close, then ask the shared rule whether to carry on.
+/// **THERE IS ONE ROUTE, AND THIS IS IT.** The doors differ in how they resume
+/// — one in the process that typed the line, one on a thread that joins the
+/// window's registry — and in nothing else. A door that wrote its own three
+/// lines here is how the rule came to hold on only one of them.
+pub fn close_a_handed_step(
+    ledger: &Ledger,
+    found: &BTreeMap<String, String>,
+    resume: impl FnOnce(TheRunIsItsDoorsToResume, &FlowFile, &str) -> Result<String, String>,
+) -> Result<String, String> {
     let run_id = required(found, "run")?;
-    let flow = flow_of_run(&ledger, run_id)?;
-    close_step_in(&ledger, &flow, found)
+    let flow = flow_of_run(ledger, run_id)?;
+    let closed = close_step_in(ledger, &flow, found)?;
+    carry_the_run_on(ledger, run_id, closed, |rule| resume(rule, &flow, run_id))
+}
+
+/// The options a close carries, as a door that is no command line hands them:
+/// the same keys `close` parses off a line, so a window cannot name one of them
+/// differently and write a row the command line would never have written.
+pub fn a_close_by(
+    run_id: &str,
+    step_id: &str,
+    as_whom: &str,
+    outcome: &str,
+    said: Option<&str>,
+) -> BTreeMap<String, String> {
+    let mut found = BTreeMap::from([
+        ("run".to_owned(), run_id.to_owned()),
+        ("step".to_owned(), step_id.to_owned()),
+        ("as".to_owned(), as_whom.to_owned()),
+        ("outcome".to_owned(), outcome.to_owned()),
+    ]);
+    if let Some(said) = said.filter(|text| !text.trim().is_empty()) {
+        found.insert("said".to_owned(), said.to_owned());
+    }
+    found
+}
+
+/// The rule's answer, and the only way to hold one. **A RESUME THAT MATTERS
+/// ASKS FOR THIS BY TYPE**: the field is private to this module, so nothing
+/// outside can make one, and a door that resumed before asking would not
+/// compile rather than pass a check that reads its letters.
+pub struct TheRunIsItsDoorsToResume(());
+
+/// Resumes the run a close answered, whichever door closed it: the step after a
+/// handoff only ever starts through a resume, and a close that left it to a
+/// printed line left six answered reviews parked for a day. The close is written
+/// before the resume starts, so how the resume ends is reported, never failed
+/// on. Each door hands in its own resume — the window's runs on a thread of the
+/// window's own, so the console follows it — and neither decides whether to.
+pub fn carry_the_run_on(
+    ledger: &Ledger,
+    run_id: &str,
+    closed: String,
+    resume: impl FnOnce(TheRunIsItsDoorsToResume) -> Result<String, String>,
+) -> Result<String, String> {
+    let header = ledger.run_header(run_id).map_err(|error| {
+        format!(
+            "{closed}\n{}",
+            catalogue::say(
+                "cli.step.cannot_read_run",
+                &[("run_id", run_id), ("error", &error.to_string())],
+            )
+        )
+    })?;
+    if !header.is_some_and(|header| resumed_on_its_own(&header)) {
+        return Ok(closed);
+    }
+    let resumed = resume(TheRunIsItsDoorsToResume(())).unwrap_or_else(|said| said);
+    Ok(format!("{closed}\n{resumed}"))
+}
+
+/// Whether a run is parked on a person and nobody else resumes it: a `running`
+/// run has a process of its own, one that ended is not reopened, and a child is
+/// its parent's to resume, with the cap and the wall the parent hands it.
+pub(crate) fn resumed_on_its_own(header: &ledger::RunRecord) -> bool {
+    header.status == "waiting" && header.parent_run_id.is_none()
 }
 
 /// The outcome whoever closes declares.
@@ -785,7 +865,10 @@ fn decide_step(found: &BTreeMap<String, String>, verdict: Verdict) -> Result<Str
     let ledger = open_ledger()?;
     let run_id = required(found, "run")?;
     let flow = flow_of_run(&ledger, run_id)?;
-    decide_step_in(&ledger, &flow, found, verdict)
+    let decided = decide_step_in(&ledger, &flow, found, verdict)?;
+    carry_the_run_on(&ledger, run_id, decided, |_rule| {
+        crate::flow_cmd::resume_run_in(&ledger, &flow, run_id)
+    })
 }
 
 /// Why the decision went that way. **A REJECTION HAS TO SAY IT**: read back a
