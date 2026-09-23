@@ -3,11 +3,10 @@ import screenshotsSource from "../../scripts/screenshots.ts?raw";
 import tauri from "../../src-tauri/tauri.conf.json";
 
 /**
- * **TWO CONTRACTS THAT DISAGREE MAKE A PICTURE OF NOTHING.** The window cannot
- * open narrower than `minWidth`, and the capture script has its own list of
- * widths: for a while the script photographed this window at 375px, a width no
- * person can put it at, and a reviewer read the starved field in that picture
- * as a defect of the product. Whichever of the two moves, this goes red.
+ * **TWO CONTRACTS THAT DISAGREE MAKE A PICTURE OF NOTHING.** The window opens
+ * no narrower than `minWidth`, and the capture script keeps widths of its own:
+ * it photographed this window at 375px, and a reviewer read the field starved
+ * in that picture as a defect of the product. Whichever moves, this goes red.
  */
 
 /** The widths the script declares, by the name a scene asks for them by. */
