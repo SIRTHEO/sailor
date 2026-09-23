@@ -297,7 +297,11 @@ impl Sessions {
                  worktree = excluded.worktree,
                  ancestor = COALESCE(excluded.ancestor, terminals.ancestor),
                  session_id = excluded.session_id,
-                 transcript_path = COALESCE(excluded.transcript_path, terminals.transcript_path),
+                 transcript_path = CASE
+                     WHEN terminals.session_id IS excluded.session_id
+                         THEN COALESCE(excluded.transcript_path, terminals.transcript_path)
+                     ELSE excluded.transcript_path
+                 END,
                  opened_at = CASE
                      WHEN terminals.session_id IS excluded.session_id THEN terminals.opened_at
                      ELSE excluded.opened_at
@@ -329,7 +333,12 @@ impl Sessions {
                  worktree = excluded.worktree,
                  ancestor = COALESCE(excluded.ancestor, terminals.ancestor),
                  session_id = COALESCE(excluded.session_id, terminals.session_id),
-                 transcript_path = COALESCE(excluded.transcript_path, terminals.transcript_path)",
+                 transcript_path = CASE
+                     WHEN excluded.session_id IS NULL
+                         OR terminals.session_id IS excluded.session_id
+                         THEN COALESCE(excluded.transcript_path, terminals.transcript_path)
+                     ELSE excluded.transcript_path
+                 END",
             params![
                 arrival.anchor.tty,
                 arrival.anchor.worktree,

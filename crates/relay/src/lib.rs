@@ -3,6 +3,7 @@
 //! in is a flow file, because a relay written as one function is 1,400 lines
 //! whose every refusal disappears.
 
+mod consent;
 pub mod keeper;
 
 use flow::{Action, ActionError, ActionOutcome, SharedState};
@@ -120,6 +121,18 @@ impl Action for TypeIntoTerminalAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: TypeSpec = read_input(input)?;
         let root = store_root(&spec.store)?;
+        let machine = toolbox::Machine::current();
+        let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
+        if let Some(cli) = emptied_by(&catalog, &spec.line) {
+            return Err(ActionError::new(
+                "an_emptying_is_not_a_line",
+                format!(
+                    "«{}» empties a session of «{cli}»: that is the emptying node's to type, \
+                     because it reads its consent when it types",
+                    spec.line
+                ),
+            ));
+        }
         typed_into(&root, &spec.tty, &spec.line)?;
         // The instant travels with the outcome so a later step can refuse a
         // mandate older than the moment one was asked for.
@@ -133,6 +146,15 @@ impl Action for TypeIntoTerminalAction {
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
         unknown_of(declared, &["tty", "line", "store"])
     }
+}
+
+/// The command line whose session this line would empty, if any declares it.
+fn emptied_by(catalog: &toolbox::Catalog, line: &str) -> Option<String> {
+    catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.reset_line() == Some(line.trim()))
+        .map(|loaded| loaded.descriptor.id.clone())
 }
 
 /// How a line is typed is the letterbox's business, not this crate's.
@@ -181,18 +203,12 @@ impl Action for EmptyTerminalAction {
         let root = store_root(&spec.store)?;
         let machine = toolbox::Machine::current();
         let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-        let line = reset_line_of(&catalog, &spec.cli)?;
-        // Asked here and not left to whoever wrote the flow: a forgotten step
-        // would empty a session holding a person's question.
-        if let Freedom::NotYet(why) = freedom_now(&catalog, &root, &spec.tty, &spec.cli)? {
-            return Ok(ActionOutcome::NotYet(why));
+        // Asked here and not left to whoever wrote the flow: a forgotten or
+        // stale step would empty a session that never handed anything on.
+        match consent::asked_now(&catalog, &root, &spec.tty, &spec.cli)? {
+            consent::Asked::NotYet(why) => Ok(ActionOutcome::NotYet(why)),
+            consent::Asked::Given(consent) => consent.empty(&root).map(ActionOutcome::Went),
         }
-        typed_into(&root, &spec.tty, &line)?;
-        Ok(ActionOutcome::Went(json!({
-            "tty": spec.tty,
-            "cli": spec.cli,
-            "typed": line,
-        })))
     }
 
     fn unknown_fields(&self, declared: &Value) -> Vec<String> {
