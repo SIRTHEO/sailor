@@ -409,9 +409,16 @@ fn a_summary_renumbered_after_the_count_stood_under_its_old_number() {
 /// `OR REPLACE` deletes the row under the new number and fires no delete.
 #[test]
 fn a_fault_renumbered_onto_a_held_number_after_the_count_stood_as_both() {
-    let (store, page, path) = a_store_and_its_page("replaced-after");
-    rusqlite::Connection::open(&path)
-        .expect("a second writer")
+    let (store, _, path) = a_store_and_its_page("replaced-after");
+    let writer = rusqlite::Connection::open(&path).expect("a second writer");
+    writer
+        .execute(
+            "UPDATE faults SET happened_on = '04/09' WHERE number = 3",
+            [],
+        )
+        .expect("the mover dated apart from the fault it lands on");
+    let page = counted(&store);
+    writer
         .execute(
             "UPDATE OR REPLACE faults SET number = 1 WHERE number = 3",
             [],
