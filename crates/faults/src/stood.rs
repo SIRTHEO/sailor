@@ -88,6 +88,20 @@ pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError
     Ok(())
 }
 
+/// Exactly what `NOW` writes, `2026-09-23T16:12:36.935Z`, and nothing after
+/// it, so a stamp's instant compares with the history's as text.
+fn in_the_store_clock(at: &str) -> bool {
+    at.len() == 24
+        && at.char_indices().all(|(place, letter)| match place {
+            4 | 7 => letter == '-',
+            10 => letter == 'T',
+            13 | 16 => letter == ':',
+            19 => letter == '.',
+            23 => letter == 'Z',
+            _ => letter.is_ascii_digit(),
+        })
+}
+
 const STOOD_OPENING: &str = "Counted from the fault store through fault ";
 const STOOD_CHANGE: &str = ", change ";
 const STOOD_CHANGE_END: &str = " of its history";
@@ -155,6 +169,68 @@ pub fn the_page_from(document: &str, faults: &[Fault], stood: &Stood) -> String 
     stood_written_into(&render_open_into(document, faults), stood)
 }
 
+/// The public page read the way a render writes it: one table, the separator
+/// under its header and one run of rows. Any other line opening with `|`, and
+/// a count sentence after the first, is a stray: a render copies it from the
+/// page, so only this reading keeps the page from vouching for it.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PublicTable {
+    /// Each row's line, counted from one, and its cells.
+    pub rows: Vec<(usize, Vec<String>)>,
+    pub strays: Vec<usize>,
+}
+
+pub fn public_table(page: &str) -> PublicTable {
+    let lines: Vec<&str> = page.lines().collect();
+    let header = lines
+        .iter()
+        .position(|line| line.trim() == crate::PUBLIC_HEADER);
+    let separator = header.map(|header| header + 1).filter(|&next| {
+        lines
+            .get(next)
+            .is_some_and(|line| crate::is_a_separator(line))
+    });
+    let mut run = separator.map(|separator| separator + 1);
+    let mut counted = false;
+    let mut table = PublicTable::default();
+    for (at, line) in lines.iter().enumerate() {
+        if Some(at) == header || Some(at) == separator {
+            continue;
+        }
+        if run == Some(at) && crate::is_a_data_row(line) {
+            table.rows.push((at + 1, cells_of(line)));
+            run = Some(at + 1);
+        } else if line.trim().starts_with('|') || (counted && crate::is_the_count_sentence(line)) {
+            table.strays.push(at + 1);
+        } else if crate::is_the_count_sentence(line) {
+            counted = true;
+        }
+    }
+    table
+}
+
+/// The cells of a row, split where a reader splits them: at a `|` not escaped.
+fn cells_of(row: &str) -> Vec<String> {
+    let mut cells = vec![String::new()];
+    let mut escaped = false;
+    for letter in row.trim().chars() {
+        if letter == '|' && !escaped {
+            cells.push(String::new());
+        } else if let Some(cell) = cells.last_mut() {
+            cell.push(letter);
+        }
+        escaped = letter == '\\' && !escaped;
+    }
+    cells.remove(0);
+    if cells.last().is_some_and(|cell| cell.trim().is_empty()) {
+        cells.pop();
+    }
+    cells
+        .into_iter()
+        .map(|cell| cell.trim().to_owned())
+        .collect()
+}
+
 /// The first line, counted from one, where the page and a render part ways.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Difference {
@@ -201,6 +277,11 @@ pub enum Held {
         open_then: usize,
     },
     Differs(Difference),
+    /// A line read as a row outside the one table a render writes.
+    Stray {
+        line: usize,
+        text: String,
+    },
     /// The history does not reach back to the stamp, so nothing is claimed
     /// about that moment: `rows` differ from a render of the store today.
     CannotTell {
@@ -264,7 +345,12 @@ impl Faults {
             return Ok(false);
         };
         let next_at = at_of("seq > ?1")?;
-        Ok(kept_at <= stood.at
+        let now: String = self
+            .connection
+            .query_row(&format!("SELECT {NOW}"), [], |row| row.get(0))?;
+        Ok(in_the_store_clock(&stood.at)
+            && stood.at <= now
+            && kept_at <= stood.at
             && change_at <= stood.at
             && next_at.is_none_or(|next| next >= stood.at))
     }
@@ -356,6 +442,10 @@ impl Faults {
 
     /// The page against a fresh render of the store as it stood at its stamp.
     pub fn hold_the_page(&self, page: &str, stood: &Stood) -> Result<Held, FaultError> {
+        if let Some(&line) = public_table(page).strays.first() {
+            let text = page.lines().nth(line - 1).unwrap_or_default().to_owned();
+            return Ok(Held::Stray { line, text });
+        }
         let Some(then) = self.as_it_stood(stood)? else {
             let today = the_page_from(page, &self.all()?, stood);
             return Ok(Held::CannotTell {

@@ -38,20 +38,13 @@ fn page() -> String {
         .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
-/// The rows of the table: every line starting with `|` whose first cell is a
-/// number. Header and rule are skipped because their first cell is not one.
+/// The rows of the table, read by the same reading `sailor faults check`
+/// holds the page with: one table, and one run of rows under its header.
 fn faults_in(text: &str) -> Vec<Fault> {
-    text.lines()
-        .filter_map(|line| {
-            let trimmed = line.trim();
-            if !trimmed.starts_with('|') {
-                return None;
-            }
-            let cells: Vec<String> = trimmed
-                .trim_matches('|')
-                .split(" | ")
-                .map(|cell| cell.trim().to_owned())
-                .collect();
+    faults::public_table(text)
+        .rows
+        .into_iter()
+        .filter_map(|(_, cells)| {
             let number: usize = cells.first()?.parse().ok()?;
             let status = cells.last().cloned().unwrap_or_default();
             Some(Fault {
@@ -80,6 +73,33 @@ const A_TABLE_OF_THREE: &str = "\
 | 2 | 02/09 | a drawing painted in the colour behind it | **closed** on 03/09 |
 | 3 | 03/09 | a count that reassured instead of measuring | **closed in part** on 04/09, the measure still to make |
 ";
+
+/// A line that opens with `|` outside the one table is a row no render gave.
+#[test]
+fn no_line_reads_as_a_row_outside_the_table() {
+    let text = page();
+    let strays = faults::public_table(&text).strays;
+    workspace::measured(text.lines().count(), "lines of the public fault page read");
+    assert!(
+        strays.is_empty(),
+        "lines {strays:?} read as table rows outside the table a render writes; \
+         render the page again from the store"
+    );
+}
+
+/// The three shapes a row slipped past the older reading of this page.
+#[test]
+fn a_row_the_reading_of_the_check_refuses_is_refused_here_too() {
+    let spacer = "| — | | | |\n| 998 | 23/09 | Invented. | **open** |\n";
+    let hashed = "| #999 | 23/09 | Invented. | **open** |\n";
+    let packed = "| | | | |\n|999|23/09|Invented, written without spaces.|**open**|\n";
+    for forged in [spacer, hashed, packed] {
+        let table = format!("{A_TABLE_OF_THREE}{forged}");
+        let read = faults::public_table(&table);
+        assert_eq!(read.strays.first(), Some(&6), "{table}");
+        assert_eq!(faults_in(&table).len(), 3, "{table}");
+    }
+}
 
 /// The page may describe no fault, the day no open one has a summary, but it
 /// keeps the table the render writes into.

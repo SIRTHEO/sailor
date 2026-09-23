@@ -528,3 +528,103 @@ fn a_stamp_naming_an_earlier_change_cannot_tell() {
         "a change followed by another before the stamp",
     );
 }
+
+/// A render replaces one run of rows and copies every other line from the
+/// page, so a row outside that run would vouch for itself.
+fn stray_at(store: &Faults, page: &str, forged: &str, row: &str, what: &str) {
+    let line = forged
+        .lines()
+        .collect::<Vec<_>>()
+        .iter()
+        .rposition(|line| *line == row)
+        .map(|at| at + 1)
+        .expect("the forged line is on the page");
+    assert_ne!(forged, page, "the fixture's line moved: {what}");
+    match held(store, forged) {
+        Held::Stray { line: named, text } => {
+            assert_eq!((named, text.as_str()), (line, row), "{what}\n{forged}")
+        }
+        other => panic!("{what} passed as {other:?}\n{forged}"),
+    }
+}
+
+fn with_rows_after_the_table(page: &str, rows: &str) -> String {
+    let last_row = page
+        .lines()
+        .rfind(|line| line.starts_with("| 2 |"))
+        .expect("the last row");
+    page.replace(&format!("{last_row}\n"), &format!("{last_row}\n{rows}"))
+}
+
+#[test]
+fn a_row_after_a_spacer_row_is_named() {
+    let (store, page, _) = a_store_and_its_page("spacer");
+    let forged = with_rows_after_the_table(
+        &page,
+        "| — | | | |\n| 998 | 23/09 | Invented. | **open** |\n",
+    );
+    stray_at(&store, &page, &forged, "| — | | | |", "a spacer row");
+}
+
+#[test]
+fn a_row_whose_number_is_not_a_number_is_named() {
+    let (store, page, _) = a_store_and_its_page("hashed");
+    let row = "| #999 | 23/09 | Invented. | **open** |";
+    let forged = with_rows_after_the_table(&page, &format!("{row}\n"));
+    stray_at(&store, &page, &forged, row, "a row numbered #999");
+}
+
+#[test]
+fn a_row_written_without_spaces_after_an_empty_row_is_named() {
+    let (store, page, _) = a_store_and_its_page("packed");
+    let forged = with_rows_after_the_table(
+        &page,
+        "| | | | |\n|999|23/09|Invented, written without spaces.|**open**|\n",
+    );
+    stray_at(&store, &page, &forged, "| | | | |", "an empty row");
+}
+
+#[test]
+fn a_second_table_after_the_stamp_is_named() {
+    let (store, page, _) = a_store_and_its_page("second-table");
+    let forged = format!(
+        "{page}\n| # | since | what goes wrong | status |\n|---|---|---|---|\n\
+         | 999 | 23/09 | Invented. | **open** |\n"
+    );
+    stray_at(
+        &store,
+        &page,
+        &forged,
+        "| # | since | what goes wrong | status |",
+        "a second table",
+    );
+}
+
+#[test]
+fn a_second_count_sentence_is_named() {
+    let (store, page, _) = a_store_and_its_page("second-count");
+    let sentence = "**Thirty open faults are described on this page; zero more are kept only in the fault store.**";
+    let forged = format!("{page}\n{sentence}\n");
+    stray_at(&store, &page, &forged, sentence, "a second count sentence");
+}
+
+#[test]
+fn a_stamp_moved_into_the_future_cannot_tell() {
+    let (store, page, _) = a_store_and_its_page("future");
+    let forged = restamped(&page, |stood| faults::Stood {
+        at: "2099-01-01T00:00:00.000Z".to_owned(),
+        ..stood
+    });
+    cannot_tell(&store, &forged, "a stamp moved to 2099");
+}
+
+#[test]
+fn a_stamp_with_words_after_its_instant_cannot_tell() {
+    let (store, page, _) = a_store_and_its_page("trailing");
+    let forged = restamped(&page, |stood| faults::Stood {
+        at: format!("{} and later", stood.at),
+        ..stood
+    });
+    a_millisecond_passes();
+    cannot_tell(&store, &forged, "an instant with words after it");
+}

@@ -187,7 +187,7 @@ fn spliced(lines: &[&str], from: usize, to: usize, rows: &str) -> String {
 }
 
 /// The `|---|---|` line under a table's header.
-fn is_a_separator(line: &str) -> bool {
+pub(crate) fn is_a_separator(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.starts_with('|')
         && trimmed.contains('-')

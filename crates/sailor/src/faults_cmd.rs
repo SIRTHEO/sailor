@@ -607,6 +607,11 @@ fn the_page_against_the_store(
             ]);
             Err(catalogue::say("cli.faults.page_differs", &said))
         }
+        faults::Held::Stray { line, text } => {
+            let line = line.to_string();
+            said.extend([("line", line.as_str()), ("page", text.as_str())]);
+            Err(catalogue::say("cli.faults.page_stray_row", &said))
+        }
         faults::Held::CannotTell { kept_since, rows } => {
             let since = match kept_since {
                 Some(at) => catalogue::say("cli.faults.history_kept_since", &[("at", &at)]),
