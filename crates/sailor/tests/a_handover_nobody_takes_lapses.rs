@@ -132,6 +132,12 @@ fn resume(ledger: &Ledger, flow: &FlowFile, run_id: &str) -> Result<String, Stri
     sailor::flow_cmd::resume_run_with(ledger, flow, run_id, &mut store, None)
 }
 
+/// What the resume printed, whichever way it ended: a run left waiting and a
+/// run that failed both come back as an error, and a person reads the report.
+fn the_report(ended: Result<String, String>) -> String {
+    ended.unwrap_or_else(|said| said)
+}
+
 fn status_of(ledger: &Ledger, run_id: &str) -> String {
     ledger
         .run_header(run_id)
@@ -285,4 +291,38 @@ fn the_switch_on_a_flow_governs_the_parked_and_not_the_lapsed() {
     assert_eq!(resumed, ["lapsed"], "{said}");
     assert_eq!((woken, let_go), (1, 1), "{said}");
     assert_eq!(status_of(&ledger, "not-yet"), "stopped", "{said}");
+}
+
+/// **THE LINE A PERSON READS SAYS WHAT THE RESUME DID.** A lapsed wait was
+/// reported as put back among the ready, and every handed step that ships
+/// declares one attempt, so the next line said `failed`. Both sentences are
+/// asked of the catalogue here, not copied: a report held against a copy would
+/// stay green the day the catalogue says something else.
+#[test]
+fn the_report_of_a_lapsed_handover_says_what_became_of_the_run() {
+    let scratch = Scratch::new("report");
+    let ledger = Ledger::open(&scratch.0).expect("the store opens");
+    a_run_waiting(&ledger, "no-attempt-left", LAPSED);
+    a_run_waiting(&ledger, "an-attempt-left", LAPSED);
+
+    let lapsed = catalogue::say("cli.flow.nobody_took_the_handover", &[("steps", "review")]);
+    let ready_again =
+        catalogue::say("cli.flow.expired_back_among_the_ready", &[("steps", "review")]);
+    assert_ne!(lapsed, ready_again, "one sentence: this test cannot tell them apart");
+
+    let failed = the_report(resume(&ledger, &a_flow(LAPSED, 1), "no-attempt-left"));
+    let offered = the_report(resume(&ledger, &a_flow(LAPSED, 3), "an-attempt-left"));
+
+    for said in [&failed, &offered] {
+        assert!(said.contains(&lapsed), "the report does not name the lapse: {said}");
+        assert!(!said.contains(&ready_again), "the wait was not put back among the ready: {said}");
+    }
+    assert!(
+        failed.contains(&catalogue::say("cli.flow.run_status", &[("status", "failed")])),
+        "{failed}"
+    );
+    assert!(
+        offered.contains(&catalogue::say("cli.flow.run_status", &[("status", "waiting")])),
+        "{offered}"
+    );
 }

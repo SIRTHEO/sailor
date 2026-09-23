@@ -164,6 +164,7 @@
   "cli.flow.due_now_and_unplanned": "{due} due now; {unplanned} with no schedule, which start by hand only",
   "cli.flow.every_so_many_seconds": "every {seconds}s from the last run",
   "cli.flow.expired_back_among_the_ready": "expired and put back among the ready: {steps}",
+  "cli.flow.nobody_took_the_handover": "nobody took these on before their deadline, and the wait is over: {steps}",
   "cli.flow.held_deadline_not_passed": "held, the deadline has not passed: {steps}",
   "cli.flow.in_the_store": "in the store: {runs} runs, of which {costed} spent something known",
   "cli.flow.in_turns": "in {turns} turns",
