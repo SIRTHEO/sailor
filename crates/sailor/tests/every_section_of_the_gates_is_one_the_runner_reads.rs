@@ -22,44 +22,82 @@ fn root() -> PathBuf {
         .expect("the workspace root")
 }
 
-/// Every heading that opens lines to run or to confirm, named by the word it
-/// leads with. What makes a section a section is that it holds bullets, not the
-/// shape of its name: a rule that spelled the shape would be the runner's own
-/// pattern written twice, and would go blind wherever the runner did — `E2`
-/// renamed one character over is a section this reads and that one would not.
-fn the_sections(manifest: &str) -> Vec<String> {
-    let mut sections = Vec::new();
-    let mut heading: Option<String> = None;
-    for line in manifest.lines() {
-        if let Some(text) = line.strip_prefix("## ") {
-            heading = text
-                .split_whitespace()
-                .next()
-                .map(|word| word.trim_end_matches('.').to_owned());
-        } else if line.starts_with("- ") {
-            if let Some(named) = heading.take() {
-                sections.push(named);
+/// Headings that open prose instead of lines to run, and why.
+const HOLDS_NO_LINES_TO_RUN: &[(&str, &str)] = &[(
+    "The six the trunk requires, and the day each said no",
+    "a table of receipts, not lines a run walks",
+)];
+
+/// A heading of the manifest: the word it leads with, which is the letter the
+/// runner reads, and where in the file the lines it holds are.
+struct Section {
+    letter: String,
+    holds: Vec<usize>,
+}
+
+/// Every heading that opens lines to run or to confirm. What makes a section a
+/// section is that it holds lines at all — never the shape of its name, and never
+/// the mark those lines open with. Either would be the runner's own pattern
+/// written twice and would go blind wherever the runner did: `E2` renamed one
+/// character over, and its bullets respelled `*`, are sections this reads and
+/// that one would not.
+fn the_sections(manifest: &str) -> Vec<Section> {
+    let mut sections: Vec<Section> = Vec::new();
+    let mut open = false;
+    for (index, line) in manifest.lines().enumerate() {
+        if let Some(says) = line.strip_prefix("## ") {
+            open = !HOLDS_NO_LINES_TO_RUN
+                .iter()
+                .any(|(named, _)| *named == says);
+            if open {
+                sections.push(Section {
+                    letter: says
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or(says)
+                        .trim_end_matches('.')
+                        .to_owned(),
+                    holds: Vec::new(),
+                });
+            }
+        } else if open && !line.trim().is_empty() {
+            if let Some(last) = sections.last_mut() {
+                last.holds.push(index);
             }
         }
     }
+    sections.retain(|section| !section.holds.is_empty());
     sections
 }
 
-/// The letters the runner read out of the manifest, as it prints them before
-/// it chooses or runs anything.
-fn the_plan(root: &Path) -> Vec<String> {
+/// A directory of this run's own, so two suites at once never share one.
+fn scratch() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("sailor-gates-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("the scratch directory");
+    dir
+}
+
+/// Everything the runner reads out of a manifest, as it prints it before it
+/// chooses or runs anything. `None` when it refuses that manifest outright,
+/// which is one more way of having noticed.
+fn the_plan_of(root: &Path, manifest: &Path) -> Option<String> {
     let said = Command::new("sh")
         .arg(THE_RUNNER)
-        .args(["--plan", "--base", "HEAD"])
+        .args(["--plan", "--base", "HEAD", "--manifest"])
+        .arg(manifest)
         .current_dir(root)
         .output()
         .expect("the runner answers");
-    assert!(
-        said.status.success(),
-        "the runner refused to print its plan: {}",
-        String::from_utf8_lossy(&said.stderr)
-    );
-    let mut letters: Vec<String> = String::from_utf8_lossy(&said.stdout)
+    said.status
+        .success()
+        .then(|| String::from_utf8_lossy(&said.stdout).into_owned())
+}
+
+/// The letters the runner read out of the manifest this tree ships.
+fn the_plan(root: &Path) -> Vec<String> {
+    let said = the_plan_of(root, &root.join(THE_GATES)).expect("the runner prints its plan");
+    let mut letters: Vec<String> = said
         .lines()
         .filter_map(|line| line.split('\t').next())
         .map(str::to_owned)
@@ -74,13 +112,46 @@ fn the_runner_reads_every_section_the_manifest_declares() {
     let root = root();
     let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
     let plan = the_plan(&root);
-    for letter in the_sections(&manifest) {
+    for section in the_sections(&manifest) {
         assert!(
-            plan.contains(&letter),
-            "«{letter}» is a section of {THE_GATES} and the runner's plan holds none of its \
-             lines: {plan:?}"
+            plan.contains(&section.letter),
+            "«{}» is a section of {THE_GATES} and the runner's plan holds none of its lines: \
+             {plan:?}",
+            section.letter
         );
     }
+}
+
+/// The runner is its own oracle here: the manifest is handed back one line
+/// short and the plan has to come out different. Nothing tells this what a
+/// line of a section looks like, so no mark one opens with can hide it, and
+/// no rule of the runner's is written a second time to be disagreed with.
+#[test]
+fn every_line_a_section_holds_reaches_the_runner() {
+    let root = root();
+    let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
+    let whole = the_plan_of(&root, &root.join(THE_GATES)).expect("the runner prints its plan");
+    let scratch = scratch();
+    let shortened = scratch.join("gates.md");
+    let lines: Vec<&str> = manifest.lines().collect();
+    for section in the_sections(&manifest) {
+        for index in section.holds {
+            let left: Vec<&str> = lines
+                .iter()
+                .enumerate()
+                .filter_map(|(at, line)| (at != index).then_some(*line))
+                .collect();
+            std::fs::write(&shortened, left.join("\n")).expect("the shortened manifest");
+            assert!(
+                the_plan_of(&root, &shortened).as_deref() != Some(whole.as_str()),
+                "«{}» of {THE_GATES} holds «{}», and the runner's plan is the same without \
+                 it: the line is read by nobody",
+                section.letter,
+                lines[index]
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
 }
 
 /// The road every real run takes, which the plan never walks: a flag declared
