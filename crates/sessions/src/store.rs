@@ -288,6 +288,9 @@ impl Sessions {
     /// point: a detached window stays detached for the agent that arrives next.
     /// If this statement touched it a detach would last one session — "leave
     /// this process alone", where what was asked is "leave this window alone".
+    ///
+    /// A transcript is kept only for the session that wrote it: a new session
+    /// arriving without one leaves the column empty, never the old one's path.
     pub fn open_terminal(&self, arrival: &Arrival) -> Result<(), SessionError> {
         self.connection.execute(
             "INSERT INTO terminals
@@ -297,7 +300,11 @@ impl Sessions {
                  worktree = excluded.worktree,
                  ancestor = COALESCE(excluded.ancestor, terminals.ancestor),
                  session_id = excluded.session_id,
-                 transcript_path = COALESCE(excluded.transcript_path, terminals.transcript_path),
+                 transcript_path = CASE
+                     WHEN terminals.session_id IS excluded.session_id
+                         THEN COALESCE(excluded.transcript_path, terminals.transcript_path)
+                     ELSE excluded.transcript_path
+                 END,
                  opened_at = CASE
                      WHEN terminals.session_id IS excluded.session_id THEN terminals.opened_at
                      ELSE excluded.opened_at
@@ -329,7 +336,12 @@ impl Sessions {
                  worktree = excluded.worktree,
                  ancestor = COALESCE(excluded.ancestor, terminals.ancestor),
                  session_id = COALESCE(excluded.session_id, terminals.session_id),
-                 transcript_path = COALESCE(excluded.transcript_path, terminals.transcript_path)",
+                 transcript_path = CASE
+                     WHEN excluded.session_id IS NULL
+                         OR terminals.session_id IS excluded.session_id
+                         THEN COALESCE(excluded.transcript_path, terminals.transcript_path)
+                     ELSE excluded.transcript_path
+                 END",
             params![
                 arrival.anchor.tty,
                 arrival.anchor.worktree,
