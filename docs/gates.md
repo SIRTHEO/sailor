@@ -29,19 +29,19 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p sailor -j 1 --test a_check_that_failed_before_the_attestation_is_asked_again` — integration's merge step, run against a forge that answers from a file
 - `cargo test -p flow -j 1`
 
-## C. When `crates/actions` or a brake changes
+## C. When `crates/actions` changes
 
 - `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` (both suites, always both)
 - A first-execution timeout (`engine_timed_out` on a fresh temp-file engine) is rerun once and said aloud
 - `cargo test -p actions -j 1 --test a_candidate_leaves_only_through_the_gate` — the last gate before a draft, integration, a release (before its build and before its push) or closing the work lets a candidate leave, proved without a forge or a binary in service
 - `cargo test -p actions -j 1 --test a_verdict_binds_only_the_pinned_commit` — a review is recorded only when its verdict names the pinned commit, says clean or findings, lists what it checked, and was closed with the sailor the flow verified
 
-## D. When `crates/profiles`, the login probe or a launch changes
+## D. When `crates/profiles` or `crates/actions/src/probe.rs` changes
 
 - `cargo test -p profiles -j 1`
 - One real probe on a real home: `SAILOR_TEST_CLAUDE_HOME=<home> cargo test -p actions -j 1 --test <the probe test>` — pasted, not skipped
 
-## E2. When a tree is taken down: `worktree_cmd`, the sweep or `workspace::standing`
+## E2. When `worktree_cmd`, `sweep` or `crates/workspace/` changes
 
 - `cargo test -p sailor -j 1 --test a_tree_somebody_is_in_is_never_closed --test a_closed_tree_takes_its_index_identity_with_it` — a tree somebody is in is kept, whoever asks
 - `cargo test -p workspace -j 1`
