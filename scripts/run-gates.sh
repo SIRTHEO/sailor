@@ -48,8 +48,8 @@ applies() {
     case "$1" in
         A) return 0 ;;
         B) printf '%s\n' "$changed" | grep -E -q '\.flow\.json$|(^|/)token-seeds\.json$' ;;
-        C) printf '%s\n' "$changed" | grep -E -q '^crates/actions/|brake' ;;
-        D) printf '%s\n' "$changed" | grep -E -q '^crates/profiles/' ;;
+        C) printf '%s\n' "$changed" | grep -E -q '^crates/actions/' ;;
+        D) printf '%s\n' "$changed" | grep -E -q '^crates/profiles/|^crates/actions/src/probe\.rs$' ;;
         E) printf '%s\n' "$changed" | grep -E -q '^desktop/' ;;
         E2) printf '%s\n' "$changed" | grep -E -q 'worktree_cmd|^crates/workspace/|sweep' ;;
         *) return 1 ;;

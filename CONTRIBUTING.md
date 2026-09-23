@@ -85,9 +85,9 @@ cargo test -p sailor -j 1 --test a_flow_never_grows_what_it_sends_in_silence --t
 cargo test -p flow -j 1
 ```
 
-**When `crates/actions` or a brake changes:** `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` — both suites, always both. A first-execution timeout on a fresh temp-file engine is rerun once and said aloud, not silently retried.
+**When `crates/actions` changes:** `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` — both suites, always both. A first-execution timeout on a fresh temp-file engine is rerun once and said aloud, not silently retried.
 
-**When `crates/profiles`, the login probe or a launch changes:** `cargo test -p profiles -j 1`, plus one real probe on a real home (the probe test's own name), pasted rather than skipped.
+**When `crates/profiles` or `crates/actions/src/probe.rs` changes:** `cargo test -p profiles -j 1`, plus one real probe on a real home (the probe test's own name), pasted rather than skipped.
 
 **When `desktop/` changes:** `cd desktop && npm test` and `npx tsc --noEmit`, `cargo test --manifest-path desktop/src-tauri/Cargo.toml -j 1`, and — for anything a person would see on screen — a walkthrough of it against the fixture store, with screenshots.
 

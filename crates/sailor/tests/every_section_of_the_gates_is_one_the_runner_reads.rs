@@ -291,6 +291,51 @@ fn what_it_names(says: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
+/// The words a heading may carry beside the names it spells out. A heading is
+/// a declaration and not prose: a trigger written bare is one no check reads,
+/// and `the sweep` in prose left `E2`'s arm free to drop the word while every
+/// check stayed green. Widening this list is a decision somebody makes.
+const THE_CONNECTIVES: &[&str] = &["When", "a", "or", "changes"];
+
+/// A heading's own words: what falls outside the backticks, less the letter it
+/// opens with and the commas that separate the names.
+fn the_bare_words(says: &str) -> Vec<String> {
+    says.split('`')
+        .step_by(2)
+        .flat_map(str::split_whitespace)
+        .skip(1)
+        .map(|word| word.trim_matches(',').to_owned())
+        .filter(|word| !word.is_empty())
+        .collect()
+}
+
+/// A trigger is held only where it is spelled out, so a heading may not name
+/// one anywhere else. `E2` said «the sweep» in prose, the check read only what
+/// the backticks held, and deleting that word from the arm stopped the sweep's
+/// two files running a line while all six checks passed. `A` answers to
+/// everything and the letters decided elsewhere have no arm here, so neither
+/// has a trigger to declare.
+#[test]
+fn a_section_spells_out_what_arms_it_and_leaves_nothing_in_prose() {
+    let root = root();
+    let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
+    for section in the_sections(&manifest) {
+        let letter = section.letter.as_str();
+        if letter == "A" || DECIDED_ELSEWHERE.iter().any(|(named, _)| *named == letter) {
+            continue;
+        }
+        for word in the_bare_words(&section.says) {
+            assert!(
+                THE_CONNECTIVES.contains(&word.as_str()),
+                "«{letter}» opens «{}» and says «{word}» outside backticks. What a letter is \
+                 for is held only between them, so a trigger named in prose arms nothing: \
+                 spell it out, or drop the claim. Beside its names a heading may say {THE_CONNECTIVES:?}",
+                section.says
+            );
+        }
+    }
+}
+
 /// The first file this tree tracks whose path carries every part of a name, in
 /// the order the name spells them.
 fn a_file_named(parts: &[String], tracked: &[String]) -> Option<String> {
