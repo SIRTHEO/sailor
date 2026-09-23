@@ -808,6 +808,13 @@ pub struct Reconciliation {
     /// where "becomes ready again" reads. Here something else reads — something
     /// was undone in the world, and the reader must know.
     pub compensated: Vec<String>,
+    /// The waits nobody ended before their deadline. **A BUCKET OF ITS OWN, AND
+    /// NOT `closed_as_broke`:** that one reads as "becomes ready again", and
+    /// whether a lapsed wait does is `max_attempts`'s answer, not this pass's.
+    /// Every handed step shipped today declares one attempt, so the run fails
+    /// on the same resume, and a reader told it was back among the ready would
+    /// read `failed` on the very next line.
+    pub waits_that_lapsed: Vec<String>,
 }
 
 pub struct ReconciliationRequest<'a> {
@@ -1054,7 +1061,7 @@ fn lapse_the_expired_waits(
                 now,
             ),
         )?;
-        report.closed_as_broke.push(step.id.clone());
+        report.waits_that_lapsed.push(step.id.clone());
     }
     Ok(())
 }

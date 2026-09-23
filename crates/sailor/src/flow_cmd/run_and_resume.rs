@@ -206,6 +206,16 @@ pub fn resume_run_with(
             )
         );
     }
+    if !reconciled.waits_that_lapsed.is_empty() {
+        let _ = write!(
+            report,
+            "\n{}",
+            catalogue::say(
+                "cli.flow.nobody_took_the_handover",
+                &[("steps", &reconciled.waits_that_lapsed.join(", "))],
+            )
+        );
+    }
     if !reconciled.closed_as_waiting.is_empty() {
         let _ = write!(
             report,
