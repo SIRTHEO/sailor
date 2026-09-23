@@ -92,6 +92,27 @@ fn a_run_waiting(ledger: &Ledger, run_id: &str, deadline_secs: i64) {
         .expect("handing it over");
 }
 
+/// A run that stopped on a step answering «not yet», which is the other half
+/// of what the beat asks again and a different question to the store.
+fn a_run_that_answered_not_yet(ledger: &Ledger, run_id: &str) {
+    ledger
+        .record_run(&RunRecord {
+            run_id: run_id.to_owned(),
+            kind: "flow".to_owned(),
+            entity: "un-controllo".to_owned(),
+            parent_run_id: None,
+            started_by: "a test".to_owned(),
+            status: "not_yet".to_owned(),
+            total_cost_micros: 0,
+            error: None,
+            started_at: HANDED_AT,
+            ended_at: Some(HANDED_AT),
+            worktree: None,
+            stop_reason: None,
+        })
+        .expect("recording the run");
+}
+
 fn ended(outcome: Outcome, at: i64) -> Completion {
     Completion {
         outcome,
@@ -235,4 +256,33 @@ fn the_beat_resumes_only_the_runs_whose_handover_lapsed() {
 
     assert_eq!(resumed, ["lapsed"], "{said}");
     assert_eq!(woken, 1);
+}
+
+/// **THE TWO PASSES DO NOT SHARE A RULE.** No flow here starts by itself, so
+/// the run parked on «not yet» is let go: the switch a person threw on a flow
+/// is what decides that one. The lapsed handover is woken all the same — it
+/// answers to the deadline its own step declared, and the resume ends a wait
+/// rather than starting again the work the switch was thrown against.
+#[test]
+fn the_switch_on_a_flow_governs_the_parked_and_not_the_lapsed() {
+    let scratch = Scratch::new("two-passes");
+    let ledger = Ledger::open(&scratch.0).expect("the store opens");
+    a_run_waiting(&ledger, "lapsed", LAPSED);
+    a_run_that_answered_not_yet(&ledger, "not-yet");
+
+    let mut resumed = Vec::new();
+    let mut resume = |run_id: &str| {
+        resumed.push(run_id.to_owned());
+        Ok(String::new())
+    };
+    let (said, woken, let_go) = sailor::flow_cmd::beat::ask_the_parked_again(
+        &[],
+        &ledger,
+        HANDED_AT + LAPSED,
+        &mut resume,
+    );
+
+    assert_eq!(resumed, ["lapsed"], "{said}");
+    assert_eq!((woken, let_go), (1, 1), "{said}");
+    assert_eq!(status_of(&ledger, "not-yet"), "stopped", "{said}");
 }
