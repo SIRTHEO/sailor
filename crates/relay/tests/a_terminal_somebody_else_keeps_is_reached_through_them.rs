@@ -117,8 +117,11 @@ impl Scratch {
     /// what the emptying reads before it types.
     fn handing_on(&self, tty: &str) -> &Self {
         let transcript = self.0.join(format!("{tty}.jsonl"));
-        std::fs::write(&transcript, r#"{"message":{"usage":{"input_tokens":260000}}}"#)
-            .expect("the transcript is written");
+        std::fs::write(
+            &transcript,
+            r#"{"message":{"usage":{"input_tokens":260000}}}"#,
+        )
+        .expect("the transcript is written");
         sessions::Sessions::open(self.0.join(sessions::SESSIONS_FILE))
             .expect("a register of this test's own")
             .open_terminal(&sessions::Arrival {

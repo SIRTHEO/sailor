@@ -243,9 +243,11 @@ fn a_context_that_fell_below_oblige_since_empties_nothing() {
 fn a_context_nobody_can_measure_is_not_a_full_one() {
     let scratch = Scratch::new("unmeasured");
     let nowhere = scratch.0.join("no-such-transcript.jsonl");
-    scratch
-        .handing_on("ttys005")
-        .in_there_writing("ttys005", THE_AUTHOR, &nowhere.display().to_string());
+    scratch.handing_on("ttys005").in_there_writing(
+        "ttys005",
+        THE_AUTHOR,
+        &nowhere.display().to_string(),
+    );
 
     let why = not_yet(&scratch.told_to_empty("ttys005"));
 
@@ -280,7 +282,10 @@ fn a_terminal_left_alone_is_not_emptied() {
         worktree: "/a/tree".to_owned(),
         ancestor: None,
     };
-    scratch.register().detach(&anchor, 2_000).expect("it is detached");
+    scratch
+        .register()
+        .detach(&anchor, 2_000)
+        .expect("it is detached");
 
     let why = not_yet(&scratch.told_to_empty("ttys010"));
 
@@ -334,7 +339,9 @@ struct MeasuredThen(Box<dyn Fn() + Send + Sync>);
 impl Action for MeasuredThen {
     fn execute(&self, _input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         (self.0)();
-        Ok(ActionOutcome::Went(json!({"state": "oblige", "tokens": 260_000})))
+        Ok(ActionOutcome::Went(
+            json!({"state": "oblige", "tokens": 260_000}),
+        ))
     }
 
     fn species(&self) -> StepSpecies {
