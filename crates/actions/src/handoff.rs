@@ -50,6 +50,16 @@ pub fn holder_key(run_id: &str, step_id: &str) -> String {
     format!("{run_id}/{step_id}")
 }
 
+/// When a handed step stops waiting: its start plus the `handoff_timeout_secs`
+/// its record declares, or `None` when it declares no readable one.
+pub fn deadline_of(record: &StepRecord) -> Option<i64> {
+    record
+        .input
+        .get("handoff_timeout_secs")
+        .and_then(Value::as_i64)
+        .map(|limit| record.started_at.saturating_add(limit))
+}
+
 /// What a handed step declares.
 ///
 /// **TWO FIELDS ARE DECLARED HERE AND READ ELSEWHERE, ON PURPOSE.**
@@ -72,8 +82,8 @@ struct HandoffSpec {
     /// `sailor step open` suggests, **not** a credential: see the weakness
     /// declared in `crates/sailor/src/step_cmd.rs`.
     holder: String,
-    /// How many seconds someone has to take it on. Past that, the step reads as
-    /// unapplied and a resume puts it back among the ready.
+    /// How many seconds someone has to take it on. Past that, a resume ends the
+    /// wait as broken, and `max_attempts` says whether it is offered again.
     handoff_timeout_secs: u64,
     /// Whether whoever closed a dependency may open this step as well.
     ///
@@ -212,18 +222,13 @@ impl Action for HandoffAction {
         record: &StepRecord,
         _shared: &SharedState,
     ) -> Result<EffectStatus, ActionError> {
-        let Some(limit) = record
-            .input
-            .get("handoff_timeout_secs")
-            .and_then(Value::as_i64)
-        else {
+        let Some(deadline) = deadline_of(record) else {
             // A record with no readable deadline is never declared expired: a
             // handover with no ceiling is ambiguous, and ambiguity is kept.
             return Ok(EffectStatus::Unknown(
                 "the handover declares no readable deadline".to_owned(),
             ));
         };
-        let deadline = record.started_at.saturating_add(limit);
         if (self.now)() < deadline {
             Ok(EffectStatus::Unknown(format!(
                 "handed over, and the deadline has not passed: {} seconds to go",
@@ -232,6 +237,12 @@ impl Action for HandoffAction {
         } else {
             Ok(EffectStatus::NotApplied)
         }
+    }
+
+    /// The same deadline, on the handover nobody took: without it the wait
+    /// `execute` closes outlives every deadline it declares.
+    fn waiting_lapsed(&self, record: &StepRecord, _shared: &SharedState) -> bool {
+        deadline_of(record).is_some_and(|deadline| (self.now)() >= deadline)
     }
 
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
