@@ -69,11 +69,17 @@ pub(crate) fn worktree_create(branch: String, name: Option<String>) -> Result<St
     cut(&repo()?, &branch, name.as_deref(), &register()?)
 }
 
+/// Taking down through the door that takes the tree off the register, so what
+/// the window closes stops being offered. The register is handed in for the
+/// same reason it is handed to `cut`.
+fn take_down(repo: &Path, name: &str, register: &dyn OpenTrees) -> Result<String, String> {
+    workspace::remove(repo, name, register).map(|path| path.to_string_lossy().into_owned())
+}
+
 /// Git refuses while a tree holds uncommitted work, and that refusal is kept.
 #[tauri::command]
 pub(crate) fn worktree_remove(name: String) -> Result<String, String> {
-    let path = workspace::remove(&repo()?, &name)?;
-    Ok(path.to_string_lossy().into_owned())
+    take_down(&repo()?, &name, &register()?)
 }
 
 #[cfg(test)]
@@ -130,6 +136,31 @@ mod tests {
         assert!(
             rows.iter().any(|row| row.path == cut_at),
             "the window cut {cut_at} and wrote down {rows:?}"
+        );
+    }
+
+    /// **AND THE OTHER HALF.** A row the window never takes back off the page
+    /// is a tree Sailor goes on offering after the window has removed it.
+    #[test]
+    fn the_window_takes_the_tree_it_removes_off_the_register() {
+        let scratch = std::env::temp_dir().join(format!(
+            "sailor-window-removes-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&scratch);
+        let repo = a_repository_in(&scratch);
+        let register = ledger::Ledger::open(scratch.join("store")).expect("a register");
+
+        cut(&repo, "work/dalla-finestra", None, &register).expect("the tree is cut");
+        let listed = OpenTrees::trees_left_open(&register).expect("the rows");
+        take_down(&repo, "dalla-finestra", &register).expect("the tree comes down");
+        let after = OpenTrees::trees_left_open(&register).expect("the rows");
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(listed.len(), 1, "the tree was never written down: {listed:?}");
+        assert!(
+            after.is_empty(),
+            "the window removed the tree and the register still offers it: {after:?}"
         );
     }
 

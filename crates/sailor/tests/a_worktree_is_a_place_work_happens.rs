@@ -5,6 +5,7 @@
 //! the wrong name — and a wrong name is what `remove` acts on.
 
 use ledger::holdings::Whose;
+use sailor::retire_index::IndexTending;
 use sailor::worktree_cmd::{render, render_open, still_the_opener, sweep, Holders};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -319,6 +320,37 @@ fn a_tree_cut_for_a_branch_is_written_down_as_it_is_cut() {
         rows.iter()
             .any(|row| row.path == said && row.step == "work/scritto-subito"),
         "the tree {said} was cut and not written down: {rows:?}"
+    );
+}
+
+/// **A TREE TAKEN DOWN GOES OFF THE PAGE WITH IT.** Cutting wrote the row and
+/// the gesture that removes one by name never paid it back, so `sailor
+/// worktree open` went on listing trees that are gone and the flow that closes
+/// finished work was answering for disk nobody would ever claim.
+#[test]
+fn a_tree_taken_down_by_name_leaves_the_register_with_it() {
+    let scratch = a_scratch("removed-leaves");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let cut = workspace::create(&repo, "work/tolto-per-nome", None, &store).expect("a tree");
+    let listed = store.trees_left_open().expect("the rows");
+
+    let said = sailor::worktree_cmd::remove_one(
+        &repo,
+        "tolto-per-nome",
+        &store as &dyn OpenTrees,
+        &IndexTending::of(&repo),
+    )
+    .expect("the tree comes down");
+    let after = store.trees_left_open().expect("the rows");
+    let gone = !cut.exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert_eq!(listed.len(), 1, "the tree was never written down: {listed:?}");
+    assert!(gone, "the tree is still on disk:\n{said}");
+    assert!(
+        after.is_empty(),
+        "the tree is gone and the register still offers it: {after:?}"
     );
 }
 

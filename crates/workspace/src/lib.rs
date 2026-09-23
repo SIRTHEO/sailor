@@ -169,7 +169,7 @@ pub fn create(
         opened_by_born_at: None,
     };
     if let Err(why) = register.tree_opened(&opened) {
-        let _ = remove_at(repo, &path);
+        let _ = remove_at(repo, &path, register);
         return Err(why);
     }
     Ok(path)
@@ -293,7 +293,7 @@ pub fn tree_for(
     drop(held);
     cut?;
     if let Err(why) = register.tree_opened(&opened) {
-        let _ = take_down(repo, &path);
+        let _ = take_down(repo, &path, register);
         return Err(why);
     }
     Ok(path)
@@ -336,17 +336,13 @@ pub enum Swept {
 /// Takes down the tree cut for one step, once nobody is coming back to it.
 /// Two things keep it, and neither is ever overridden: git's refusal over
 /// uncommitted work, and a commit that only this tree holds. See fault 89.
-/// Taking down and forgetting are one gesture, or Sailor keeps looking for it.
 pub fn close_tree(repo: &Path, tree: &Path, register: &dyn OpenTrees) -> Closing {
     if let Some(commit) = a_commit_no_branch_holds(repo, tree) {
         return Closing::HoldsACommitNobodyElseHas(commit);
     }
-    match take_down(repo, tree) {
+    match take_down(repo, tree, register) {
         Err(refusal) => Closing::GitRefused(refusal),
-        Ok(()) => {
-            let _ = register.tree_closed(&tree.to_string_lossy());
-            Closing::TakenDown
-        }
+        Ok(()) => Closing::TakenDown,
     }
 }
 
@@ -355,7 +351,7 @@ pub fn close_tree(repo: &Path, tree: &Path, register: &dyn OpenTrees) -> Closing
 /// a tree kept is only named and a tree taken down is gone.
 pub fn close_if_the_trunk_holds_it(repo: &Path, tree: &Path, register: &dyn OpenTrees) -> Swept {
     if !tree.exists() {
-        let _ = register.tree_closed(&tree.to_string_lossy());
+        off_the_register(register, tree);
         return Swept::AlreadyGone;
     }
     if !the_trunk_already_holds(repo, tree) {
@@ -364,10 +360,9 @@ pub fn close_if_the_trunk_holds_it(repo: &Path, tree: &Path, register: &dyn Open
     Swept::Closed(close_tree(repo, tree, register))
 }
 
-fn take_down(repo: &Path, tree: &Path) -> Result<(), String> {
-    let at = tree.to_string_lossy().into_owned();
+fn take_down(repo: &Path, tree: &Path, register: &dyn OpenTrees) -> Result<(), String> {
     let held = OneTreeAtATime::over(repo);
-    let gone = git(repo, &["worktree", "remove", &at]);
+    let gone = remove_at(repo, tree, register);
     drop(held);
     gone?;
     // The run's directory goes with its last step: a full one errors.
@@ -454,19 +449,39 @@ pub fn run_and_step_of(tree: &Worktree) -> Option<(String, String)> {
 
 /// Takes a tree down. Git refuses while the tree holds uncommitted work, and
 /// that refusal is kept: losing work is not a thing this command may do.
-pub fn remove(repo: &Path, name: &str) -> Result<PathBuf, String> {
+pub fn remove(repo: &Path, name: &str, register: &dyn OpenTrees) -> Result<PathBuf, String> {
     let trees = list(repo)?;
     let found = trees
         .iter()
         .find(|tree| tree.name() == name)
         .ok_or_else(|| format!("no worktree called {name}"))?;
     let path = PathBuf::from(&found.path);
-    remove_at(repo, &path)?;
+    remove_at(repo, &path, register)?;
     Ok(path)
 }
 
-pub fn remove_at(repo: &Path, at: &Path) -> Result<(), String> {
-    git(repo, &["worktree", "remove", &at.to_string_lossy()]).map(|_| ())
+/// Taking down and taking off the register are one gesture, the mirror of
+/// [`create`]: a row left open is a tree `sailor worktree open` lists after
+/// the directory is gone, and it is asked by the paths it holds, since a row
+/// carries whatever spelling wrote it and two spellings are one tree.
+pub fn remove_at(repo: &Path, at: &Path, register: &dyn OpenTrees) -> Result<(), String> {
+    git(repo, &["worktree", "remove", &at.to_string_lossy()])?;
+    off_the_register(register, at);
+    Ok(())
+}
+
+fn off_the_register(register: &dyn OpenTrees, at: &Path) {
+    let _ = register.tree_closed(&at.to_string_lossy());
+    let here = standing::canonical(at);
+    let Ok(rows) = register.trees_left_open() else {
+        return;
+    };
+    for row in rows
+        .iter()
+        .filter(|row| standing::canonical(Path::new(&row.path)) == here)
+    {
+        let _ = register.tree_closed(&row.path);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -526,9 +541,6 @@ pub fn changes(root: &Path) -> Result<Changes, String> {
     })
 }
 
-/// Where a tree stands right now: the branch, the commit, and a digest of
-/// everything not committed.
-///
 /// Read here and never asked of an agent. What a session claims about the tree
 /// it worked in is the half a successor must not have to trust.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
