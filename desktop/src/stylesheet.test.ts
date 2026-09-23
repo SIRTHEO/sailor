@@ -38,8 +38,10 @@ describe("prohibition 1 — three type families, and only those", () => {
 describe("prohibition 2 — two radii and a pill", () => {
   test("no radius written by hand", () => {
     // `border-radius: 2px` on a lane's mark, `50%` on a trigger's. The rule
-    // admits three values, and they are three roles.
-    const allowed = /^var\(--radius(-lg|-pill)?\)$/;
+    // admits three values, and they are three roles — and `0`, which is not a
+    // fourth radius but the way a flat row takes back the one the paint under
+    // every button lays down.
+    const allowed = /^(var\(--radius(-lg|-pill)?\)|0)$/;
     const wrong = declarationsOf("border-radius").filter(({ value }) => !allowed.test(value));
     expect(wrong).toEqual([]);
   });
@@ -98,21 +100,41 @@ describe("prohibition 8 — the sizes stay in the scale", () => {
     expect(under, `a rule painting text under ${FLOOR}px`).toEqual([]);
   });
 
-  /** THIS SHEET IS UNLAYERED AND TAILWIND'S UTILITIES ARE NOT, so unlayered
-   *  wins whatever the specificity: a rule on bare `button` repaints a shadcn
-   *  button and the component becomes a dependency paid for and inert. */
+  /** Drops every `:where(…)`, brackets and all: what is left is what the
+   *  selector weighs. */
+  function unweighed(selector: string): string {
+    let out = selector;
+    for (let at = out.indexOf(":where("); at >= 0; at = out.indexOf(":where(")) {
+      let depth = 0;
+      let end = at + ":where".length;
+      for (; end < out.length; end += 1) {
+        if (out[end] === "(") depth += 1;
+        if (out[end] === ")" && (depth -= 1) === 0) break;
+      }
+      out = out.slice(0, at) + out.slice(end + 1);
+    }
+    return out;
+  }
+
+  /** A rule on bare `button` repaints a shadcn button, so it carries a guard —
+   *  and the guard must weigh nothing, or the rule outweighs every class in
+   *  this sheet and paints the window's buttons over them. */
   test("THE BARE `button` RULE STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF", () => {
     const onEveryButton = sheet.rules
       .map((rule) => rule.selector.trim())
       .filter((selector) =>
         selector
           .split(",")
-          .some((part) => /^button(:[a-z-]+(\([^)]*\))?)*$/.test(part.trim())),
+          .some((part) => /^button(:[a-z-]+(\(.*\))?)*$/.test(unweighed(part.trim()) || part.trim())),
       );
     expect(onEveryButton.length, "nothing paints bare buttons: this guards nothing")
       .toBeGreaterThan(0);
     const unguarded = onEveryButton.filter((selector) => !selector.includes("[data-slot]"));
     expect(unguarded, "a rule that repaints a component styling itself").toEqual([]);
+    const heavier = onEveryButton.filter((selector) =>
+      unweighed(selector).includes("[") || unweighed(selector).includes("."),
+    );
+    expect(heavier, "a rule on every button that outweighs a class on one").toEqual([]);
   });
 
   /** The three weights, and nothing between or beyond them. */
@@ -488,5 +510,36 @@ describe("the narrow window budgets its height", () => {
 
   test("AND THE GRAPH CAN GIVE GROUND, or the band pushes it out of its box", () => {
     expect(narrowBlock()).toMatch(/\.canvas\s*\{[^}]*min-height:\s*0/);
+  });
+});
+
+/** The rules written inside every `@media` block: the sheet's parser leaves
+ *  at-rules out, and a width is exactly where a panel would be hidden. */
+function rulesInsideMedia(): Array<{ selector: string; declarations: Array<[string, string]> }> {
+  const found: Array<{ selector: string; declarations: Array<[string, string]> }> = [];
+  for (let at = stylesheetSource.indexOf("@media"); at !== -1; at = stylesheetSource.indexOf("@media", at + 1)) {
+    const open = stylesheetSource.indexOf("{", at);
+    let depth = 1;
+    let close = open + 1;
+    while (close < stylesheetSource.length && depth > 0) {
+      if (stylesheetSource[close] === "{") depth += 1;
+      if (stylesheetSource[close] === "}") depth -= 1;
+      close += 1;
+    }
+    found.push(...parseStylesheet(stylesheetSource.slice(open + 1, close - 1)).rules);
+  }
+  return found;
+}
+
+describe("the window's panel", () => {
+  test("NO WIDTH HIDES THE PANEL: it is the only way to choose what the field holds", () => {
+    // Below 700px the panel was set to `display: none`, and nothing drew it
+    // back: the field said «pick one on the left» with nothing on the left.
+    const hidden = [...sheet.rules, ...rulesInsideMedia()].filter(
+      (rule) =>
+        /\.window-panel(?![\w-])/.test(rule.selector) &&
+        rule.declarations.some(([name, value]) => name === "display" && value.trim() === "none"),
+    );
+    expect(hidden.map((rule) => rule.selector)).toEqual([]);
   });
 });

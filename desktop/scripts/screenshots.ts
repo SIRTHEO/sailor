@@ -36,11 +36,20 @@ const outDir = join(root, "..", "target", "screenshots");
 const PORT = 5183;
 const URL = `http://localhost:${PORT}/`;
 
-/** The two widths the contract sets: the phone and the desk. */
+/**
+ * The widths this product can be looked at, and which scenes are captured at
+ * each. The phone and the desk are the contract for the screens; 900 is there
+ * because `tauri.conf.json` sets `minWidth: 900`, so the window cannot be
+ * narrower than that and 375 is a picture of something nobody can open.
+ */
 const WIDTHS = [
   { name: "375", width: 375, height: 812 },
+  { name: "900", width: 900, height: 700 },
   { name: "1440", width: 1440, height: 900 },
 ];
+
+/** What a scene is captured at unless it says otherwise. */
+const THE_CONTRACT = ["375", "1440"];
 
 type Scene = {
   /** The file name. */
@@ -49,6 +58,8 @@ type Scene = {
   what: string;
   /** Brings the window to the wanted state, or throws. */
   reach: (page: Page) => Promise<void>;
+  /** The widths this one is captured at, when they are not the contract's. */
+  at?: string[];
 };
 
 /** A product name is data, not a pattern: matched whole, escaped first. */
@@ -227,6 +238,15 @@ const SCENES: Scene[] = [
     },
   },
   {
+    name: "the-window",
+    what: "the three columns this branch exists to add — the rail of five lists, a panel of rows, the field beside it. Outside the native shell the lists cannot be asked, so this doubles as their refused state: the columns are the thing being measured here, not what fills them",
+    reach: async (page) => {
+      await openByPalette(page, "The window");
+      await page.locator(".window-shell").waitFor({ state: "visible", timeout: 5000 });
+    },
+    at: ["900", "1440"],
+  },
+  {
     name: "installed",
     what: "what this machine has installed: a data-only view, where vertical rhythm shows more than elsewhere",
     reach: async (page) => {
@@ -310,6 +330,7 @@ async function main(): Promise<void> {
       await page.goto(URL, { waitUntil: "networkidle" });
 
       for (const scene of SCENES) {
+        if (!(scene.at ?? THE_CONTRACT).includes(size.name)) continue;
         const stem = `${scene.name}-${size.name}`;
         try {
           await page.goto(URL, { waitUntil: "networkidle" });

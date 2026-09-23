@@ -42,3 +42,14 @@ export function sizeWords(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
+
+/** A moment as a person reads it, in one format whatever machine renders it. */
+export function whenWords(seconds: number): string {
+  return new Date(seconds * 1000).toLocaleString("en-GB", { hour12: false });
+}
+
+/** A count as a person reads it: grouped in threes, the way the design writes
+ *  them, so six figures are scanned instead of counted. */
+export function countWords(how_many: number): string {
+  return how_many.toLocaleString("en-US").replace(/,/g, " ");
+}
