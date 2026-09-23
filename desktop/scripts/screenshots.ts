@@ -227,6 +227,14 @@ const SCENES: Scene[] = [
     },
   },
   {
+    name: "the-window",
+    what: "the three columns this branch exists to add — the rail of five lists, a panel of rows, the field beside it. Outside the native shell the lists cannot be asked, so this doubles as their refused state: the columns are the thing being measured here, not what fills them",
+    reach: async (page) => {
+      await openByPalette(page, "The window");
+      await page.locator(".window-shell").waitFor({ state: "visible", timeout: 5000 });
+    },
+  },
+  {
     name: "installed",
     what: "what this machine has installed: a data-only view, where vertical rhythm shows more than elsewhere",
     reach: async (page) => {
