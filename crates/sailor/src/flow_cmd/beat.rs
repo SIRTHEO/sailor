@@ -384,12 +384,12 @@ fn sense_the_watchers(
     (said, ran, held)
 }
 
-/// What the beat does with the runs parked on a step that answered «not yet».
-///
-/// **A RUN WHOSE FLOW NO LONGER STARTS BY ITSELF IS LET GO, NEVER WOKEN.**
-/// Fifty-six of the fifty-seven parked on this machine belong to a flow that
-/// was switched off by hand after it emptied a live session: waking them would
-/// repeat that harm, and leaving them is the litter fault 163 is about.
+/// Two passes: the runs a step answered «not yet», and the runs whose handover
+/// outlived the deadline its own step declared. **IN THE FIRST, A RUN WHOSE
+/// FLOW NO LONGER STARTS BY ITSELF IS LET GO, NEVER WOKEN** — fifty-six of the
+/// fifty-seven parked belonged to a flow switched off by hand after it emptied
+/// a live session (fault 163). The second ends a wait the flow bounded itself,
+/// and ending a wait starts none of the work that switch was thrown against.
 pub fn ask_the_parked_again(
     sources: &[FlowSource],
     ledger: &Ledger,
