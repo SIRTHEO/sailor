@@ -997,7 +997,16 @@ impl InProcessExecutor {
             )?;
             bucket.push(record.step_id.clone());
         }
-        lapse_the_expired_waits(graph, run_id, &records, &*store, actions, shared, clock, &mut report)?;
+        lapse_the_expired_waits(
+            graph,
+            run_id,
+            &records,
+            &*store,
+            actions,
+            shared,
+            clock,
+            &mut report,
+        )?;
         Ok(report)
     }
 }
