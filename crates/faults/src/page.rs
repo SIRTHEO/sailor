@@ -94,13 +94,16 @@ fn a_public_row(line: &str) -> Option<Vec<String>> {
     let number: i64 = number.parse().ok()?;
     let written_again = public_row(number, since, what, status);
     let standing = public_standing(standing_of(status));
-    (written_again == line && standing == status && !since.is_empty() && !what.is_empty())
+    let open = standing_of(status).still_open();
+    (written_again == line && standing == status && open && !since.is_empty() && !what.is_empty())
         .then_some(cells)
 }
 
 /// The page held to the template with no store at hand: the opening, one
-/// table of rows the render would write again, a count sentence true of
-/// those rows, one stamp and nothing more. The rows are its cells.
+/// table of open rows the render would write again, a count sentence true of
+/// those rows, one stamp and nothing more. The rows are its cells. A row
+/// invented or removed in the render's shape, or a wrong «more», only the
+/// store's check can see.
 pub fn held_to_the_template(page: &str) -> Result<Vec<Vec<String>>, Difference> {
     let lines: Vec<&str> = page.split_inclusive('\n').collect();
     let named = |at: usize, store: String| Difference {
@@ -141,11 +144,19 @@ pub fn held_to_the_template(page: &str) -> Result<Vec<Vec<String>>, Difference> 
         return Err(named(at + 1, String::new()));
     }
     at += 2;
-    let stamped = lines.get(at).is_some_and(|line| {
-        stood_in(line).is_some_and(|stood| *line == format!("{}\n", stood_line(&stood)))
+    let stamp = lines.get(at).and_then(|line| {
+        stood_in(line).filter(|stood| *line == format!("{}\n", stood_line(stood)))
     });
-    if !stamped {
+    let Some(stamp) = stamp else {
         return Err(named(at, "the stamp".to_owned()));
+    };
+    // No row under a stamp from a kept history reads the same as every fault
+    // hidden, and only the store could tell the two apart.
+    if rows.is_empty() && stamp.change.is_some() {
+        return Err(named(
+            at,
+            "rows under a stamp from a kept history".to_owned(),
+        ));
     }
     if at + 1 < lines.len() {
         return Err(named(at + 1, String::new()));

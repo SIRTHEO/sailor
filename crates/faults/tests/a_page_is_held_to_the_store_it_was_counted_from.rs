@@ -600,6 +600,24 @@ fn forgeries(page: &str) -> Vec<(&'static str, String)> {
             "a row written without spaces",
             page.replace(last_row, &last_row.replace(" | ", "|")),
         ),
+        (
+            "a status the render never writes",
+            page.replace(
+                last_row,
+                &last_row.replace("**open**", "**open** since the start"),
+            ),
+        ),
+        (
+            "a closed row",
+            page.replace(last_row, &last_row.replace("**open**", "**closed**")),
+        ),
+        (
+            "a count of the rows that is wrong",
+            page.replace(
+                count,
+                &count.replace("Two open faults", "Three open faults"),
+            ),
+        ),
         ("a page whose lines end in CRLF", page.replace('\n', "\r\n")),
     ]
 }
@@ -714,4 +732,86 @@ fn a_second_count_sentence_is_named() {
          the fault store.**\n"
     );
     named_where_it_parts(&store, &page, &forged, "a second count sentence");
+}
+
+/// A page the crate would write, over a stamp that names a lower `through`
+/// than the store held: the stamp line is where it is named.
+fn named_at_the_stamp(store: &Faults, forged: &str, what: &str) {
+    let stamp = forged
+        .lines()
+        .position(|line| faults::stood_in(line).is_some())
+        .expect("the stamp")
+        + 1;
+    assert!(
+        faults::held_to_the_template(forged).is_ok(),
+        "{what}: {forged}"
+    );
+    match held(store, forged) {
+        Held::Differs(difference) => assert_eq!(difference.line, stamp, "{what}"),
+        other => panic!("{what} passed as {other:?}\n{forged}"),
+    }
+}
+
+fn the_store_up_to(store: &Faults, through: i64) -> Vec<faults::Fault> {
+    store
+        .all()
+        .expect("the faults")
+        .into_iter()
+        .filter(|fault| fault.number <= through)
+        .collect()
+}
+
+#[test]
+fn a_page_with_no_row_stamped_through_fault_zero_is_named() {
+    let (store, page, _) = a_store_and_its_page("through-zero");
+    let stood = faults::stood_in(&page).expect("the stamp");
+    let forged = faults::the_page(
+        &[],
+        &faults::Stood {
+            through: 0,
+            ..stood
+        },
+    );
+    match held(&store, &forged) {
+        Held::Differs(difference) => assert_eq!(
+            difference.line,
+            forged.lines().count(),
+            "named at the stamp"
+        ),
+        other => panic!("a page with nothing open passed as {other:?}\n{forged}"),
+    }
+}
+
+/// Faults 1 and 2 are on the page and 3 is kept only in the store.
+#[test]
+fn a_page_stamped_through_a_lower_fault_is_named() {
+    let (store, page, _) = a_store_and_its_page("through-lower");
+    let stood = faults::stood_in(&page).expect("the stamp");
+    let lower = faults::Stood {
+        through: 2,
+        ..stood
+    };
+    let forged = faults::the_page(&the_store_up_to(&store, 2), &lower);
+    assert!(forged.contains("zero more"), "{forged}");
+    named_at_the_stamp(&store, &forged, "a stamp through 2 hiding fault 3");
+}
+
+#[test]
+fn a_wrong_more_under_a_lower_through_is_named() {
+    let (store, page, _) = a_store_and_its_page("wrong-more");
+    let stood = faults::stood_in(&page).expect("the stamp");
+    let forged = page
+        .replace("one more is kept", "zero more are kept")
+        .replace(
+            &faults::stood_line(&stood),
+            &faults::stood_line(&faults::Stood {
+                through: 2,
+                ..stood.clone()
+            }),
+        );
+    named_at_the_stamp(
+        &store,
+        &forged,
+        "the rows kept, the more and through lowered",
+    );
 }

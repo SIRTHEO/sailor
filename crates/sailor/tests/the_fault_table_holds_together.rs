@@ -186,6 +186,24 @@ fn forgeries(page: &str) -> Vec<(&'static str, String)> {
             "a row written without spaces",
             page.replace(last_row, &last_row.replace(" | ", "|")),
         ),
+        (
+            "a status the render never writes",
+            page.replace(
+                last_row,
+                &last_row.replace("**open**", "**open** since the start"),
+            ),
+        ),
+        (
+            "a closed row",
+            page.replace(last_row, &last_row.replace("**open**", "**closed**")),
+        ),
+        (
+            "a count of the rows that is wrong",
+            page.replace(
+                count,
+                &count.replace("Two open faults", "Three open faults"),
+            ),
+        ),
         ("a page whose lines end in CRLF", page.replace('\n', "\r\n")),
     ]
 }
@@ -214,6 +232,17 @@ fn every_forgery_is_refused_without_a_store() {
             "{what} passed\n{forged}"
         );
     }
+    let nothing_open = faults::the_page(
+        &[],
+        &faults::Stood {
+            through: 0,
+            ..stood
+        },
+    );
+    assert!(
+        faults::held_to_the_template(&nothing_open).is_err(),
+        "a page with no row under a stamp from a kept history passed"
+    );
 }
 
 /// The page may describe no fault, the day no open one has a summary, but it

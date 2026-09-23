@@ -244,8 +244,9 @@ impl Faults {
             && next_at.is_none_or(|next| next >= stood.at))
     }
 
-    /// The faults up to `through` as they stood at the stamp's change, or
-    /// nothing when the history does not reach back that far.
+    /// The faults as they stood at the stamp's change, or nothing when the
+    /// history does not reach back that far. A fault written after it is
+    /// taken out by its own history, never by the stamp's `through`.
     pub fn as_it_stood(&self, stood: &Stood) -> Result<Option<Vec<Fault>>, FaultError> {
         let read = self.connection.unchecked_transaction()?;
         if !self.reaches_back_to(stood)? {
@@ -309,11 +310,7 @@ impl Faults {
                 fault.public_summary = summary;
             }
         }
-        Ok(Some(
-            then.into_values()
-                .filter(|fault| fault.number <= stood.through)
-                .collect(),
-        ))
+        Ok(Some(then.into_values().collect()))
     }
 
     /// A fault taken out leaves its summary behind, and the summary's own
@@ -330,7 +327,8 @@ impl Faults {
     }
 
     /// The whole page against a render of the store as it stood at its
-    /// stamp, byte for byte.
+    /// stamp, byte for byte. The stamp's `through` must be the highest
+    /// number the store held then, or it could choose which faults count.
     pub fn hold_the_page(&self, page: &str, stood: &Stood) -> Result<Held, FaultError> {
         let Some(then) = self.as_it_stood(stood)? else {
             return Ok(Held::CannotTell {
@@ -338,6 +336,21 @@ impl Faults {
                 rows: rows_that_differ(page, &the_page(&self.all()?, stood)),
             });
         };
+        let highest = then.iter().map(|fault| fault.number).max().unwrap_or(0);
+        if stood.through != highest {
+            let at = page
+                .split_inclusive('\n')
+                .position(|line| stood_in(line).is_some())
+                .unwrap_or(0);
+            return Ok(Held::Differs(Difference {
+                line: at + 1,
+                page: stood_line(stood),
+                store: stood_line(&Stood {
+                    through: highest,
+                    ..stood.clone()
+                }),
+            }));
+        }
         Ok(match first_difference(page, &the_page(&then, stood)) {
             Some(difference) => Held::Differs(difference),
             None => Held::Agrees {
