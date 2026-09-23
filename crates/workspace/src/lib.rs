@@ -88,7 +88,6 @@ pub fn trees_root(repo: &Path) -> PathBuf {
     parent.join(format!("{stem}{BESIDE_A_CHECKOUT}"))
 }
 
-/// Where a new tree goes.
 pub fn tree_path(repo: &Path, name: &str) -> PathBuf {
     trees_root(repo).join(name)
 }
@@ -133,7 +132,15 @@ pub fn branch_names(repo: &Path) -> Result<Vec<String>, String> {
 }
 
 /// Cuts a tree for `branch`, creating the branch if it does not exist yet.
-pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, String> {
+/// **CUTTING AND WRITING DOWN ARE ONE GESTURE**, here and in [`tree_for`]:
+/// only a tree on the register may be taken down, so one cut past it would be
+/// nobody's to close, and one the register refuses goes straight back.
+pub fn create(
+    repo: &Path,
+    branch: &str,
+    name: Option<&str>,
+    register: &dyn OpenTrees,
+) -> Result<PathBuf, String> {
     let name = name.map(str::to_owned).unwrap_or_else(|| name_for(branch));
     let path = tree_path(repo, &name);
     if path.exists() {
@@ -152,6 +159,19 @@ pub fn create(repo: &Path, branch: &str, name: Option<&str>) -> Result<PathBuf, 
         vec!["worktree", "add", &target, "-b", branch]
     };
     git(repo, &args)?;
+    let opened = OpenTree {
+        path: target,
+        repo: repo.to_string_lossy().into_owned(),
+        run: String::new(),
+        step: branch.to_owned(),
+        opened_by_pid: std::process::id(),
+        opened_at: now(),
+        opened_by_born_at: None,
+    };
+    if let Err(why) = register.tree_opened(&opened) {
+        let _ = remove_at(repo, &path);
+        return Err(why);
+    }
     Ok(path)
 }
 
@@ -241,8 +261,7 @@ impl Drop for OneTreeAtATime {
 
 /// The tree one step of one run works in, detached so no branch is left behind.
 /// An existing one is the answer: a retried step needs what its first attempt
-/// left. Cutting and writing down are one gesture: a tree the register refused
-/// goes straight back, since nobody could ever find it again.
+/// left. It is written down as it is cut, as [`create`] is.
 pub fn tree_for(
     repo: &Path,
     run: &str,
@@ -450,7 +469,6 @@ pub fn remove_at(repo: &Path, at: &Path) -> Result<(), String> {
     git(repo, &["worktree", "remove", &at.to_string_lossy()]).map(|_| ())
 }
 
-/// One file git reports as changed, with its two-letter porcelain status.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ChangedFile {
     pub path: String,
@@ -907,6 +925,32 @@ mod tests {
         assert!(!listed.contains("run-5"), "git still holds it:\n{listed}");
     }
 
+    /// **THE OTHER DOOR, AND THE ONE THE WINDOW USES.** A tree cut for a
+    /// branch is written down by the gesture that cuts it, so nobody has to
+    /// remember to; a register that will not take it gets the tree back.
+    #[test]
+    fn a_tree_cut_for_a_branch_is_written_down_or_goes_straight_back() {
+        let (scratch, repo) = a_repository("cut-for-a-branch");
+        let page = APage::default();
+
+        let cut = create(&repo, "work/scritto-subito", None, &page).expect("a tree");
+        let open = page.trees_left_open().expect("the page reads back");
+        let refused = create(&repo, "work/mai-scritto", None, &ARefusal)
+            .expect_err("no page, no tree");
+        let unwritten = tree_path(&repo, "mai-scritto").exists();
+        let listed =
+            String::from_utf8_lossy(&run_git(&repo, &["worktree", "list"]).stdout).into_owned();
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        assert_eq!(open.len(), 1, "{open:?}");
+        assert_eq!(open[0].path, cut.to_string_lossy());
+        assert_eq!(open[0].step, "work/scritto-subito", "{open:?}");
+        assert_eq!(open[0].opened_by_pid, std::process::id());
+        assert!(!refused.is_empty(), "the refusal said nothing");
+        assert!(!unwritten, "the tree is on disk with nobody holding it");
+        assert!(!listed.contains("mai-scritto"), "git still holds it:\n{listed}");
+    }
+
     /// **THE ONE THAT MATTERS.** A tree whose branch the trunk has not got is
     /// named and left exactly where it is, work and all.
     #[test]
@@ -916,25 +960,15 @@ mod tests {
             .status
             .success());
         let page = APage::default();
-        let merged = create(&repo, "work/gia-dentro", None).expect("a tree on a merged branch");
-        let ahead = create(&repo, "work/ancora-fuori", None).expect("a tree on its own branch");
+        let merged =
+            create(&repo, "work/gia-dentro", None, &page).expect("a tree on a merged branch");
+        let ahead =
+            create(&repo, "work/ancora-fuori", None, &page).expect("a tree on its own branch");
         std::fs::write(ahead.join("answer"), "a night of work\n").expect("work");
         assert!(run_git(&ahead, &["add", "answer"]).status.success());
         assert!(run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"])
             .status
             .success());
-        for tree in [&merged, &ahead] {
-            page.tree_opened(&OpenTree {
-                opened_by_born_at: None,
-                path: tree.to_string_lossy().into_owned(),
-                repo: repo.to_string_lossy().into_owned(),
-                run: "by-hand".to_owned(),
-                step: "by-hand".to_owned(),
-                opened_by_pid: std::process::id(),
-                opened_at: now(),
-            })
-            .expect("the page takes it");
-        }
 
         let went = close_if_the_trunk_holds_it(&repo, &merged, &page);
         let stayed = close_if_the_trunk_holds_it(&repo, &ahead, &page);
