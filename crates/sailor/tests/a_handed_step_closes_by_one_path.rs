@@ -397,8 +397,9 @@ fn a_close_from_the_window_leaves_a_child_run_to_its_parent() {
     assert_eq!(recorded(&ledger), None);
 }
 
-/// A name read where it is **called**: over the whole file the check below
-/// stayed green with the call taken out.
+/// A name read inside the function that decides, never anywhere in the file: a
+/// call somewhere else in the same file would answer a search over the whole
+/// text, and the door that matters would be free to drift under it.
 fn body_of(source: &str, signature: &str) -> String {
     let from = source
         .find(signature)
