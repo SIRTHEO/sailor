@@ -131,10 +131,10 @@ pub(crate) fn take_handed_step(run_id: String, step_id: String) -> Result<String
     sailor::step_cmd::open_step_in(&ledger, &found)
 }
 
-/// Closes a handed step with the outcome the person declares, and carries the
-/// run on by the rule both doors share: only a run parked on a person that
-/// nobody else resumes. The resume this door hands in goes through the window,
-/// so the run joins the registry, the console follows it and Stop applies.
+/// Closes a handed step with the outcome the person declares, over the one
+/// route both doors take. All this door owns is its resume, which runs on a
+/// thread of the window's own so the console follows it; whether to resume at
+/// all is `close_a_handed_step`'s answer, and `resume` will not start without it.
 #[tauri::command]
 pub(crate) fn close_handed_step(
     app: tauri::AppHandle,
@@ -145,20 +145,15 @@ pub(crate) fn close_handed_step(
     said: Option<String>,
 ) -> Result<String, String> {
     let ledger = open_ledger()?;
-    let flow = sailor::step_cmd::flow_of_run(&ledger, &run_id)?;
-    let mut found = BTreeMap::from([
-        ("run".to_owned(), run_id.clone()),
-        ("step".to_owned(), step_id),
-        ("as".to_owned(), crate::run::who()),
-        ("outcome".to_owned(), outcome),
-    ]);
-    if let Some(said) = said.filter(|text| !text.trim().is_empty()) {
-        found.insert("said".to_owned(), said);
-    }
-    let closed = sailor::step_cmd::close_step_in(&ledger, &flow, &found)?;
-    let store = ledger.clone();
-    sailor::step_cmd::carry_the_run_on(&ledger, &run_id, closed, || {
-        crate::run::resume(&app, &runs, store, flow, run_id.clone())
+    let found = sailor::step_cmd::a_close_by(
+        &run_id,
+        &step_id,
+        &crate::run::who(),
+        &outcome,
+        said.as_deref(),
+    );
+    sailor::step_cmd::close_a_handed_step(&ledger, &found, |rule, flow, run_id| {
+        crate::run::resume(rule, &app, &runs, ledger.clone(), flow.clone(), run_id.to_owned())
     })
 }
 

@@ -1,10 +1,11 @@
-//! **THE SAME ROUTE `close_handed_step` TAKES, AND THE RESUME ITS THREAD RUNS.**
-//! Compares what each route leaves on identical ledgers: the step row, the run
-//! header, and the work the handoff was holding back.
+//! **THE ROUTE `close_handed_step` TAKES, NOT A COPY OF IT.** Both doors reach
+//! `close_a_handed_step`, and that is what is called here; what each door owns
+//! is its resume. Compares what each leaves on identical ledgers: the step row,
+//! the run header, and the work the handoff was holding back.
 
 use flow::{Completion, FlowFile, Outcome, StepRecord, StepSpecies};
 use ledger::{Ledger, RunRecord};
-use sailor::step_cmd::{carry_the_run_on, close_step_in, flow_of_run, open_step_in};
+use sailor::step_cmd::{a_close_by, close_a_handed_step, open_step_in};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -178,34 +179,54 @@ fn a_verdict(scratch: &Scratch) -> PathBuf {
     path
 }
 
-/// **THE WINDOW'S ROUTE.** `close_handed_step` closes, hands its resume to
-/// `carry_the_run_on` and that decides; the resume it hands in runs
-/// `resume_run_with` on a thread the window owns, which only a live window has.
+/// **THE WINDOW'S ROUTE.** `close_handed_step` opens the store, names its
+/// options with `a_close_by` and hands its resume to `close_a_handed_step`:
+/// everything below the store is the function called here. Only the resume is
+/// written out, because the window's own runs on a thread a live window owns.
 fn close_as_the_window_does(scratch: &Scratch, ledger: &Ledger, flows_dir: &Path) {
     let verdict = a_verdict(scratch);
     open_step_in(ledger, &options(&[("run", "run-1"), ("step", "review"), ("as", "mira")]))
         .expect("the window takes it on");
     with_flows_dir(flows_dir, || {
-        let flow = flow_of_run(ledger, "run-1").expect("the window finds the flow the run declares");
-        let closed = close_step_in(
-            ledger,
-            &flow,
-            &options(&[
-                ("run", "run-1"),
-                ("step", "review"),
-                ("as", "mira"),
-                ("outcome", "went"),
-                ("said", "it holds"),
-                ("output-file", verdict.to_str().expect("a readable path")),
-            ]),
-        )
-        .expect("the window closes it");
-        carry_the_run_on(ledger, "run-1", closed, || {
+        let mut found = a_close_by("run-1", "review", "mira", "went", Some("it holds"));
+        found.insert(
+            "output-file".to_owned(),
+            verdict.to_str().expect("a readable path").to_owned(),
+        );
+        close_a_handed_step(ledger, &found, |_rule, flow, run_id| {
             let mut store = ledger.clone();
-            sailor::flow_cmd::resume_run_with(ledger, &flow, "run-1", &mut store, None)
+            sailor::flow_cmd::resume_run_with(ledger, flow, run_id, &mut store, None)
         })
         .expect("the window carries the run on");
     });
+}
+
+/// The same route with a resume that does nothing but count being reached for.
+/// **THE RULE IS THE ONLY THING THAT CAN REACH IT**: `carry_the_run_on` holds
+/// the one answer `crate::run::resume` takes, so what this counts is the window
+/// asking, and a door resuming beside the rule does not compile.
+fn resumes_the_window_was_asked_for(
+    scratch: &Scratch,
+    ledger: &Ledger,
+    flows_dir: &Path,
+) -> usize {
+    let verdict = a_verdict(scratch);
+    let asked = std::cell::Cell::new(0);
+    open_step_in(ledger, &options(&[("run", "run-1"), ("step", "review"), ("as", "mira")]))
+        .expect("the window takes it on");
+    with_flows_dir(flows_dir, || {
+        let mut found = a_close_by("run-1", "review", "mira", "went", Some("it holds"));
+        found.insert(
+            "output-file".to_owned(),
+            verdict.to_str().expect("a readable path").to_owned(),
+        );
+        close_a_handed_step(ledger, &found, |_rule, _flow, _run_id| {
+            asked.set(asked.get() + 1);
+            Ok("the window's thread would have taken it from here".to_owned())
+        })
+        .expect("the close is written whatever the rule answers");
+    });
+    asked.get()
 }
 
 /// **THE COMMAND LINE'S ROUTE**: the flags a terminal types, one line each,
@@ -245,6 +266,28 @@ fn close_as_the_command_line_does(scratch: &Scratch, flows_dir: &Path) {
         ],
     );
     assert_eq!(codes, [0, 0], "the command line opens the step, then closes it");
+}
+
+/// Rewrites the run's header with the status given, leaving everything else.
+fn recorded_as(ledger: &Ledger, status: &str) {
+    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
+    ledger
+        .record_run(&RunRecord {
+            status: status.to_owned(),
+            ..header
+        })
+        .expect("recording the run again");
+}
+
+/// Gives the run a parent, which is what makes it somebody else's to resume.
+fn made_a_child_of(ledger: &Ledger, parent: &str) {
+    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
+    ledger
+        .record_run(&RunRecord {
+            parent_run_id: Some(parent.to_owned()),
+            ..header
+        })
+        .expect("making it a child");
 }
 
 fn status_of(ledger: &Ledger) -> String {
@@ -325,13 +368,7 @@ fn a_close_does_not_reopen_a_run_that_ended() {
     let scratch = Scratch::new("ended");
     let flows_dir = write_flow(&scratch, &a_flow());
     let ledger = a_run_waiting_for_a_person(&scratch);
-    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
-    ledger
-        .record_run(&RunRecord {
-            status: "failed".to_owned(),
-            ..header
-        })
-        .expect("ending the run");
+    recorded_as(&ledger, "failed");
     close_as_the_command_line_does(&scratch, &flows_dir);
     assert_eq!(latest(&ledger.steps("run-1").expect("the store answers"), "review").outcome, Some(Outcome::Went));
     assert_eq!(status_of(&ledger), "failed", "a close brought an ended run back");
@@ -345,13 +382,7 @@ fn a_close_leaves_a_child_run_to_its_parent() {
     let scratch = Scratch::new("child");
     let flows_dir = write_flow(&scratch, &a_flow());
     let ledger = a_run_waiting_for_a_person(&scratch);
-    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
-    ledger
-        .record_run(&RunRecord {
-            parent_run_id: Some("the-parent".to_owned()),
-            ..header
-        })
-        .expect("making it a child");
+    made_a_child_of(&ledger, "the-parent");
     close_as_the_command_line_does(&scratch, &flows_dir);
     assert_eq!(status_of(&ledger), "waiting", "a close resumed a child on its own");
     assert_eq!(recorded(&ledger), None);
@@ -385,55 +416,44 @@ fn a_close_from_the_window_leaves_a_child_run_to_its_parent() {
     let scratch = Scratch::new("window-child");
     let flows_dir = write_flow(&scratch, &a_flow());
     let ledger = a_run_waiting_for_a_person(&scratch);
-    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
-    ledger
-        .record_run(&RunRecord {
-            parent_run_id: Some("the-parent".to_owned()),
-            ..header
-        })
-        .expect("making it a child");
+    made_a_child_of(&ledger, "the-parent");
     close_as_the_window_does(&scratch, &ledger, &flows_dir);
     assert_eq!(status_of(&ledger), "waiting", "the window resumed a child on its own");
     assert_eq!(recorded(&ledger), None);
 }
 
-/// A name read inside the function that decides, never anywhere in the file: a
-/// call somewhere else in the same file would answer a search over the whole
-/// text, and the door that matters would be free to drift under it.
-fn body_of(source: &str, signature: &str) -> String {
-    let from = source
-        .find(signature)
-        .unwrap_or_else(|| panic!("«{signature}» is gone: this check no longer measures anything"));
-    let rest = &source[from..];
-    let end = rest.find("\n}\n").map(|at| at + 2).unwrap_or(rest.len());
-    rest[..end].to_owned()
-}
-
-/// **THE TITLE OF THIS FILE IS A CLAIM, AND THIS IS WHAT HOLDS IT.** The route
-/// the tests above walk is the window's only while the window's own close asks
-/// the shared rule instead of resuming on its word. It resumed on its word for
-/// as long as this file said otherwise, and no test here could tell.
+/// **THE TITLE OF THIS FILE IS A CLAIM, AND THIS IS WHAT HOLDS IT.** The window
+/// resumed on its word for as long as the route above was hand-written beside
+/// it, and no test here could tell. Now the route is the shared one, and this
+/// counts what the rule does with the resume the window hands in.
 #[test]
 fn the_windows_close_asks_the_shared_rule_rather_than_resuming_on_its_word() {
-    let source = std::fs::read_to_string(the_windows_handoff())
-        .expect("the window's handoff source is where the workspace says");
-    let body = body_of(&source, "pub(crate) fn close_handed_step(");
-
-    // THE CONTROL: a body that read as empty would agree with anything.
-    assert!(body.len() > 200, "«close_handed_step» read as {} bytes", body.len());
-    let asks = body.find("carry_the_run_on");
-    let resumes = body.find("crate::run::resume");
-    assert!(
-        asks.is_some_and(|asks| resumes.is_none_or(|resumes| asks < resumes)),
-        "the window's close resumes before it asks whether the run is its own to resume: \
-         a child, a run already running and a run that ended all go back through that door"
+    let parked = Scratch::new("window-asks-parked");
+    let flows_parked = write_flow(&parked, &a_flow());
+    let ledger_parked = a_run_waiting_for_a_person(&parked);
+    assert_eq!(
+        resumes_the_window_was_asked_for(&parked, &ledger_parked, &flows_parked),
+        1,
+        "a run parked on a person is the window's to resume, and it was not asked for one"
     );
-}
 
-fn the_windows_handoff() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the crate sits two levels under the root")
-        .join("desktop/src-tauri/src/handoff.rs")
+    let child = Scratch::new("window-asks-child");
+    let flows_child = write_flow(&child, &a_flow());
+    let ledger_child = a_run_waiting_for_a_person(&child);
+    made_a_child_of(&ledger_child, "the-parent");
+    assert_eq!(
+        resumes_the_window_was_asked_for(&child, &ledger_child, &flows_child),
+        0,
+        "the window resumed a child on its own, outside the cap and the wall its parent hands it"
+    );
+
+    let ended = Scratch::new("window-asks-ended");
+    let flows_ended = write_flow(&ended, &a_flow());
+    let ledger_ended = a_run_waiting_for_a_person(&ended);
+    recorded_as(&ledger_ended, "failed");
+    assert_eq!(
+        resumes_the_window_was_asked_for(&ended, &ledger_ended, &flows_ended),
+        0,
+        "the window brought a run that had already ended back through the close"
+    );
 }
