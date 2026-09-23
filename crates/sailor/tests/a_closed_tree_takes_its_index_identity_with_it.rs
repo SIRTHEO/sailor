@@ -55,7 +55,7 @@ fn removing_a_tree_retires_its_identity_too() {
     let identity = identity_as_listed(&repo, "done");
     let index = an_index(&scratch, &identity, &[PRUNE_TOOL]);
 
-    let said = remove_one(&repo, "done", &index.tending).expect("the remove");
+    let said = remove_one(&repo, "done", &store, &index.tending).expect("the remove");
     let gone = !tree.exists();
     let applied = index.applied();
     let _ = std::fs::remove_dir_all(&scratch);

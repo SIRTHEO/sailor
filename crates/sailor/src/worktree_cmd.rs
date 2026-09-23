@@ -93,7 +93,9 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         )?
         .display()
         .to_string()),
-        [command, name] if command == "remove" => remove_one(&repo, name, &IndexTending::of(&repo)),
+        [command, name] if command == "remove" => {
+            remove_one(&repo, name, &a_store()?, &IndexTending::of(&repo))
+        }
         [command] if command == "names" => {
             names(&branch_names(&repo)?, &workspace::declared_trunk(&repo)?)
         }
@@ -250,14 +252,19 @@ pub fn close_one(
 
 /// Takes the one tree named down, work or not as git decides, and retires its
 /// index identity once it is down.
-pub fn remove_one(repo: &Path, name: &str, index: &IndexTending) -> Result<String, String> {
+pub fn remove_one(
+    repo: &Path,
+    name: &str,
+    store: &dyn OpenTrees,
+    index: &IndexTending,
+) -> Result<String, String> {
     let trees = list(repo)?;
     let found = trees
         .iter()
         .find(|tree| tree.name() == name)
         .ok_or_else(|| catalogue::say("cli.worktree.no_tree_by_that_name", &[("name", name)]))?;
     let identity = index.identity_of(found);
-    let path = remove(repo, name)?;
+    let path = remove(repo, name, store)?;
     let mut said = catalogue::say("cli.worktree.closed", &[("tree", &path.to_string_lossy())]);
     said.push('\n');
     said.push_str(&index_after(repo, &path, identity, index));
