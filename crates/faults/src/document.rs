@@ -187,7 +187,7 @@ fn spliced(lines: &[&str], from: usize, to: usize, rows: &str) -> String {
 }
 
 /// The `|---|---|` line under a table's header.
-pub(crate) fn is_a_separator(line: &str) -> bool {
+fn is_a_separator(line: &str) -> bool {
     let trimmed = line.trim();
     trimmed.starts_with('|')
         && trimmed.contains('-')
@@ -232,7 +232,8 @@ pub fn render_open(faults: &[Fault]) -> String {
         let since = as_a_cell(&fault.happened_on);
         let what = as_a_cell(summary);
         let status = public_standing(fault.standing);
-        out.push_str(&format!("| {} | {since} | {what} | {status} |\n", fault.number));
+        out.push_str(&crate::public_row(fault.number, &since, &what, status));
+        out.push('\n');
     }
     out
 }

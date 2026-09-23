@@ -840,7 +840,9 @@ impl Faults {
 }
 
 mod document;
+mod page;
 mod stood;
 
 pub use document::*;
+pub use page::*;
 pub use stood::*;

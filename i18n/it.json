@@ -311,7 +311,6 @@
   "cli.faults.usage_summary": "uso: sailor faults summary <numero> <frase per gli utenti>",
   "cli.faults.check_public_page": "{file} è la pagina pubblica dei guasti aperti, e non dice da quale momento del deposito è stata contata, quindi non c'è niente con cui confrontarla. La pagina si tiene aggiornata rigenerandola: sailor faults render --open --file {file}",
   "cli.faults.page_agrees": "{file} concorda con il deposito com'era fino al guasto {through} alle {at}: {open} aperti allora. Il deposito ne tiene {now} aperti adesso; ciò che si è aperto o chiuso dopo è del prossimo rendering",
-  "cli.faults.page_stray_row": "{file} ha una riga di tabella alla riga {line}, fuori dall'unica tabella che un rendering scrive: la sua intestazione, il separatore sotto e le righe che seguono. Un rendering copia quella riga dalla pagina, quindi il deposito non l'ha mai garantita: {page}",
   "cli.faults.page_differs": "{file} e un rendering del deposito com'era fino al guasto {through} alle {at} si separano alla riga {line}. La pagina dice: {page}. Il deposito di allora dà: {store}",
   "cli.faults.page_cannot_be_told": "{file} dice di essere stata contata fino al guasto {through} alle {at}, e la storia del deposito {since}, quindi non può dire cosa c'era allora. Righe diverse dal deposito di oggi: {rows}. La pagina si rigenera da questo deposito, e si committa, prima di tagliare un rilascio: sailor faults render --open --file {file}",
   "cli.faults.history_kept_since": "comincia alle {at} e non contiene il momento che il timbro nomina",

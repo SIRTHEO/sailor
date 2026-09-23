@@ -38,28 +38,31 @@ fn page() -> String {
         .unwrap_or_else(|error| panic!("reading {}: {error}", path.display()))
 }
 
-/// The rows of the table, read by the same reading `sailor faults check`
-/// holds the page with: one table, and one run of rows under its header.
+/// Rows read one line at a time, for fixtures that are a table and no page.
 fn faults_in(text: &str) -> Vec<Fault> {
-    faults::public_table(text)
-        .rows
-        .into_iter()
-        .filter_map(|(_, cells)| {
-            let number: usize = cells.first()?.parse().ok()?;
-            let status = cells.last().cloned().unwrap_or_default();
-            Some(Fault {
-                number,
-                standing: faults::standing_of(&status),
-                cells,
-            })
-        })
+    text.lines()
+        .filter(|line| line.trim().starts_with('|'))
+        .filter_map(|line| as_a_fault(faults::row_cells(line.trim())))
         .collect()
 }
 
+fn as_a_fault(cells: Vec<String>) -> Option<Fault> {
+    let number: usize = cells.first()?.parse().ok()?;
+    let status = cells.last().cloned().unwrap_or_default();
+    Some(Fault {
+        number,
+        standing: faults::standing_of(&status),
+        cells,
+    })
+}
+
+/// The page's rows, once the page is shown to be the crate's template with
+/// rows the render would write again byte for byte.
 fn faults() -> Vec<Fault> {
-    let rows = faults_in(&page());
+    let rows = faults::held_to_the_template(&page())
+        .unwrap_or_else(|difference| panic!("the page is not the template: {difference:?}"));
     workspace::measured(rows.len(), "rows of the public fault page read");
-    rows
+    rows.into_iter().filter_map(as_a_fault).collect()
 }
 
 /// Rows in the shape the page writes them, one per standing.
@@ -74,30 +77,142 @@ const A_TABLE_OF_THREE: &str = "\
 | 3 | 03/09 | a count that reassured instead of measuring | **closed in part** on 04/09, the measure still to make |
 ";
 
-/// A line that opens with `|` outside the one table is a row no render gave.
+/// No store stands in the forge, so the page is held to what the crate
+/// writes: its opening, one table of rows written the render's way, a count
+/// true of them and one stamp, byte for byte and nothing after.
 #[test]
-fn no_line_reads_as_a_row_outside_the_table() {
+fn the_page_is_the_template_the_crate_writes() {
     let text = page();
-    let strays = faults::public_table(&text).strays;
     workspace::measured(text.lines().count(), "lines of the public fault page read");
-    assert!(
-        strays.is_empty(),
-        "lines {strays:?} read as table rows outside the table a render writes; \
-         render the page again from the store"
-    );
+    if let Err(difference) = faults::held_to_the_template(&text) {
+        panic!("render the page again from the store: {difference:?}");
+    }
 }
 
-/// The three shapes a row slipped past the older reading of this page.
+fn a_public_fault(number: i64, summary: &str) -> faults::Fault {
+    faults::Fault {
+        number,
+        happened_on: "03/09".to_owned(),
+        happened: faults::Happening::read("03/09"),
+        what_happened: "what happened".to_owned(),
+        how_it_showed: "how it showed".to_owned(),
+        what_would_prevent: "what would prevent it".to_owned(),
+        status: "**open**".to_owned(),
+        standing: faults::Standing::Open,
+        public_summary: Some(summary.to_owned()),
+        github_issue: None,
+    }
+}
+
+/// Each shape a page took that a reader of rows let through, so that GFM
+/// showed a reader a fault the store never held, or hid the ones it holds.
+fn forgeries(page: &str) -> Vec<(&'static str, String)> {
+    let invented = "999 | 23/09 | Invented. | **open** |";
+    let last_row = page
+        .lines()
+        .rfind(|line| line.starts_with("| 2 |"))
+        .expect("the last row");
+    let under_the_rows =
+        |row: &str| page.replace(&format!("{last_row}\n"), &format!("{last_row}\n{row}\n"));
+    let count = page
+        .lines()
+        .find(|line| faults::is_the_count_sentence(line))
+        .expect("the count");
+    let stamp = page
+        .lines()
+        .find(|line| faults::stood_in(line).is_some())
+        .expect("the stamp");
+    vec![
+        ("A1 a row with no leading bar", under_the_rows(invented)),
+        (
+            "A2 and no trailing bar",
+            under_the_rows(invented.trim_end_matches(" |")),
+        ),
+        (
+            "A3 a bar after an invisible letter",
+            under_the_rows(&format!("\u{200b}| {invented}")),
+        ),
+        (
+            "A14 an invisible letter before the number",
+            under_the_rows(&format!("\u{200b}{invented}")),
+        ),
+        (
+            "A7 a second table in a quote",
+            format!(
+                "{page}\n> {}\n> |---|---|---|---|\n> | {invented}\n",
+                faults::PUBLIC_HEADER
+            ),
+        ),
+        (
+            "A8 a second table with no bars at its ends",
+            format!("{page}\n# | since | what goes wrong | status\n---|---|---|---\n{invented}\n"),
+        ),
+        (
+            "A11 a table in HTML",
+            format!("{page}\n<table><tr><td>999</td><td>Invented.</td></tr></table>\n"),
+        ),
+        (
+            "B1 a second count sentence",
+            format!(
+                "{page}\n**Thirty open faults are described on this page; zero more are kept \
+                 only in the fault store**.\n"
+            ),
+        ),
+        (
+            "B2 the count and stamp in a comment, others shown",
+            page.replace(&format!("{count}\n"), &format!("<!--\n{count}\n"))
+                + &format!(
+                    "-->\n**Twenty open faults are described on this page; ninety more are \
+                     kept only in the fault store.**\n\n{}\n",
+                    stamp.trim_end_matches('.')
+                ),
+        ),
+        (
+            "C1 the whole table in a comment, a forged one shown",
+            page.replace(
+                &format!("{}\n", faults::PUBLIC_HEADER),
+                &format!("<!--\n{}\n", faults::PUBLIC_HEADER),
+            ) + &format!(
+                "-->\n# | since | what goes wrong | status\n---|---|---|---\n{invented}\n\n\
+                 **One open fault is described on this page; zero more are kept only in the \
+                 fault store.**\n"
+            ),
+        ),
+        (
+            "a row with a space after it",
+            page.replace(&format!("{last_row}\n"), &format!("{last_row} \n")),
+        ),
+        (
+            "a row written without spaces",
+            page.replace(last_row, &last_row.replace(" | ", "|")),
+        ),
+        ("a page whose lines end in CRLF", page.replace('\n', "\r\n")),
+    ]
+}
+
 #[test]
-fn a_row_the_reading_of_the_check_refuses_is_refused_here_too() {
-    let spacer = "| — | | | |\n| 998 | 23/09 | Invented. | **open** |\n";
-    let hashed = "| #999 | 23/09 | Invented. | **open** |\n";
-    let packed = "| | | | |\n|999|23/09|Invented, written without spaces.|**open**|\n";
-    for forged in [spacer, hashed, packed] {
-        let table = format!("{A_TABLE_OF_THREE}{forged}");
-        let read = faults::public_table(&table);
-        assert_eq!(read.strays.first(), Some(&6), "{table}");
-        assert_eq!(faults_in(&table).len(), 3, "{table}");
+fn every_forgery_is_refused_without_a_store() {
+    let stood = faults::Stood {
+        through: 2,
+        change: Some(4),
+        at: "2026-09-23T16:12:36.935Z".to_owned(),
+    };
+    let faults = [
+        a_public_fault(1, "The window forgets a flow."),
+        a_public_fault(2, "A run stops without a reason."),
+    ];
+    let page = faults::the_page(&faults, &stood);
+    assert_eq!(
+        faults::held_to_the_template(&page).map(|rows| rows.len()),
+        Ok(2),
+        "a page the crate wrote is the template"
+    );
+    for (what, forged) in forgeries(&page) {
+        assert_ne!(forged, page, "the fixture moved: {what}");
+        assert!(
+            faults::held_to_the_template(&forged).is_err(),
+            "{what} passed\n{forged}"
+        );
     }
 }
 

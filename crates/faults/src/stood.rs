@@ -2,7 +2,7 @@
 //! commit while faults keep opening and closing, so the page is compared with
 //! that moment of the store and never with the store of the day it is read.
 
-use crate::{render_open_into, Fault, FaultError, Faults, Happening, Standing};
+use crate::{first_difference, the_page, Fault, FaultError, Faults, Happening, Standing};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -137,118 +137,12 @@ pub fn stood_in(document: &str) -> Option<Stood> {
     })
 }
 
-/// The document with one stood line, under its count sentence.
-pub fn stood_written_into(document: &str, stood: &Stood) -> String {
-    let lines: Vec<&str> = document
-        .lines()
-        .filter(|line| stood_in(line).is_none())
-        .collect();
-    let mut out = String::new();
-    let mut at = 0;
-    while at < lines.len() {
-        out.push_str(lines[at]);
-        out.push('\n');
-        at += 1;
-        if crate::is_the_count_sentence(lines[at - 1]) {
-            out.push('\n');
-            out.push_str(&stood_line(stood));
-            out.push('\n');
-            while at < lines.len() && lines[at].trim().is_empty() {
-                at += 1;
-            }
-            if at < lines.len() {
-                out.push('\n');
-            }
-        }
-    }
-    out
-}
-
-/// The page rendered again from `faults`, its stamp included.
-pub fn the_page_from(document: &str, faults: &[Fault], stood: &Stood) -> String {
-    stood_written_into(&render_open_into(document, faults), stood)
-}
-
-/// The public page read the way a render writes it: one table, the separator
-/// under its header and one run of rows. Any other line opening with `|`, and
-/// a count sentence after the first, is a stray: a render copies it from the
-/// page, so only this reading keeps the page from vouching for it.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct PublicTable {
-    /// Each row's line, counted from one, and its cells.
-    pub rows: Vec<(usize, Vec<String>)>,
-    pub strays: Vec<usize>,
-}
-
-pub fn public_table(page: &str) -> PublicTable {
-    let lines: Vec<&str> = page.lines().collect();
-    let header = lines
-        .iter()
-        .position(|line| line.trim() == crate::PUBLIC_HEADER);
-    let separator = header.map(|header| header + 1).filter(|&next| {
-        lines
-            .get(next)
-            .is_some_and(|line| crate::is_a_separator(line))
-    });
-    let mut run = separator.map(|separator| separator + 1);
-    let mut counted = false;
-    let mut table = PublicTable::default();
-    for (at, line) in lines.iter().enumerate() {
-        if Some(at) == header || Some(at) == separator {
-            continue;
-        }
-        if run == Some(at) && crate::is_a_data_row(line) {
-            table.rows.push((at + 1, cells_of(line)));
-            run = Some(at + 1);
-        } else if line.trim().starts_with('|') || (counted && crate::is_the_count_sentence(line)) {
-            table.strays.push(at + 1);
-        } else if crate::is_the_count_sentence(line) {
-            counted = true;
-        }
-    }
-    table
-}
-
-/// The cells of a row, split where a reader splits them: at a `|` not escaped.
-fn cells_of(row: &str) -> Vec<String> {
-    let mut cells = vec![String::new()];
-    let mut escaped = false;
-    for letter in row.trim().chars() {
-        if letter == '|' && !escaped {
-            cells.push(String::new());
-        } else if let Some(cell) = cells.last_mut() {
-            cell.push(letter);
-        }
-        escaped = letter == '\\' && !escaped;
-    }
-    cells.remove(0);
-    if cells.last().is_some_and(|cell| cell.trim().is_empty()) {
-        cells.pop();
-    }
-    cells
-        .into_iter()
-        .map(|cell| cell.trim().to_owned())
-        .collect()
-}
-
 /// The first line, counted from one, where the page and a render part ways.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Difference {
     pub line: usize,
     pub page: String,
     pub store: String,
-}
-
-pub fn first_difference(page: &str, rendered: &str) -> Option<Difference> {
-    let (page, rendered): (Vec<&str>, Vec<&str>) =
-        (page.lines().collect(), rendered.lines().collect());
-    (0..page.len().max(rendered.len()))
-        .find(|&at| page.get(at) != rendered.get(at))
-        .map(|at| Difference {
-            line: at + 1,
-            page: page.get(at).unwrap_or(&"").to_string(),
-            store: rendered.get(at).unwrap_or(&"").to_string(),
-        })
 }
 
 /// The numbers of the rows one side holds and the other does not hold alike.
@@ -277,11 +171,6 @@ pub enum Held {
         open_then: usize,
     },
     Differs(Difference),
-    /// A line read as a row outside the one table a render writes.
-    Stray {
-        line: usize,
-        text: String,
-    },
     /// The history does not reach back to the stamp, so nothing is claimed
     /// about that moment: `rows` differ from a render of the store today.
     CannotTell {
@@ -440,26 +329,20 @@ impl Faults {
             .optional()?)
     }
 
-    /// The page against a fresh render of the store as it stood at its stamp.
+    /// The whole page against a render of the store as it stood at its
+    /// stamp, byte for byte.
     pub fn hold_the_page(&self, page: &str, stood: &Stood) -> Result<Held, FaultError> {
-        if let Some(&line) = public_table(page).strays.first() {
-            let text = page.lines().nth(line - 1).unwrap_or_default().to_owned();
-            return Ok(Held::Stray { line, text });
-        }
         let Some(then) = self.as_it_stood(stood)? else {
-            let today = the_page_from(page, &self.all()?, stood);
             return Ok(Held::CannotTell {
                 kept_since: self.history_kept_since()?.map(|(_, at)| at),
-                rows: rows_that_differ(page, &today),
+                rows: rows_that_differ(page, &the_page(&self.all()?, stood)),
             });
         };
-        Ok(
-            match first_difference(page, &the_page_from(page, &then, stood)) {
-                Some(difference) => Held::Differs(difference),
-                None => Held::Agrees {
-                    open_then: then.iter().filter(|fault| fault.still_open()).count(),
-                },
+        Ok(match first_difference(page, &the_page(&then, stood)) {
+            Some(difference) => Held::Differs(difference),
+            None => Held::Agrees {
+                open_then: then.iter().filter(|fault| fault.still_open()).count(),
             },
-        )
+        })
     }
 }

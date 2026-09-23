@@ -32,17 +32,13 @@ fn an_open_fault(what: &str) -> Draft {
     }
 }
 
-const A_PAGE: &str =
-    "# Faults still open\n\n| # | since | what goes wrong | status |\n|---|---|---|---|\n\n\
-    **Zero open faults are described on this page; zero more are kept only in the fault store.**\n";
-
 fn counted(store: &Faults) -> String {
     let stood = store.stood_now().expect("the moment");
     let then = store
         .as_it_stood(&stood)
         .expect("the store as it stood")
         .expect("a store this binary opened keeps its history");
-    faults::the_page_from(A_PAGE, &then, &stood)
+    faults::the_page(&then, &stood)
 }
 
 /// Three open faults, the first two summarised for users, and the page counted.
@@ -305,7 +301,7 @@ fn a_page_counted_before_the_history_began_cannot_be_told() {
         stood.change, None,
         "a store with no history has no change to name"
     );
-    let page = faults::the_page_from(A_PAGE, &reader.all().expect("the faults"), &stood);
+    let page = faults::the_page(&reader.all().expect("the faults"), &stood);
     assert_eq!(
         reader.hold_the_page(&page, &stood).expect("held"),
         Held::CannotTell {
@@ -329,33 +325,23 @@ fn a_page_counted_before_the_history_began_cannot_be_told() {
 }
 
 #[test]
-fn the_line_is_written_once_under_the_count_and_read_back() {
-    let (store, page, _) = a_store_and_its_page("line");
+fn the_page_ends_with_its_count_and_one_stamp() {
+    let (_store, page, _) = a_store_and_its_page("line");
     let stood = faults::stood_in(&page).expect("the line is read back");
     assert_eq!(stood.through, 3);
     assert!(stood.change.is_some(), "{page}");
-
-    let again = faults::stood_written_into(
-        &format!("{page}\nAfter the count.\n"),
-        &store.stood_now().expect("now"),
+    assert!(page.starts_with(faults::PAGE_OPENING), "{page}");
+    let lines: Vec<&str> = page.lines().collect();
+    assert!(
+        faults::is_the_count_sentence(lines[lines.len() - 3]),
+        "{page}"
     );
-
     assert_eq!(
-        again.matches("Counted from the fault store").count(),
-        1,
-        "{again}"
+        (lines[lines.len() - 2], lines[lines.len() - 1]),
+        ("", faults::stood_line(&stood).as_str())
     );
-    let lines: Vec<&str> = again.lines().collect();
-    let sentence = lines
-        .iter()
-        .position(|line| faults::is_the_count_sentence(line))
-        .expect("the count");
-    assert_eq!(
-        &lines[sentence + 1..sentence + 5],
-        &["", lines[sentence + 2], "", "After the count."],
-        "{again}"
-    );
-    assert!(faults::stood_in(lines[sentence + 2]).is_some(), "{again}");
+    assert!(page.ends_with(".\n"), "{page}");
+    assert_eq!(page.matches("Counted from the fault store").count(), 1);
     let older =
         "Counted from the fault store through fault 7, as it stood at 2026-09-01T00:00:00.000Z.";
     assert_eq!(faults::stood_in(older).map(|it| it.change), Some(None));
@@ -428,7 +414,10 @@ fn an_update_that_changes_nothing_writes_no_history() {
 
 fn restamped(page: &str, stamp: impl FnOnce(faults::Stood) -> faults::Stood) -> String {
     let stood = faults::stood_in(page).expect("the page's stamp");
-    faults::stood_written_into(page, &stamp(stood))
+    page.replace(
+        &faults::stood_line(&stood),
+        &faults::stood_line(&stamp(stood.clone())),
+    )
 }
 
 fn cannot_tell(store: &Faults, page: &str, what: &str) {
@@ -529,83 +518,116 @@ fn a_stamp_naming_an_earlier_change_cannot_tell() {
     );
 }
 
-/// A render replaces one run of rows and copies every other line from the
-/// page, so a row outside that run would vouch for itself.
-fn stray_at(store: &Faults, page: &str, forged: &str, row: &str, what: &str) {
-    let line = forged
-        .lines()
-        .collect::<Vec<_>>()
-        .iter()
-        .rposition(|line| *line == row)
-        .map(|at| at + 1)
-        .expect("the forged line is on the page");
-    assert_ne!(forged, page, "the fixture's line moved: {what}");
-    match held(store, forged) {
-        Held::Stray { line: named, text } => {
-            assert_eq!((named, text.as_str()), (line, row), "{what}\n{forged}")
-        }
-        other => panic!("{what} passed as {other:?}\n{forged}"),
-    }
-}
-
-fn with_rows_after_the_table(page: &str, rows: &str) -> String {
+/// Each shape a page took that a reader of rows let through, so that GFM
+/// showed a reader a fault the store never held, or hid the ones it holds.
+fn forgeries(page: &str) -> Vec<(&'static str, String)> {
+    let invented = "999 | 23/09 | Invented. | **open** |";
     let last_row = page
         .lines()
         .rfind(|line| line.starts_with("| 2 |"))
         .expect("the last row");
-    page.replace(&format!("{last_row}\n"), &format!("{last_row}\n{rows}"))
+    let under_the_rows =
+        |row: &str| page.replace(&format!("{last_row}\n"), &format!("{last_row}\n{row}\n"));
+    let count = page
+        .lines()
+        .find(|line| faults::is_the_count_sentence(line))
+        .expect("the count");
+    let stamp = page
+        .lines()
+        .find(|line| faults::stood_in(line).is_some())
+        .expect("the stamp");
+    vec![
+        ("A1 a row with no leading bar", under_the_rows(invented)),
+        (
+            "A2 and no trailing bar",
+            under_the_rows(invented.trim_end_matches(" |")),
+        ),
+        (
+            "A3 a bar after an invisible letter",
+            under_the_rows(&format!("\u{200b}| {invented}")),
+        ),
+        (
+            "A14 an invisible letter before the number",
+            under_the_rows(&format!("\u{200b}{invented}")),
+        ),
+        (
+            "A7 a second table in a quote",
+            format!(
+                "{page}\n> {}\n> |---|---|---|---|\n> | {invented}\n",
+                faults::PUBLIC_HEADER
+            ),
+        ),
+        (
+            "A8 a second table with no bars at its ends",
+            format!("{page}\n# | since | what goes wrong | status\n---|---|---|---\n{invented}\n"),
+        ),
+        (
+            "A11 a table in HTML",
+            format!("{page}\n<table><tr><td>999</td><td>Invented.</td></tr></table>\n"),
+        ),
+        (
+            "B1 a second count sentence",
+            format!(
+                "{page}\n**Thirty open faults are described on this page; zero more are kept \
+                 only in the fault store**.\n"
+            ),
+        ),
+        (
+            "B2 the count and stamp in a comment, others shown",
+            page.replace(&format!("{count}\n"), &format!("<!--\n{count}\n"))
+                + &format!(
+                    "-->\n**Twenty open faults are described on this page; ninety more are \
+                     kept only in the fault store.**\n\n{}\n",
+                    stamp.trim_end_matches('.')
+                ),
+        ),
+        (
+            "C1 the whole table in a comment, a forged one shown",
+            page.replace(
+                &format!("{}\n", faults::PUBLIC_HEADER),
+                &format!("<!--\n{}\n", faults::PUBLIC_HEADER),
+            ) + &format!(
+                "-->\n# | since | what goes wrong | status\n---|---|---|---\n{invented}\n\n\
+                 **One open fault is described on this page; zero more are kept only in the \
+                 fault store.**\n"
+            ),
+        ),
+        (
+            "a row with a space after it",
+            page.replace(&format!("{last_row}\n"), &format!("{last_row} \n")),
+        ),
+        (
+            "a row written without spaces",
+            page.replace(last_row, &last_row.replace(" | ", "|")),
+        ),
+        ("a page whose lines end in CRLF", page.replace('\n', "\r\n")),
+    ]
 }
 
-#[test]
-fn a_row_after_a_spacer_row_is_named() {
-    let (store, page, _) = a_store_and_its_page("spacer");
-    let forged = with_rows_after_the_table(
-        &page,
-        "| — | | | |\n| 998 | 23/09 | Invented. | **open** |\n",
+/// The first line, counted from one, where the forged page's bytes leave the page's.
+fn where_it_parts(page: &str, forged: &str) -> usize {
+    let (page, forged): (Vec<&str>, Vec<&str>) = (
+        page.split_inclusive('\n').collect(),
+        forged.split_inclusive('\n').collect(),
     );
-    stray_at(&store, &page, &forged, "| — | | | |", "a spacer row");
+    (0..)
+        .find(|&at| page.get(at) != forged.get(at))
+        .expect("the two differ")
+        + 1
 }
 
 #[test]
-fn a_row_whose_number_is_not_a_number_is_named() {
-    let (store, page, _) = a_store_and_its_page("hashed");
-    let row = "| #999 | 23/09 | Invented. | **open** |";
-    let forged = with_rows_after_the_table(&page, &format!("{row}\n"));
-    stray_at(&store, &page, &forged, row, "a row numbered #999");
-}
-
-#[test]
-fn a_row_written_without_spaces_after_an_empty_row_is_named() {
-    let (store, page, _) = a_store_and_its_page("packed");
-    let forged = with_rows_after_the_table(
-        &page,
-        "| | | | |\n|999|23/09|Invented, written without spaces.|**open**|\n",
-    );
-    stray_at(&store, &page, &forged, "| | | | |", "an empty row");
-}
-
-#[test]
-fn a_second_table_after_the_stamp_is_named() {
-    let (store, page, _) = a_store_and_its_page("second-table");
-    let forged = format!(
-        "{page}\n| # | since | what goes wrong | status |\n|---|---|---|---|\n\
-         | 999 | 23/09 | Invented. | **open** |\n"
-    );
-    stray_at(
-        &store,
-        &page,
-        &forged,
-        "| # | since | what goes wrong | status |",
-        "a second table",
-    );
-}
-
-#[test]
-fn a_second_count_sentence_is_named() {
-    let (store, page, _) = a_store_and_its_page("second-count");
-    let sentence = "**Thirty open faults are described on this page; zero more are kept only in the fault store.**";
-    let forged = format!("{page}\n{sentence}\n");
-    stray_at(&store, &page, &forged, sentence, "a second count sentence");
+fn every_forgery_is_named_at_the_line_it_parts_from_the_render() {
+    let (store, page, _) = a_store_and_its_page("forgeries");
+    for (what, forged) in forgeries(&page) {
+        assert_ne!(forged, page, "the fixture moved: {what}");
+        match held(&store, &forged) {
+            Held::Differs(difference) => {
+                assert_eq!(difference.line, where_it_parts(&page, &forged), "{what}")
+            }
+            other => panic!("{what} passed as {other:?}\n{forged}"),
+        }
+    }
 }
 
 #[test]
@@ -627,4 +649,69 @@ fn a_stamp_with_words_after_its_instant_cannot_tell() {
     });
     a_millisecond_passes();
     cannot_tell(&store, &forged, "an instant with words after it");
+}
+
+fn named_where_it_parts(store: &Faults, page: &str, forged: &str, what: &str) {
+    assert_ne!(forged, page, "the fixture moved: {what}");
+    match held(store, forged) {
+        Held::Differs(difference) => {
+            assert_eq!(difference.line, where_it_parts(page, forged), "{what}")
+        }
+        other => panic!("{what} passed as {other:?}\n{forged}"),
+    }
+}
+
+fn under_the_last_row(page: &str, rows: &str) -> String {
+    let last_row = page
+        .lines()
+        .rfind(|line| line.starts_with("| 2 |"))
+        .expect("the last row");
+    page.replace(&format!("{last_row}\n"), &format!("{last_row}\n{rows}"))
+}
+
+#[test]
+fn a_row_after_a_spacer_row_is_named() {
+    let (store, page, _) = a_store_and_its_page("spacer");
+    let forged = under_the_last_row(
+        &page,
+        "| — | | | |\n| 998 | 23/09 | Invented. | **open** |\n",
+    );
+    named_where_it_parts(&store, &page, &forged, "a spacer row");
+}
+
+#[test]
+fn a_row_whose_number_is_not_a_number_is_named() {
+    let (store, page, _) = a_store_and_its_page("hashed");
+    let forged = under_the_last_row(&page, "| #999 | 23/09 | Invented. | **open** |\n");
+    named_where_it_parts(&store, &page, &forged, "a row numbered #999");
+}
+
+#[test]
+fn a_row_written_without_spaces_after_an_empty_row_is_named() {
+    let (store, page, _) = a_store_and_its_page("packed");
+    let forged = under_the_last_row(
+        &page,
+        "| | | | |\n|999|23/09|Invented, written without spaces.|**open**|\n",
+    );
+    named_where_it_parts(&store, &page, &forged, "an empty row");
+}
+
+#[test]
+fn a_second_table_after_the_stamp_is_named() {
+    let (store, page, _) = a_store_and_its_page("second-table");
+    let forged = format!(
+        "{page}\n| # | since | what goes wrong | status |\n|---|---|---|---|\n\
+         | 999 | 23/09 | Invented. | **open** |\n"
+    );
+    named_where_it_parts(&store, &page, &forged, "a second table");
+}
+
+#[test]
+fn a_second_count_sentence_is_named() {
+    let (store, page, _) = a_store_and_its_page("second-count");
+    let forged = format!(
+        "{page}\n**Thirty open faults are described on this page; zero more are kept only in \
+         the fault store.**\n"
+    );
+    named_where_it_parts(&store, &page, &forged, "a second count sentence");
 }

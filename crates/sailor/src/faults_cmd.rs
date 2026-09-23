@@ -440,9 +440,8 @@ fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, 
         };
         return Ok(rows.trim_end().to_owned());
     };
-    // **THE FILE IS READ BEFORE IT IS WRITTEN.** A document is not its table:
-    // the rows are replaced where they stand and the prose around them stays.
-    let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
+    // The public page is written whole from the crate's own template, so
+    // nothing the file held can pass for something the store gave.
     if open_only {
         let stood = store.stood_now().map_err(|error| error.to_string())?;
         let then = match store
@@ -454,7 +453,7 @@ fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, 
         };
         let on_the_page = faults::on_the_public_page(&then).len();
         let open = then.iter().filter(|fault| fault.still_open()).count();
-        let page = faults::the_page_from(&document, &then, &stood);
+        let page = faults::the_page(&then, &stood);
         std::fs::write(file, page).map_err(|error| format!("{file}: {error}"))?;
         return Ok(catalogue::say(
             "cli.faults.written_open",
@@ -465,6 +464,9 @@ fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, 
             ],
         ));
     }
+    // **THE FILE IS READ BEFORE IT IS WRITTEN.** A document is not its table:
+    // the rows are replaced where they stand and the prose around them stays.
+    let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
     std::fs::write(file, faults::render_into(&document, &all))
         .map_err(|error| format!("{file}: {error}"))?;
     Ok(catalogue::say(
@@ -484,6 +486,10 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         return Err(catalogue::say("cli.faults.usage_check", &[]));
     };
     let text = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
+    // A stamped page is held whole, whatever else it holds.
+    if let Some(stood) = faults::stood_in(&text) {
+        return the_page_against_the_store(store, file, &text, &stood);
+    }
     let written: std::collections::BTreeMap<i64, Fault> = faults::parse(&text)
         .into_iter()
         .map(|fault| (fault.number, fault))
@@ -494,13 +500,10 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
             || faults::is_the_count_sentence(line)
     });
     if written.is_empty() && a_public_page {
-        return match faults::stood_in(&text) {
-            Some(stood) => the_page_against_the_store(store, file, &text, &stood),
-            None => Err(catalogue::say(
-                "cli.faults.check_public_page",
-                &[("file", file)],
-            )),
-        };
+        return Err(catalogue::say(
+            "cli.faults.check_public_page",
+            &[("file", file)],
+        ));
     }
     if written.is_empty() {
         return Err(catalogue::say(
@@ -606,11 +609,6 @@ fn the_page_against_the_store(
                 ("store", difference.store.as_str()),
             ]);
             Err(catalogue::say("cli.faults.page_differs", &said))
-        }
-        faults::Held::Stray { line, text } => {
-            let line = line.to_string();
-            said.extend([("line", line.as_str()), ("page", text.as_str())]);
-            Err(catalogue::say("cli.faults.page_stray_row", &said))
         }
         faults::Held::CannotTell { kept_since, rows } => {
             let since = match kept_since {
@@ -1072,12 +1070,12 @@ mod tests {
 
         let text = std::fs::read_to_string(&page).expect("the page");
         let stood = faults::stood_in(&text).expect("the stamp");
-        let older = faults::stood_written_into(
-            &text,
-            &faults::Stood {
+        let older = text.replace(
+            &faults::stood_line(&stood),
+            &faults::stood_line(&faults::Stood {
                 change: None,
-                ..stood
-            },
+                ..stood.clone()
+            }),
         );
         std::fs::write(&page, older).expect("a stamp with no change of the history");
         let unknown = run(&["check", &file]).expect_err("a moment the history does not reach");
