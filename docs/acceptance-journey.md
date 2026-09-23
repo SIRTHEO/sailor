@@ -2,25 +2,28 @@
 
 A release is a program a person can use, not a suite that passed. This file is the journey a person walks on the **installed** binary before the release is called done; each walk is recorded below with the version it was walked on and what each step actually showed. A step whose expectation is not met is red, and a red step stops the release, whatever the suite said.
 
-Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplevel)`; every command uses the installed `sailor` on PATH, never `cargo run`. The store used is a scratch one under `target/`, never this machine's own, save in steps 0 and 10, which hold the public page to the store it was counted from.
+Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplevel)`. Every command of the walk uses the installed `sailor` on PATH, never `cargo run`; step 0 alone, which comes before the release, runs a binary it builds from the trunk being released. The store used is a scratch one under `target/`, never this machine's own, save in steps 0 and 10, which hold the public page to the store it was counted from.
 
 ## Before the release is cut
 
-Step 10 checks the public page as it is committed, so the page is brought up to date before the release is cut, never during the walk.
+Step 10 checks the public page as it is committed, so the page is brought up to date before the release is cut, never during the walk. Step 0 is done by hand, by whoever cuts the release; no flow runs it.
 
-0. On a branch cut from the trunk being released, build that trunk into a target of its own, render the page from this machine's own store with `SAILOR_LEDGER` unset so no scratch store stands in for it, and check it:
+0. Cut a tree for a branch that starts at the trunk being released, named for the version and the day so it meets no branch an earlier release left standing, and cut it through `sailor worktree create`, which writes the tree down so it can be closed. Build that trunk into a target of its own, taking the machine's turn as every build does. Render the page from this machine's own store, with `SAILOR_LEDGER` unset so no scratch store stands in for it, and check it:
 
    ```sh
-   git fetch && git switch -c work/the-page-counted-for-the-release origin/$(git config --get sailor.trunk)
-   CARGO_TARGET_DIR=$SAILOR_REPO/target/page cargo build -j 1 -p sailor
-   env -u SAILOR_LEDGER $SAILOR_REPO/target/page/debug/sailor faults render --open --file docs/faults-encountered.md
-   env -u SAILOR_LEDGER $SAILOR_REPO/target/page/debug/sailor faults check docs/faults-encountered.md
-   git commit -m "docs(faults): the public page counted for the release" -- docs/faults-encountered.md
+   branch=work/the-page-counted-for-<version, dots as hyphens>-on-$(date +%Y-%m-%d)
+   git -C $SAILOR_REPO fetch
+   git -C $SAILOR_REPO branch $branch origin/$(git -C $SAILOR_REPO config --get sailor.trunk)
+   tree=$(cd $SAILOR_REPO && sailor worktree create $branch) && cd $tree
+   CARGO_TARGET_DIR=$tree/target/page sailor machine turn -- cargo build -j 1 -p sailor
+   env -u SAILOR_LEDGER target/page/debug/sailor faults render --open --file docs/faults-encountered.md
+   env -u SAILOR_LEDGER target/page/debug/sailor faults check docs/faults-encountered.md
+   git commit -m "docs(faults): the public page counted for <version>" -- docs/faults-encountered.md
    ```
 
-   The check must say «agrees». The page reaches the trunk through an ordinary pull request, and the release is cut from the trunk that holds it.
+   The check must say «agrees». The page reaches the trunk through an ordinary pull request, the release is cut from the trunk that holds it, and the tree is closed with `sailor worktree close ${branch#work/}`.
 
-   The first time this runs, it is the first thing that writes the history's triggers into the machine's store. The binary in service, older than them, keeps working against them: add, close, reopen, summary, reword, link, unlink and list each ran against a store that held them, in about 15 ms a command, and every change they made to a fault or to its summary was written down. A page rendered from any copy of the store, and not from the store itself, answers «cannot tell» on the walk, because a copy's history is not the store's.
+   The first time this runs, it is the first thing that writes the history's triggers into the machine's store. The binary in service, older than them, keeps working against them: add, close, reopen, summary, reword, link, unlink and list each ran against a store that held them, in about 15 ms a command, and every change they made to a fault or to its summary was written down. The check reads the history of the store it is given. A page rendered from a store whose history does not reach the page's stamp answers «cannot tell», and so does a page rendered from a copy taken before this store's history began. A copy taken later holds the start of the store's history: a page rendered from it agrees while the copy and the store have not parted, and once they have, the check names the first line that differs or cannot tell. Only a page rendered from the store itself is sure to agree.
 
 ## The steps
 
