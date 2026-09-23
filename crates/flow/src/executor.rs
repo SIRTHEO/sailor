@@ -32,6 +32,11 @@ pub const CURRENT_STEP: &str = "flow.step";
 /// able to write here could attribute a spend to any run it liked.
 pub const CURRENT_RUN: &str = "flow.run";
 
+/// The variable a shell step reads its run's id from, written from
+/// [`CURRENT_RUN`] over whatever the flow's own `env` says, so a status that
+/// names its run names the one that is running.
+pub const RUN_VARIABLE: &str = "SAILOR_RUN";
+
 /// The key under which *the launcher* writes the project root: hence
 /// `workspace.` and not `flow.`, per [`SharedState`]. Shared state and not a
 /// `{"$root": …}` in the input, because an action that does not read the input —

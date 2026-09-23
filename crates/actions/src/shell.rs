@@ -136,6 +136,9 @@ impl Action for ShellCheckAction {
         if let Some(token) = shared.get(flow::MACHINE_TURN).and_then(Value::as_str) {
             env.insert(flow::MACHINE_TURN_VARIABLE.to_owned(), token.to_owned());
         }
+        if let Some(run) = shared.get(flow::CURRENT_RUN).and_then(Value::as_str) {
+            env.insert(flow::RUN_VARIABLE.to_owned(), run.to_owned());
+        }
         let invocation = CheckInvocation {
             command: spec.command.clone(),
             env,
