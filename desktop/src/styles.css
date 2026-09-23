@@ -4094,6 +4094,9 @@ tr[data-followable]:hover {
   white-space: nowrap;
 }
 
+/* THE ONE SEAM OF THE HEAD: the facts pack left of it, the state and the
+   controls right. A second `margin-left: auto` among these children divides
+   the slack instead of collecting it. */
 .pane__state {
   margin-left: auto;
   font-size: var(--text-small);
@@ -4604,7 +4607,6 @@ tr[data-followable]:hover {
 }
 
 .pane__close {
-  margin-left: auto;
   font-size: var(--text-small);
   color: var(--muted);
   padding: 0 var(--space-2);
@@ -5170,10 +5172,6 @@ tr[data-followable]:hover {
 .pane__keys {
   font-size: var(--text-small);
   color: var(--ink);
-}
-
-.pane__keys {
-  margin-left: auto;
 }
 
 .pane__mode {
