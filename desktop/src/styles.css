@@ -7471,10 +7471,11 @@ tr[data-followable]:hover {
   color: var(--ink);
 }
 
-/* The two rigid columns come to 350px, and to 258px below 700px, so the field
-   — the thing this window is for — still has 117px at the 375px
-   `scripts/screenshots.ts` captures at. They give way by narrowing and never
-   by leaving the row. Prohibition 11. */
+/* The two rigid columns come to 350px, so at 900px — the narrowest this window
+   opens, held by `minWidth` in tauri.conf.json — the field, which is the thing
+   this window is for, still has 550px. They give way by narrowing and never by
+   leaving the row. The rule below 700px is reached by no window and stands for
+   a browser. Prohibition 11. */
 .window-shell__columns {
   display: grid;
   grid-template-columns: 58px 292px minmax(0, 1fr);
