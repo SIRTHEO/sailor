@@ -24,6 +24,7 @@ mod engines;
 mod extensions;
 pub mod from_catalogue;
 mod hazards;
+pub(crate) mod hold;
 mod relocate;
 mod run_and_resume;
 pub mod seeds;
@@ -37,6 +38,7 @@ use cost::cost_of;
 use create_and_delete::{delete_flow, new_flow};
 use edit::edit_flow;
 use from_catalogue::{flow_from, list_catalogue};
+use hold::{hold_flow, unhold_flow};
 use relocate::relocate_flow;
 pub(crate) use run_and_resume::record_run;
 use run_and_resume::{resume_run, run_flow};
@@ -82,6 +84,8 @@ fn dispatch(args: &[String], sources: &[FlowSource]) -> Result<String, String> {
         [command, name, value, weight] if command == "schedule" => {
             set_schedule(sources, name, value, Some(weight))
         }
+        [command, name, words @ ..] if command == "hold" => hold_flow(sources, name, words),
+        [command, name, words @ ..] if command == "unhold" => unhold_flow(sources, name, words),
         [command, name, gesture @ ..] if command == "edit" && !gesture.is_empty() => {
             edit_flow(sources, name, gesture)
         }
@@ -350,6 +354,14 @@ pub const USAGE: &[Form] = &[
         form: "sailor flow seeds",
         says_key: "cli.flow.form.seeds",
     },
+    Form {
+        form: "sailor flow hold <name> --as <who> <why>",
+        says_key: "cli.flow.form.hold",
+    },
+    Form {
+        form: "sailor flow unhold <name> --as <who> <why>",
+        says_key: "cli.flow.form.unhold",
+    },
     // **`micro`, `nessuno`, `leggero` AND `pesante` STAY AS THEY ARE, AND IT
     // IS NOT AN OVERSIGHT.** They are the words a user really types and the
     // code compares, and a `schedule` already written keeps them in the ledger.
@@ -538,6 +550,7 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
     }
     let mut report = String::new();
     let ran = runs_by_flow();
+    let holds = hold::standing_holds();
     // THE ORIGIN IS IN THE LIST, and it is no ornament: two flows of the same
     // name in two places are one in here — the most specific wins — and whoever
     // cannot see where the running one comes from edits the other.
@@ -546,9 +559,13 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
         let origin = origin_said(chain.winner.origin, Some(chain));
         match entry {
             Ok(flow) => {
+                let held = holds
+                    .get(&flow.id)
+                    .map(|hold| format!("{} ", hold::hold_said(hold)))
+                    .unwrap_or_default();
                 let _ = writeln!(
                     report,
-                    "{}\t{} steps\t{origin}\t{}\t{}",
+                    "{}\t{} steps\t{origin}\t{}\t{held}{}",
                     flow.id,
                     flow.graph.steps().len(),
                     how_often_it_ran(&ran, name),

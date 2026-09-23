@@ -14,9 +14,10 @@ use ui::gather::FlowSource;
 /// can watch what the arc asks for without starting anything.
 pub type Starter<'a> = &'a mut dyn FnMut(&str, &str) -> Result<String, String>;
 
-/// Whether this flow already has a run parked for this terminal. Handed in
-/// like `Starter`, so the arc stays testable without a ledger to read.
-pub type Parked<'a> = &'a mut dyn FnMut(&str, &str) -> bool;
+/// Why this flow must not start on this terminal now, if it must not: a run
+/// of it already parked there, or a hold a person put on it. Handed in like
+/// `Starter`, so the arc stays testable without a ledger to read.
+pub type Waits<'a> = &'a mut dyn FnMut(&str, &str) -> Option<String>;
 
 /// Which flows watch for a session event, and what each of them asks of it.
 ///
@@ -74,7 +75,7 @@ pub fn evaluate(
     sources: &[FlowSource],
     at: i64,
     start: Starter<'_>,
-    parked: Parked<'_>,
+    waits: Waits<'_>,
 ) -> Vec<Verdict> {
     let mut written = Vec::new();
     for (flow, on) in watchers(sources) {
@@ -87,16 +88,8 @@ pub fn evaluate(
         // event manufactured 57 parked runs out of 59 actions. Waking the
         // parked one is a separate decision and not taken here: the flow that
         // produced those 57 was switched off after it emptied a live session.
-        if parked(&flow, &happened.tty) {
-            written.push(note(
-                store,
-                event_id,
-                &flow,
-                DEFERRED,
-                Some(ALREADY_PARKED),
-                None,
-                at,
-            ));
+        if let Some(why) = waits(&flow, &happened.tty) {
+            written.push(note(store, event_id, &flow, DEFERRED, Some(&why), None, at));
             continue;
         }
         // The same event replayed starts nothing a second time: a command line
@@ -159,13 +152,30 @@ fn note(
     row
 }
 
+/// Why this flow waits instead of starting: its hold first, since a held flow
+/// starts nowhere, then a run of it already parked on this terminal.
+pub fn why_it_waits(flow: &str, tty: &str) -> Option<String> {
+    if let Some(hold) = hold_on(flow) {
+        return Some(hold);
+    }
+    parked_for(flow, tty).then(|| ALREADY_PARKED.to_owned())
+}
+
+/// The hold standing on a flow, as a person reads it. A ledger that cannot be
+/// opened answers none, for the reason `parked_for` gives.
+fn hold_on(flow: &str) -> Option<String> {
+    let store = machine_ledger()?;
+    let hold = store.flow_hold(flow).ok()??;
+    Some(crate::flow_cmd::hold::hold_said(&hold))
+}
+
 /// Whether this flow already has a run parked for this terminal.
 ///
 /// The run rows do not carry a terminal, so the trigger step's own delivery is
 /// read for one. A ledger that cannot be opened answers **false**: refusing to
 /// start on a reading that failed would silence the arc over a locked file.
 pub fn parked_for(flow: &str, tty: &str) -> bool {
-    let Some(store) = ledger::sailor_home().and_then(|home| ledger::Ledger::open(home).ok()) else {
+    let Some(store) = machine_ledger() else {
         return false;
     };
     let Ok(waiting) = store.runs_to_ask_again() else {
@@ -175,6 +185,12 @@ pub fn parked_for(flow: &str, tty: &str) -> bool {
         .iter()
         .filter(|run| run.entity == flow)
         .any(|run| terminal_of(&store, &run.run_id).as_deref() == Some(tty))
+}
+
+/// The ledger the runs are written in. Sailor's home is not it: opened there,
+/// both guards above read a store nothing writes and never say wait.
+fn machine_ledger() -> Option<ledger::Ledger> {
+    ledger::default_directory().and_then(|dir| ledger::Ledger::open(dir).ok())
 }
 
 /// The terminal a run was lit for, read from what its trigger step was handed.

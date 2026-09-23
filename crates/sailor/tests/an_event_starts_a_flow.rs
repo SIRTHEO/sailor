@@ -81,8 +81,8 @@ fn happened() -> Happened {
 
 /// Nothing is parked: the arc's own default in these tests, so a test that
 /// wants a parked run says so.
-fn never_parked(_flow: &str, _tty: &str) -> bool {
-    false
+fn never_parked(_flow: &str, _tty: &str) -> Option<String> {
+    None
 }
 
 /// What was asked of the starter, instead of anything being started.
@@ -126,7 +126,7 @@ fn a_flow_parked_on_this_terminal_is_held_back_instead_of_started_again() {
         &scratch.sources(),
         100,
         &mut watching_starter(&mut asked),
-        &mut |_flow, _tty| true,
+        &mut |_flow, _tty| Some(ALREADY_PARKED.to_owned()),
     );
 
     assert!(asked.is_empty(), "nothing was started: {asked:?}");
