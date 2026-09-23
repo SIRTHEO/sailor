@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAsk } from "../ask";
 import { flowsHere, resolvedIn, standingContext } from "../flowsbyworkspace";
 import { projects } from "../workspaces";
@@ -154,6 +154,18 @@ function Terminals({ native, ceiling, at }: { native: boolean; ceiling: number |
   const all = asked.state === "answered" ? asked.value : [];
   const held = heldTerminal(all, at.chosen);
   const stirred = useStir(held?.workspaceRoot ?? null);
+
+  // **THE FIELD'S OWN CHOICE IS STILL A CHOICE.** Falling back to «the first
+  // one alive» without writing it down leaves the next beat free to decide
+  // again: the terminal being read ends, and the field swaps to another one
+  // under the reader, emulator and all. Written down, the hold outlives its
+  // own terminal, which is what heldTerminal promises.
+  const holdIsWritten = held !== null && held.id === at.chosen;
+  useEffect(() => {
+    if (held !== null && !holdIsWritten) at.onChoose(held.id);
+    // `at` is built inline on every draw; what decides the hold is these two.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdIsWritten, held?.id]);
   const refused = (error: unknown) => { setTrouble(String(error)); };
 
   let field;

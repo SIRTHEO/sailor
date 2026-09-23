@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { TerminalSummary } from "../terminal";
 import { terminalGroups } from "./terminalgroups";
 import { TheWindow } from "./TheWindow";
@@ -106,6 +106,35 @@ describe("the terminals, in the three columns", () => {
     });
     expect(document.querySelector(".window-row[aria-current]")?.textContent).toContain("zsh");
   });
+
+  test("THE FIELD KEEPS THE TERMINAL IT DREW when that one ends", async () => {
+    // Nobody clicks: the hold is the fallback «first one alive». Left
+    // uncommitted, the next beat picks again, and the reader's terminal is
+    // replaced by another one — a new emulator, since the pane is keyed by id.
+    let onTheMachine = [terminal("1", "/somewhere/a-code-project", "an-agent"), terminal("2", "/elsewhere/lab", "zsh")];
+    (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+      core: {
+        invoke: (command: string) => {
+          if (command === "terminal_list") return Promise.resolve(onTheMachine);
+          if (command === "terminal_backlog") return Promise.resolve({ at: 0, bytes: "", upto: 0, ended: null });
+          return Promise.resolve([]);
+        },
+      },
+      event: { listen: () => Promise.resolve(() => {}) },
+    };
+    render(<TheWindow native />);
+    fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+    await waitFor(() => {
+      expect(document.querySelector(".window-field")?.getAttribute("aria-label")).toBe("an-agent · a-code-project");
+    });
+
+    onTheMachine = [terminal("1", "/somewhere/a-code-project", "an-agent", false), terminal("2", "/elsewhere/lab", "zsh")];
+    await act(async () => { await new Promise((then) => setTimeout(then, 4100)); });
+    expect(
+      document.querySelector(".window-field")?.getAttribute("aria-label"),
+      "the terminal that ended stays readable; the field does not swap by itself",
+    ).toBe("an-agent · a-code-project");
+  }, 10000);
 
   /** A machine that will not answer at all, which is the third state of the question. */
   function machineRefuses(why: string) {
