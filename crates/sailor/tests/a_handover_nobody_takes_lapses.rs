@@ -86,7 +86,9 @@ fn a_run_waiting(ledger: &Ledger, run_id: &str, deadline_secs: i64) {
         HANDED_AT,
     );
     record.species = Some(StepSpecies::Repeatable);
-    ledger.append_step_started(&record).expect("opening the step");
+    ledger
+        .append_step_started(&record)
+        .expect("opening the step");
     ledger
         .close_step(run_id, "review", 1, 1, ended(Outcome::Waiting, HANDED_AT))
         .expect("handing it over");
@@ -210,7 +212,10 @@ fn a_handover_in_time_is_left_to_the_person() {
 
     let _ = resume(&ledger, &a_flow(IN_TIME, 1), "run-1");
 
-    assert_eq!(attempts(&ledger, "run-1"), [(1, Some(Outcome::Waiting), None)]);
+    assert_eq!(
+        attempts(&ledger, "run-1"),
+        [(1, Some(Outcome::Waiting), None)]
+    );
     assert_eq!(status_of(&ledger, "run-1"), "waiting");
 }
 
@@ -225,7 +230,10 @@ fn the_beat_resumes_only_the_runs_whose_handover_lapsed() {
     a_run_waiting(&ledger, "in-time", IN_TIME);
     a_run_waiting(&ledger, "answered", LAPSED);
     a_run_waiting(&ledger, "a-child", LAPSED);
-    let child = ledger.run_header("a-child").expect("the store answers").expect("the run");
+    let child = ledger
+        .run_header("a-child")
+        .expect("the store answers")
+        .expect("the run");
     ledger
         .record_run(&RunRecord {
             parent_run_id: Some("its-parent".to_owned()),
@@ -245,7 +253,13 @@ fn the_beat_resumes_only_the_runs_whose_handover_lapsed() {
     taken.taken_on_by = Some("mira".to_owned());
     ledger.append_step_started(&taken).expect("taking it on");
     ledger
-        .close_step("answered", "review", 2, 2, ended(Outcome::Went, HANDED_AT + 20))
+        .close_step(
+            "answered",
+            "review",
+            2,
+            2,
+            ended(Outcome::Went, HANDED_AT + 20),
+        )
         .expect("answering it");
 
     let mut resumed = Vec::new();
@@ -253,12 +267,8 @@ fn the_beat_resumes_only_the_runs_whose_handover_lapsed() {
         resumed.push(run_id.to_owned());
         Ok(String::new())
     };
-    let (said, woken, _) = sailor::flow_cmd::beat::ask_the_parked_again(
-        &[],
-        &ledger,
-        HANDED_AT + LAPSED,
-        &mut resume,
-    );
+    let (said, woken, _) =
+        sailor::flow_cmd::beat::ask_the_parked_again(&[], &ledger, HANDED_AT + LAPSED, &mut resume);
 
     assert_eq!(resumed, ["lapsed"], "{said}");
     assert_eq!(woken, 1);
@@ -281,12 +291,8 @@ fn the_switch_on_a_flow_governs_the_parked_and_not_the_lapsed() {
         resumed.push(run_id.to_owned());
         Ok(String::new())
     };
-    let (said, woken, let_go) = sailor::flow_cmd::beat::ask_the_parked_again(
-        &[],
-        &ledger,
-        HANDED_AT + LAPSED,
-        &mut resume,
-    );
+    let (said, woken, let_go) =
+        sailor::flow_cmd::beat::ask_the_parked_again(&[], &ledger, HANDED_AT + LAPSED, &mut resume);
 
     assert_eq!(resumed, ["lapsed"], "{said}");
     assert_eq!((woken, let_go), (1, 1), "{said}");
@@ -306,23 +312,40 @@ fn the_report_of_a_lapsed_handover_says_what_became_of_the_run() {
     a_run_waiting(&ledger, "an-attempt-left", LAPSED);
 
     let lapsed = catalogue::say("cli.flow.nobody_took_the_handover", &[("steps", "review")]);
-    let ready_again =
-        catalogue::say("cli.flow.expired_back_among_the_ready", &[("steps", "review")]);
-    assert_ne!(lapsed, ready_again, "one sentence: this test cannot tell them apart");
+    let ready_again = catalogue::say(
+        "cli.flow.expired_back_among_the_ready",
+        &[("steps", "review")],
+    );
+    assert_ne!(
+        lapsed, ready_again,
+        "one sentence: this test cannot tell them apart"
+    );
 
     let failed = the_report(resume(&ledger, &a_flow(LAPSED, 1), "no-attempt-left"));
     let offered = the_report(resume(&ledger, &a_flow(LAPSED, 3), "an-attempt-left"));
 
     for said in [&failed, &offered] {
-        assert!(said.contains(&lapsed), "the report does not name the lapse: {said}");
-        assert!(!said.contains(&ready_again), "the wait was not put back among the ready: {said}");
+        assert!(
+            said.contains(&lapsed),
+            "the report does not name the lapse: {said}"
+        );
+        assert!(
+            !said.contains(&ready_again),
+            "the wait was not put back among the ready: {said}"
+        );
     }
     assert!(
-        failed.contains(&catalogue::say("cli.flow.run_status", &[("status", "failed")])),
+        failed.contains(&catalogue::say(
+            "cli.flow.run_status",
+            &[("status", "failed")]
+        )),
         "{failed}"
     );
     assert!(
-        offered.contains(&catalogue::say("cli.flow.run_status", &[("status", "waiting")])),
+        offered.contains(&catalogue::say(
+            "cli.flow.run_status",
+            &[("status", "waiting")]
+        )),
         "{offered}"
     );
 }

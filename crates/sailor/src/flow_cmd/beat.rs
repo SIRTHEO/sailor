@@ -448,9 +448,9 @@ fn wake_the_lapsed_handovers(
         let Ok(records) = ledger.steps(&run.run_id) else {
             continue;
         };
-        let on_its_own = ledger
-            .run_header(&run.run_id)
-            .is_ok_and(|header| header.is_some_and(|header| crate::step_cmd::resumed_on_its_own(&header)));
+        let on_its_own = ledger.run_header(&run.run_id).is_ok_and(|header| {
+            header.is_some_and(|header| crate::step_cmd::resumed_on_its_own(&header))
+        });
         if !on_its_own || !a_handover_lapsed(&records, now) {
             continue;
         }
