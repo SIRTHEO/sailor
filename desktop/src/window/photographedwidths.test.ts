@@ -4,9 +4,8 @@ import tauri from "../../src-tauri/tauri.conf.json";
 
 /**
  * **TWO CONTRACTS THAT DISAGREE MAKE A PICTURE OF NOTHING.** The window opens
- * no narrower than `minWidth`, and the capture script keeps widths of its own:
- * it photographed this window at 375px, and a reviewer read the field starved
- * in that picture as a defect of the product. Whichever moves, this goes red.
+ * no narrower than `minWidth`, but the script photographed it at 375px, where
+ * a reviewer read the starved field as a defect of the product, not the shot.
  */
 
 /** The widths the script declares, by the name a scene asks for them by. */
