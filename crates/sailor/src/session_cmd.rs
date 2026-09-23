@@ -110,7 +110,7 @@ pub const REFUSED: i32 = 3;
 mod handover;
 mod listing;
 
-use handover::{filed_what_was_dropped, handed_on, kept_by, the_ask_still_standing};
+use handover::{filed_what_was_dropped, handed_on, kept_by, received, the_ask_still_standing};
 use listing::{also_saying, close_the_gone, list_terminals, standing_of, Standing};
 
 pub fn run(args: &[String]) -> i32 {
@@ -716,6 +716,11 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     let event_id = store
         .record_event(&happened)
         .map_err(|error| error.to_string())?;
+    received(
+        request,
+        &happened.tty,
+        happened.session_id.as_deref().unwrap_or_default(),
+    );
     let started = what_this_event_starts(request, store, event_id, &happened);
     // The announcement is renewed here and nowhere else: a lease that only the
     // opening renewed would expire on a terminal that has been working all day.
@@ -1609,6 +1614,40 @@ mod tests {
         // keystroke; and with the command line's name in there, a graft that
         // learns which line it is would announce the same terminal twice.
         assert_eq!(keys[0], "terminal#ttys004", "{keys:?}");
+    }
+
+    /// **A MANDATE IS TAKEN BY THE SESSION THAT SPEAKS, NOT BY THE GREETING.**
+    /// A session that starts and is gone before its first turn has received
+    /// nothing, so the take waits for that session's next event, and another
+    /// session's event takes nothing.
+    #[test]
+    fn the_first_event_of_the_session_handed_a_mandate_takes_it() {
+        let scratch = Scratch::new("mandate-received");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        let path = sessions::mandate::address_in(deposit.directory(), "ttys004");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys004".to_owned();
+        mandate.written.session = "the-one-that-filled-up".to_owned();
+        sessions::mandate::deposit(deposit.directory(), &mandate).expect("the mandate is deposited");
+        sessions::mandate::reserve(&path, "the-successor", now()).expect("the greeting holds it");
+
+        for session in ["somebody-else", "the-successor"] {
+            asking(
+                "event",
+                &format!(r#"{{"session_id":"{session}","cwd":"/un-albero"}}"#),
+                &store,
+                &TheDeposit::Open(&deposit),
+                &one_terminal(),
+                &named_line(),
+            )
+            .expect("the event goes through");
+            let taken = sessions::mandate::read(&path).expect("still on disk").taken;
+            match session {
+                "somebody-else" => assert_eq!(taken, None, "another session took it"),
+                _ => assert_eq!(taken.map(|taken| taken.by).as_deref(), Some("the-successor")),
+            }
+        }
     }
 
     /// A terminal that closes stops holding the tree: whoever reads the survey

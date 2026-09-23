@@ -46,12 +46,12 @@ fn kept_from(
     None
 }
 
-/// The mandate the session before left for this terminal, taken as it is read.
+/// The mandate the session before left for this terminal, held for this one.
 ///
-/// **THE GREETING IS THE DELIVERY.** It is the one channel whose text reaches
-/// whoever is starting, so a mandate that arrived anywhere else would be a
-/// mandate nobody was handed. Taken here, and marked with the successor's own
-/// name: a second reading of the same handover would do the work twice.
+/// **THE GREETING IS THE DELIVERY, AND SENDING IT IS NOT RECEIVING IT.** It is
+/// the one channel whose text reaches whoever is starting, but a session can
+/// start and be gone before it runs a turn. So the greeting reserves the
+/// mandate, and [`received`] takes it once the session speaks.
 pub(super) fn handed_on(request: &Request<'_>, arrival: &Arrival) -> Option<String> {
     let TheDeposit::Open(ledger) = request.deposit else {
         return None;
@@ -61,7 +61,21 @@ pub(super) fn handed_on(request: &Request<'_>, arrival: &Arrival) -> Option<Stri
         &arrival.anchor.tty,
         &arrival.session_id.clone().unwrap_or_default(),
         &arrival.anchor.worktree,
+        sessions::now(),
     )
+}
+
+/// Takes the mandate this session was handed at its start, now that it has
+/// spoken. Nothing to say: a session holding nothing here is the usual case.
+pub(super) fn received(request: &Request<'_>, tty: &str, session: &str) {
+    let TheDeposit::Open(ledger) = request.deposit else {
+        return;
+    };
+    if session.is_empty() {
+        return;
+    }
+    let path = sessions::mandate::address_in(ledger.directory(), tty);
+    let _ = sessions::mandate::receive(&path, session, sessions::now());
 }
 
 /// The same handover with everything it reads named, so it can be taken from a
@@ -71,6 +85,7 @@ fn the_mandate_of(
     tty: &str,
     session: &str,
     tree: &str,
+    at: i64,
 ) -> Option<String> {
     let path = sessions::mandate::address_in(store, tty);
     let left = sessions::mandate::read(&path)?;
@@ -92,9 +107,7 @@ fn the_mandate_of(
     if !left.written.session.is_empty() && left.written.session == session {
         return None;
     }
-    if sessions::mandate::consume(&path, session, sessions::now()).is_err() {
-        return None;
-    }
+    let left = sessions::mandate::reserve(&path, session, at).ok()?;
     Some(catalogue::say(
         "cli.session.the_mandate_is_yours",
         &[
@@ -652,9 +665,9 @@ mod tests {
         assert!(kept_from(&shipped(), &env_of(&[("PATH", "/usr/bin")]), "ttys004").is_none());
     }
 
-    /// **THE GREETING IS THE DELIVERY, AND IT IS TAKEN ONCE.** A handover read
+    /// **THE GREETING IS THE DELIVERY, AND IT IS HANDED ONCE.** A handover read
     /// twice sends two sessions off to do the same work, and neither of them
-    /// can tell.
+    /// can tell. It is held, not taken: the take waits for the session to speak.
     #[test]
     fn a_mandate_left_for_this_terminal_arrives_with_the_greeting_and_only_once() {
         let directory = std::env::temp_dir().join(format!("sailor-handed-{}", std::process::id()));
@@ -669,7 +682,7 @@ mod tests {
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         let handed =
-            the_mandate_of(&directory, "ttys001", "the-successor", "").expect("a mandate arrives");
+            the_mandate_of(&directory, "ttys001", "the-successor", "", 100).expect("a mandate arrives");
         assert!(handed.contains("carry the relay to the end"), "{handed}");
         assert!(
             handed.contains("read the screen of a held terminal"),
@@ -681,15 +694,14 @@ mod tests {
         );
 
         assert_eq!(
-            the_mandate_of(&directory, "ttys001", "another-successor", ""),
+            the_mandate_of(&directory, "ttys001", "another-successor", "", 100),
             None,
-            "a mandate already taken is not handed on a second time"
+            "a mandate held for a session is not handed on a second time"
         );
-        let taken = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys001"))
-            .expect("it is still on disk")
-            .taken
-            .expect("marked with whoever took it");
-        assert_eq!(taken.by, "the-successor");
+        let held = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys001"))
+            .expect("it is still on disk");
+        assert_eq!(held.taken, None, "handing it is not receiving it");
+        assert_eq!(held.reserved.map(|held| held.by).as_deref(), Some("the-successor"));
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -701,7 +713,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
 
-        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever", ""), None);
+        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever", "", 100), None);
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -781,7 +793,7 @@ mod tests {
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         assert_eq!(
-            the_mandate_of(&directory, "ttys015", "a-stranger", "/a/different/tree"),
+            the_mandate_of(&directory, "ttys015", "a-stranger", "/a/different/tree", 100),
             None,
             "a session that took the tty number in another tree is handed nothing"
         );
@@ -795,7 +807,7 @@ mod tests {
         );
 
         let handed =
-            the_mandate_of(&directory, "ttys015", "the-successor", "/the/tree/it/was/written/in")
+            the_mandate_of(&directory, "ttys015", "the-successor", "/the/tree/it/was/written/in", 100)
                 .expect("the successor in the mandate's own tree is handed it");
         assert!(handed.contains("swap the profile of a live session"), "{handed}");
         let _ = std::fs::remove_dir_all(&directory);
@@ -822,7 +834,7 @@ mod tests {
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         assert_eq!(
-            the_mandate_of(&directory, "ttys015", "the-one-that-filled-up", ""),
+            the_mandate_of(&directory, "ttys015", "the-one-that-filled-up", "", 100),
             None,
             "the session that wrote the mandate is not its own successor"
         );
@@ -834,7 +846,7 @@ mod tests {
             "a compaction must not consume what the successor is owed"
         );
 
-        let handed = the_mandate_of(&directory, "ttys015", "the-one-after-the-clear", "")
+        let handed = the_mandate_of(&directory, "ttys015", "the-one-after-the-clear", "", 100)
             .expect("the session opened by the emptying is handed it");
         assert!(
             handed.contains("carry the relay past the compaction"),

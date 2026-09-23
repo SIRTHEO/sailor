@@ -76,8 +76,8 @@ impl Action for Empties {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         if let Some(successor) = &self.successor {
             let path = sessions::mandate::address_in(store(), &self.tty);
-            sessions::mandate::consume(&path, successor, 1_700_000_000)
-                .expect("the greeting of the successor takes the mandate");
+            sessions::mandate::reserve(&path, successor, 1_700_000_000)
+                .expect("the greeting of the successor is handed the mandate");
         }
         Ok(ActionOutcome::Went(json!({
             "tty": input["tty"].clone(),

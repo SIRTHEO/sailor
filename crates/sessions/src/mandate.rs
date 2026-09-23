@@ -99,12 +99,26 @@ pub struct Work {
     pub never: Vec<String>,
 }
 
-/// Who took it, and when. A mandate is consumed once.
+/// Who took it, and when. A mandate is consumed once, by the session that
+/// was handed it and spoke.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Taken {
     pub by: String,
     pub at: i64,
 }
+
+/// Which session was handed it at its start, and when. Not yet taken: a
+/// session that starts and never runs a turn has received nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reserved {
+    pub by: String,
+    pub at: i64,
+}
+
+/// How long a reservation keeps the mandate from any other session. Two
+/// greetings racing on one terminal are seconds apart; past this, the session
+/// that never spoke is taken for gone and the mandate is offered again.
+pub const A_RESERVATION_HOLDS_FOR: i64 = 60;
 
 /// Where a mandate was sent on to, and when: the mark its original keeps aside.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +133,8 @@ pub struct Mandate {
     pub work: Work,
     #[serde(default)]
     pub taken: Option<Taken>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reserved: Option<Reserved>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passed: Option<Passed>,
 }
@@ -222,17 +238,19 @@ pub fn archive_in(store: &Path, tty: &str, at: i64) -> PathBuf {
 /// can be read back from.
 pub fn deposit(store: &Path, mandate: &Mandate) -> io::Result<Option<PathBuf>> {
     let path = address_in(store, &mandate.written.tty);
-    let mut archived = None;
-    if let Some(earlier) = read(&path) {
-        let aside = archive_in(store, &mandate.written.tty, earlier.written.at);
-        if let Some(parent) = aside.parent() {
-            std::fs::create_dir_all(parent)?;
+    under_lock(&path, || {
+        let mut archived = None;
+        if let Some(earlier) = read(&path) {
+            let aside = archive_in(store, &mandate.written.tty, earlier.written.at);
+            if let Some(parent) = aside.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::rename(&path, &aside)?;
+            archived = Some(aside);
         }
-        std::fs::rename(&path, &aside)?;
-        archived = Some(aside);
-    }
-    write_at(&path, mandate)?;
-    Ok(archived)
+        write_at(&path, mandate)?;
+        Ok(archived)
+    })
 }
 
 fn write_at(path: &Path, mandate: &Mandate) -> io::Result<()> {
@@ -257,12 +275,67 @@ pub fn read(path: &Path) -> Option<Mandate> {
 /// a first one that found nothing, and «found nothing» is how a successor goes
 /// off to find work of its own.
 pub fn consume(path: &Path, by: &str, at: i64) -> io::Result<()> {
-    let mut mandate = read(path).ok_or_else(|| io::Error::other("no mandate to consume"))?;
-    mandate.taken = Some(Taken {
-        by: by.to_owned(),
-        at,
+    under_lock(path, || {
+        let mut mandate = still_free_for(path, by, at)?;
+        mandate.taken = Some(Taken {
+            by: by.to_owned(),
+            at,
+        });
+        write_at(path, &mandate)
+    })
+}
+
+/// Holds it for one session that is being handed it, and answers what it
+/// holds. **ONE SESSION PER MANDATE**: a second one greeted in the same
+/// seconds is refused, not handed the same work.
+pub fn reserve(path: &Path, by: &str, at: i64) -> io::Result<Mandate> {
+    under_lock(path, || {
+        let mut mandate = still_free_for(path, by, at)?;
+        mandate.reserved = Some(Reserved {
+            by: by.to_owned(),
+            at,
+        });
+        write_at(path, &mandate)?;
+        Ok(mandate)
+    })
+}
+
+/// Takes it for the session it was reserved for, once that session speaks:
+/// only then has the greeting that carried it reached anybody. True when this
+/// call took it.
+pub fn receive(path: &Path, by: &str, at: i64) -> io::Result<bool> {
+    let held_for_this_one = read(path).is_some_and(|mandate| {
+        mandate.taken.is_none() && mandate.reserved.is_some_and(|held| held.by == by)
     });
-    write_at(path, &mandate)
+    if !held_for_this_one {
+        return Ok(false);
+    }
+    consume(path, by, at).map(|()| true)
+}
+
+/// The mandate, if neither taken nor held for another session right now.
+fn still_free_for(path: &Path, by: &str, at: i64) -> io::Result<Mandate> {
+    let mandate = read(path).ok_or_else(|| io::Error::other("no mandate to take"))?;
+    if let Some(taken) = &mandate.taken {
+        return Err(io::Error::other(format!("already taken by «{}»", taken.by)));
+    }
+    if let Some(held) = &mandate.reserved {
+        if held.by != by && at - held.at < A_RESERVATION_HOLDS_FOR {
+            return Err(io::Error::other(format!("held for «{}»", held.by)));
+        }
+    }
+    Ok(mandate)
+}
+
+/// Runs `act` holding the lock of one mandate, so a read and the write that
+/// follows it are one step for every other process.
+fn under_lock<T>(path: &Path, act: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let lock = std::fs::File::create(path.with_extension("lock"))?;
+    lock.lock()?;
+    act()
 }
 
 /// Moves a waiting mandate to another terminal and keeps the original aside,
@@ -288,6 +361,7 @@ pub fn pass_on(store: &Path, from: &str, to: &str, at: i64) -> io::Result<PathBu
 
     let mut arriving = mandate.clone();
     arriving.written.tty = to.to_owned();
+    arriving.reserved = None;
     mandate.passed = Some(Passed {
         to: to.to_owned(),
         at,
@@ -337,6 +411,7 @@ mod tests {
                 ..Work::default()
             },
             taken: None,
+            reserved: None,
             passed: None,
         }
     }
