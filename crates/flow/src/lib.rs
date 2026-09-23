@@ -27,10 +27,9 @@ pub use executor::{
     EffectStatus, Execution, ExecutionRequest, Executor, FlowError, InMemoryRecordStore,
     InProcessExecutor, ProcessProbe, Reconciliation, ReconciliationRequest, RecordStore, Recovery,
     RedoEvidence, RunStops, SharedState, Spend, SpendStop, StepInput, StopReason, SystemClock,
-    Unmet,
-    AFTER_REFUSAL, AT_ONCE, CURRENT_CAP, CURRENT_FRONT, CURRENT_HOLDER, CURRENT_RUN, CURRENT_STEP,
-    CURRENT_WALL,
-    VERDICT_FIELD, VERDICT_PASSED, WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
+    Unmet, AFTER_REFUSAL, AT_ONCE, CURRENT_CAP, CURRENT_FRONT, CURRENT_HOLDER, CURRENT_RUN,
+    CURRENT_STEP, CURRENT_WALL, HANDOFF_EXPIRED, VERDICT_FIELD, VERDICT_PASSED,
+    WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::{CapKind, FlowFile, Provenance};
 pub use graph::{Condition, DependencyEdge, Graph, GraphError, Judgement, Step, BROKEN_FIELD};

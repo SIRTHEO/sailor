@@ -95,25 +95,17 @@ impl flow::ProcessProbe for HandoffLease {
             ledger::StillHeld::Released => return Ok(false),
             ledger::StillHeld::Nobody => {}
         }
-        let Some(limit) = record
-            .input
-            .get("handoff_timeout_secs")
-            .and_then(Value::as_i64)
-        else {
-            // No readable deadline: it is held. The ambiguity is kept, it is
-            // not settled on the convenient side.
-            return Ok(true);
-        };
-        Ok(self.now < record.started_at.saturating_add(limit))
+        // No readable deadline: it is held. The ambiguity is kept, it is not
+        // settled on the convenient side.
+        Ok(actions::handoff::deadline_of(record).is_none_or(|deadline| self.now < deadline))
     }
 }
 
 /// Resumes a run: first reconciles what was left open, then executes **with the
-/// same id**. **SEPARATE FROM `sailor step close`, BECAUSE THEY ARE TWO POWERS.**
-/// `close` **remembers** — writes an outcome, spends nothing — while `resume`
-/// **acts**, opens fronts and pays for billed calls; merging them would make a
-/// write to the store spend money. `reconcile` had never run outside the tests,
-/// hence a probe written to declare dead nothing it cannot see.
+/// same id**. A close answering a parked run calls it too, from either door: the
+/// work after a handoff is what the person was asked to unblock.
+/// `reconcile` had never run outside the tests, hence a probe written to declare
+/// dead nothing it cannot see.
 pub(super) fn resume_run(run_id: &str) -> Result<String, String> {
     let ledger = crate::step_cmd::open_ledger()?;
     let flow = crate::step_cmd::flow_of_run(&ledger, run_id)?;
@@ -211,6 +203,16 @@ pub fn resume_run_with(
             catalogue::say(
                 "cli.flow.expired_back_among_the_ready",
                 &[("steps", &reconciled.closed_as_broke.join(", "))],
+            )
+        );
+    }
+    if !reconciled.waits_that_lapsed.is_empty() {
+        let _ = write!(
+            report,
+            "\n{}",
+            catalogue::say(
+                "cli.flow.nobody_took_the_handover",
+                &[("steps", &reconciled.waits_that_lapsed.join(", "))],
             )
         );
     }
