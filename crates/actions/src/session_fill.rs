@@ -174,6 +174,13 @@ pub fn tail_of(path: &str, cap: u64) -> Option<String> {
     })
 }
 
+/// Whether the session writing this transcript stands at oblige now, read the
+/// way the step reads it. `None` is «I could not read it», never «below».
+pub fn stands_at_oblige(transcript: &str) -> Option<bool> {
+    let read = the_last_of(transcript).and_then(|text| from_transcript(&text))?;
+    Some(standing(read.tokens, WARN_TOKENS, OBLIGE_TOKENS) == "oblige")
+}
+
 fn standing(tokens: u64, warn: u64, oblige: u64) -> &'static str {
     if tokens >= oblige {
         return "oblige";
