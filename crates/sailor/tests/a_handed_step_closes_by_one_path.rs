@@ -161,7 +161,9 @@ static THE_ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Sets `SAILOR_FLOWS` for the body, then restores whatever it was.
 fn with_flows_dir<T>(flows_dir: &Path, body: impl FnOnce() -> T) -> T {
-    let _held = THE_ENVIRONMENT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _held = THE_ENVIRONMENT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let previous = std::env::var("SAILOR_FLOWS").ok();
     std::env::set_var("SAILOR_FLOWS", flows_dir);
     let result = body();
@@ -185,8 +187,11 @@ fn a_verdict(scratch: &Scratch) -> PathBuf {
 /// written out, because the window's own runs on a thread a live window owns.
 fn close_as_the_window_does(scratch: &Scratch, ledger: &Ledger, flows_dir: &Path) {
     let verdict = a_verdict(scratch);
-    open_step_in(ledger, &options(&[("run", "run-1"), ("step", "review"), ("as", "mira")]))
-        .expect("the window takes it on");
+    open_step_in(
+        ledger,
+        &options(&[("run", "run-1"), ("step", "review"), ("as", "mira")]),
+    )
+    .expect("the window takes it on");
     with_flows_dir(flows_dir, || {
         let mut found = a_close_by("run-1", "review", "mira", "went", Some("it holds"));
         found.insert(
@@ -205,15 +210,14 @@ fn close_as_the_window_does(scratch: &Scratch, ledger: &Ledger, flows_dir: &Path
 /// **THE RULE IS THE ONLY THING THAT CAN REACH IT**: `carry_the_run_on` holds
 /// the one answer `crate::run::resume` takes, so what this counts is the window
 /// asking, and a door resuming beside the rule does not compile.
-fn resumes_the_window_was_asked_for(
-    scratch: &Scratch,
-    ledger: &Ledger,
-    flows_dir: &Path,
-) -> usize {
+fn resumes_the_window_was_asked_for(scratch: &Scratch, ledger: &Ledger, flows_dir: &Path) -> usize {
     let verdict = a_verdict(scratch);
     let asked = std::cell::Cell::new(0);
-    open_step_in(ledger, &options(&[("run", "run-1"), ("step", "review"), ("as", "mira")]))
-        .expect("the window takes it on");
+    open_step_in(
+        ledger,
+        &options(&[("run", "run-1"), ("step", "review"), ("as", "mira")]),
+    )
+    .expect("the window takes it on");
     with_flows_dir(flows_dir, || {
         let mut found = a_close_by("run-1", "review", "mira", "went", Some("it holds"));
         found.insert(
@@ -260,17 +264,35 @@ fn close_as_the_command_line_does(scratch: &Scratch, flows_dir: &Path) {
         &[
             TAKE_IT,
             &[
-                "close", "--run", "run-1", "--step", "review", "--as", "mira", "--outcome",
-                "went", "--said", "it holds", "--output-file", &verdict,
+                "close",
+                "--run",
+                "run-1",
+                "--step",
+                "review",
+                "--as",
+                "mira",
+                "--outcome",
+                "went",
+                "--said",
+                "it holds",
+                "--output-file",
+                &verdict,
             ],
         ],
     );
-    assert_eq!(codes, [0, 0], "the command line opens the step, then closes it");
+    assert_eq!(
+        codes,
+        [0, 0],
+        "the command line opens the step, then closes it"
+    );
 }
 
 /// Rewrites the run's header with the status given, leaving everything else.
 fn recorded_as(ledger: &Ledger, status: &str) {
-    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
+    let header = ledger
+        .run_header("run-1")
+        .expect("the store answers")
+        .expect("the run");
     ledger
         .record_run(&RunRecord {
             status: status.to_owned(),
@@ -281,7 +303,10 @@ fn recorded_as(ledger: &Ledger, status: &str) {
 
 /// Gives the run a parent, which is what makes it somebody else's to resume.
 fn made_a_child_of(ledger: &Ledger, parent: &str) {
-    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
+    let header = ledger
+        .run_header("run-1")
+        .expect("the store answers")
+        .expect("the run");
     ledger
         .record_run(&RunRecord {
             parent_run_id: Some(parent.to_owned()),
@@ -351,12 +376,23 @@ fn an_approval_from_the_command_line_moves_its_run_too() {
         &scratch,
         &flows_dir,
         &[&[
-            "approve", "--run", "run-1", "--step", "review", "--as", "mira", "--output-file",
+            "approve",
+            "--run",
+            "run-1",
+            "--step",
+            "review",
+            "--as",
+            "mira",
+            "--output-file",
             &verdict,
         ]],
     );
     assert_eq!(codes, [0], "the command line approves the step");
-    assert_eq!(status_of(&ledger), "complete", "the approval left its run parked");
+    assert_eq!(
+        status_of(&ledger),
+        "complete",
+        "the approval left its run parked"
+    );
     assert_eq!(recorded(&ledger), Some(json!("approved")));
 }
 
@@ -370,9 +406,20 @@ fn a_close_does_not_reopen_a_run_that_ended() {
     let ledger = a_run_waiting_for_a_person(&scratch);
     recorded_as(&ledger, "failed");
     close_as_the_command_line_does(&scratch, &flows_dir);
-    assert_eq!(latest(&ledger.steps("run-1").expect("the store answers"), "review").outcome, Some(Outcome::Went));
-    assert_eq!(status_of(&ledger), "failed", "a close brought an ended run back");
-    assert_eq!(recorded(&ledger), None, "the step after the handoff ran on an ended run");
+    assert_eq!(
+        latest(&ledger.steps("run-1").expect("the store answers"), "review").outcome,
+        Some(Outcome::Went)
+    );
+    assert_eq!(
+        status_of(&ledger),
+        "failed",
+        "a close brought an ended run back"
+    );
+    assert_eq!(
+        recorded(&ledger),
+        None,
+        "the step after the handoff ran on an ended run"
+    );
 }
 
 /// A child run is its parent's to resume: resumed alone it would run without
@@ -384,7 +431,11 @@ fn a_close_leaves_a_child_run_to_its_parent() {
     let ledger = a_run_waiting_for_a_person(&scratch);
     made_a_child_of(&ledger, "the-parent");
     close_as_the_command_line_does(&scratch, &flows_dir);
-    assert_eq!(status_of(&ledger), "waiting", "a close resumed a child on its own");
+    assert_eq!(
+        status_of(&ledger),
+        "waiting",
+        "a close resumed a child on its own"
+    );
     assert_eq!(recorded(&ledger), None);
 }
 
@@ -401,7 +452,17 @@ fn a_close_succeeds_whatever_the_resume_comes_to() {
         &flows_dir,
         &[
             TAKE_IT,
-            &["close", "--run", "run-1", "--step", "review", "--as", "mira", "--outcome", "broke"],
+            &[
+                "close",
+                "--run",
+                "run-1",
+                "--step",
+                "review",
+                "--as",
+                "mira",
+                "--outcome",
+                "broke",
+            ],
         ],
     );
     assert_eq!(codes, [0, 0], "the close was written, and said it failed");
@@ -418,7 +479,11 @@ fn a_close_from_the_window_leaves_a_child_run_to_its_parent() {
     let ledger = a_run_waiting_for_a_person(&scratch);
     made_a_child_of(&ledger, "the-parent");
     close_as_the_window_does(&scratch, &ledger, &flows_dir);
-    assert_eq!(status_of(&ledger), "waiting", "the window resumed a child on its own");
+    assert_eq!(
+        status_of(&ledger),
+        "waiting",
+        "the window resumed a child on its own"
+    );
     assert_eq!(recorded(&ledger), None);
 }
 
