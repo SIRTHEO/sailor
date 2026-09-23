@@ -1341,6 +1341,15 @@
   "window.field.standing_here": "la finestra sta qui",
   "window.terminals.none": "Su questa macchina non è aperto nessun terminale.",
   "window.terminals.open_one": "Un terminale aperto ovunque su questa macchina compare qui, e quello che scegli si apre in questo campo.",
-  "window.not_yet.data": "Il deposito non è ancora in questa finestra. Tiene dieci tabelle e nessuna schermata le apre.",
+  "window.data.none": "Su questa macchina non è ancora conservato niente.",
+  "window.data.pick_one": "Scegli un deposito a sinistra, e dove vive si apre qui.",
+  "window.data.not_created": "non ancora creato",
+  "window.data.nothing_written": "Non ancora creato: qui non è stato scritto niente.",
+  "window.data.where": "Dove vive",
+  "window.data.how_many": "Quanti",
+  "window.data.size": "Dimensione",
+  "window.data.since": "Dal",
+  "window.data.not_counted": "non contato",
+  "window.data.no_date": "il disco non ne tiene la data",
   "window.not_yet.keys": "Le chiavi non sono ancora in questa finestra. E un workspace non può possederne una: vedi la richiesta 98."
 }

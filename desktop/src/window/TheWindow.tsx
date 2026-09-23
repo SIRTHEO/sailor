@@ -6,6 +6,9 @@ import type { Project } from "../workspaces";
 import { t } from "../i18n";
 import { closeTerminal, livenessOf, pressKeys, progressOf, resizeTerminal, submitLine } from "../terminal";
 import { TerminalPane, useStir } from "../TerminalPane";
+import { whatSailorKeeps } from "../keeps";
+import { DataPage } from "./DataPage";
+import { DataRows } from "./DataRows";
 import { Field, FieldEmpty, FieldHeld } from "./Field";
 import { FlowPage } from "./FlowPage";
 import { FlowRows } from "./FlowRows";
@@ -27,10 +30,9 @@ const ONCE = null;
  * panel: the panel is scanned for a row, and there is no row. Icons that answer
  * nothing teach that the window is broken rather than unfinished.
  */
-type NotHere = "data" | "keys";
+type NotHere = "keys";
 
 const NOT_YET: Record<NotHere, string> = {
-  data: "window.not_yet.data",
   keys: "window.not_yet.keys",
 };
 
@@ -69,6 +71,7 @@ export function TheWindow({
   if (place === "workspaces") return <Workspaces native={native} at={at} />;
   if (place === "flows") return <Flows native={native} at={at} />;
   if (place === "terminals") return <Terminals native={native} ceiling={ceiling} at={at} />;
+  if (place === "data") return <Data native={native} at={at} />;
   return <NotHereYet list={place} at={at} />;
 }
 
@@ -231,6 +234,53 @@ function Terminals({ native, ceiling, at }: { native: boolean; ceiling: number |
         </Panel>
       }
       field={field}
+    />
+  );
+}
+
+/**
+ * **WHAT IS KEPT, STORE BY STORE.** One question answers the whole list, and it
+ * is the one the machine already answers: every store, where it lives and how
+ * much room it takes. A store missing from the disk is a row, not a gap.
+ */
+function Data({ native, at }: { native: boolean; at: At }) {
+  // READ ON ARRIVAL, NOT ON A BEAT, as the flows are: the answer walks the
+  // whole home and the ledger to weigh them, and that is not a price to pay
+  // every thirty seconds to keep one column drawn.
+  const { asked } = useAsk(native, whatSailorKeeps, ONCE, t("window.outside_the_shell"));
+  const stores = asked.state === "answered" ? asked.value.stores : [];
+  const open = stores.find((store) => store.what === at.chosen) ?? null;
+
+  return (
+    <Window
+      place={at.place}
+      onPlace={at.onPlace}
+      panel={
+        <Panel title={listEntry(at.place).name}>
+          {asked.state === "answered" ? (
+            <DataRows stores={stores} chosen={at.chosen} onChoose={at.onChoose} />
+          ) : (
+            <Waiting asked={asked} />
+          )}
+        </Panel>
+      }
+      field={
+        open === null ? (
+          // Three outcomes, not two: «I could not ask» is its own sentence, or
+          // the field searches forever while the panel beside it says why.
+          <FieldEmpty
+            say={
+              asked.state === "mute"
+                ? asked.why
+                : t(asked.state === "asking" ? "window.looking" : "window.data.pick_one")
+            }
+          />
+        ) : (
+          <Field name={open.what}>
+            <DataPage key={open.what} store={open} />
+          </Field>
+        )
+      }
     />
   );
 }

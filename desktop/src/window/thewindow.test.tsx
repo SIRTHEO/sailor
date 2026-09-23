@@ -110,9 +110,9 @@ describe("the window, as it is mounted", () => {
   test("A LIST THAT IS NOT HERE YET SAYS WHERE IT IS, and does not draw an empty one", async () => {
     machineAnswers(TWO);
     render(<TheWindow native />);
-    fireEvent.click(screen.getByRole("button", { name: "Data" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keys" }));
     await waitFor(() => {
-      expect(screen.getByText(/store is not in this window yet/)).toBeDefined();
+      expect(screen.getByText(/keys are not in this window yet/)).toBeDefined();
     });
   });
 
