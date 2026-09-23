@@ -29,9 +29,11 @@ const HOLDS_NO_LINES_TO_RUN: &[(&str, &str)] = &[(
 )];
 
 /// A heading of the manifest: the word it leads with, which is the letter the
-/// runner reads, and where in the file the lines it holds are.
+/// runner reads; the whole of it, which says what its lines are for; and where
+/// in the file the lines it holds are.
 struct Section {
     letter: String,
+    says: String,
     holds: Vec<usize>,
 }
 
@@ -57,6 +59,7 @@ fn the_sections(manifest: &str) -> Vec<Section> {
                         .unwrap_or(says)
                         .trim_end_matches('.')
                         .to_owned(),
+                    says: says.to_owned(),
                     holds: Vec::new(),
                 });
             }
@@ -119,6 +122,30 @@ fn the_runner_reads_every_section_the_manifest_declares() {
              {plan:?}",
             section.letter
         );
+    }
+}
+
+/// Two sections under one letter read exactly as one section read twice: the
+/// plan holds the letter either way, and the second section's lines are run,
+/// or not run, by the first section's arm.
+#[test]
+fn no_two_sections_of_the_gates_carry_the_same_letter() {
+    let root = root();
+    let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
+    let mut seen: Vec<Section> = Vec::new();
+    for section in the_sections(&manifest) {
+        assert!(
+            !seen.iter().any(|first| first.letter == section.letter),
+            "«{}» opens two sections of {THE_GATES}: «{}» and «{}». The runner decides \
+             the letter once, so the second section's lines answer to the first one's arm",
+            section.letter,
+            seen.iter()
+                .find(|first| first.letter == section.letter)
+                .map(|first| first.says.as_str())
+                .unwrap_or_default(),
+            section.says
+        );
+        seen.push(section);
     }
 }
 
