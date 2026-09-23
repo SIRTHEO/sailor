@@ -285,6 +285,7 @@ fn without_its_history(path: &PathBuf) {
             "DROP TRIGGER a_fault_is_written; DROP TRIGGER a_fault_is_changed;
              DROP TRIGGER a_fault_is_taken_out; DROP TRIGGER a_summary_is_written;
              DROP TRIGGER a_summary_is_changed; DROP TRIGGER a_summary_is_taken_out;
+             DROP TRIGGER a_fault_is_renumbered; DROP TRIGGER a_summary_is_renumbered;
              DROP TABLE store_history;",
         )
         .expect("the history taken away");
@@ -401,6 +402,35 @@ fn a_summary_renumbered_after_the_count_stood_under_its_old_number() {
             [],
         )
         .expect("renumbered by plain SQL");
+
+    assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
+}
+
+/// `OR REPLACE` deletes the row under the new number and fires no delete.
+#[test]
+fn a_fault_renumbered_onto_a_held_number_after_the_count_stood_as_both() {
+    let (store, page, path) = a_store_and_its_page("replaced-after");
+    rusqlite::Connection::open(&path)
+        .expect("a second writer")
+        .execute(
+            "UPDATE OR REPLACE faults SET number = 1 WHERE number = 3",
+            [],
+        )
+        .expect("renumbered onto fault 1 by plain SQL");
+
+    assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
+}
+
+#[test]
+fn a_summary_renumbered_onto_a_held_number_after_the_count_stood_as_both() {
+    let (store, page, path) = a_store_and_its_page("summary-replaced-after");
+    rusqlite::Connection::open(&path)
+        .expect("a second writer")
+        .execute(
+            "UPDATE OR REPLACE public_summaries SET number = 1 WHERE number = 2",
+            [],
+        )
+        .expect("renumbered onto summary 1 by plain SQL");
 
     assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
 }

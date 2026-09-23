@@ -246,7 +246,8 @@ fn every_forgery_is_refused_without_a_store() {
 }
 
 /// The page keeps the table the render writes into. The day no open fault
-/// has a summary, the template refuses the page and every test that reads it.
+/// has a summary, the template refuses the page, and so every test that reads
+/// it through the template; this one and the count of columns read it alone.
 #[test]
 fn the_page_keeps_its_table_even_with_no_row_on_it() {
     let text = page();
