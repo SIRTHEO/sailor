@@ -27,6 +27,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p sailor -j 1 --test a_flow_step_is_not_a_shell_program` — the seed counts the steps that still reach for a shell
 - `cargo test -p sailor -j 1 --test a_shipped_flow_calls_the_functions_it_defines --test a_step_may_not_name_a_field_after_what_it_points_at` — a step that defines shell it never runs, and a `with` field that covers the value its own pointer reaches for
 - `cargo test -p sailor -j 1 --test a_check_that_failed_before_the_attestation_is_asked_again` — integration's merge step, run against a forge that answers from a file
+- `cargo test -p sailor -j 1 --test a_merge_is_carried_by_its_integration` — integration's `integrated` step, which posts the status the trunk requires, run against a forge that writes its calls down
 - `cargo test -p flow -j 1`
 
 ## C. When `crates/actions` changes

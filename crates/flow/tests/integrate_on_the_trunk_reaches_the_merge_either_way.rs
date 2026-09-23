@@ -51,6 +51,8 @@ impl Action for Passes {
                 "manual_pending": self.manual_pending,
                 "pending": if self.manual_pending { json!(["a line for a person"]) } else { json!([]) },
                 "pending_digest": if self.manual_pending { "d1" } else { "" },
+                "on": "c0ffee",
+                "run": "run",
             },
         })))
     }

@@ -128,6 +128,10 @@ esac
     }
 
     fn merge(&self) -> Output {
+        self.merge_posted_on("abc123")
+    }
+
+    fn merge_posted_on(&self, posted_on: &str) -> Output {
         Command::new("sh")
             .arg("-c")
             .arg(the_command())
@@ -148,6 +152,7 @@ esac
             .env("ALREADY", "false")
             .env("ATTESTED_AT", ATTESTED_AT)
             .env("POLL_SECS", "0")
+            .env("POSTED_ON", posted_on)
             .output()
             .expect("the step runs")
     }
@@ -371,4 +376,26 @@ fn all_green_merges_without_asking_anything_again() {
     let merged = forge.merge();
     assert!(merged.status.success(), "{}", said(&merged));
     assert_eq!(forge.calls(), "pr merge 7 --merge --match-head-commit abc123\n");
+}
+
+#[test]
+fn without_sailor_integrated_on_the_reviewed_head_nothing_is_merged() {
+    let forge = Forge::new(
+        "not-integrated",
+        &[state(
+            "green",
+            checks(&[check("boundary", "pass", LONG_AGO, A_RUN)]),
+        )],
+        "green",
+    );
+    for posted_on in ["", "another-commit"] {
+        let refused = forge.merge_posted_on(posted_on);
+        assert_eq!(refused.status.code(), Some(1), "{}", said(&refused));
+        assert!(
+            said(&refused).contains("no sailor/integrated on abc123: nothing is merged"),
+            "{}",
+            said(&refused)
+        );
+    }
+    assert_eq!(forge.calls(), "");
 }
