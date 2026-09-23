@@ -1,10 +1,11 @@
 //! Every failure the engine can report has a sentence, and every sentence has a
-//! failure that can reach it.
-//!
-//! **TWO HAND-WRITTEN LISTS OVER ONE CLOSED SET, AND NOTHING COMPARED THEM.** A
-//! class with no entry falls on `tryT(...) ?? failure` in `RunConsole.tsx`, so
-//! the person who hit it reads `subflow_too_deep` and nothing goes red.
+//! failure that can reach it. A class with no entry falls on `tryT(...) ??
+//! failure` in `RunConsole.tsx`, so whoever hits it reads `subflow_too_deep`.
+//! **AND A FAILURE HAS TWO DOORS**: `ActionError`, and the `closed(…)` the
+//! executor uses when nothing raised an error — a process gone, an effect it
+//! cannot read, a wait nobody took. Reading one left five classes mute.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The prefix the window looks a failure class up under. It is written here and
@@ -67,20 +68,136 @@ fn every_source_under(root: &Path) -> Vec<PathBuf> {
     found
 }
 
-/// What each place that builds a failure names it: the class when it is written
-/// out, `None` when it is a variable this scan cannot follow.
-fn classes_reported(text: &str) -> Vec<Option<String>> {
+/// The word a call names its class with, once: a literal, or the value of a
+/// `const` the tree declares. **A CLASS READ OFF A FAILURE ALREADY BUILT IS NOT
+/// A NEW ONE**: it travels from the `ActionError` that carries it, and the scan
+/// counted it where that was built. Anything else it cannot follow.
+enum Named {
+    Class(String),
+    Relayed,
+    Unreadable,
+}
+
+fn named(word: &str, constants: &BTreeMap<String, String>) -> Named {
+    let word = word.trim();
+    if let Some(class) = word.strip_prefix('"').and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned())) {
+        return Named::Class(class);
+    }
+    if let Some(class) = constants.get(word) {
+        return Named::Class(class.clone());
+    }
+    if word.contains(".class") {
+        return Named::Relayed;
+    }
+    Named::Unreadable
+}
+
+/// `const NAME: &str = "value";`, wherever the tree declares one. The executor
+/// names the class of a lapsed wait that way, and a scan reading only literals
+/// sees the constant's name and calls the class unreadable.
+fn constants_in(text: &str, into: &mut BTreeMap<String, String>) {
+    for line in text.lines() {
+        let declared = line.trim_start();
+        let declared = declared.strip_prefix("pub ").unwrap_or(declared);
+        let declared = match declared.find(") ") {
+            Some(end) if declared.starts_with("(") => &declared[end + 2..],
+            _ => declared,
+        };
+        let Some(rest) = declared.strip_prefix("const ") else {
+            continue;
+        };
+        let Some((name, value)) = rest.split_once(": &str = ") else {
+            continue;
+        };
+        if let Some(class) = value.strip_prefix('"').and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned())) {
+            into.insert(name.trim().to_owned(), class);
+        }
+    }
+}
+
+/// The arguments of a call, from the index of its opening bracket: split on the
+/// commas at the top level, so a nested call or a literal holding one is whole.
+fn arguments_at(text: &str, open: usize) -> Vec<String> {
+    let mut depth = 0i32;
+    let mut in_text = false;
+    let mut found = Vec::new();
+    let mut word = String::new();
+    for letter in text[open..].chars() {
+        if in_text {
+            word.push(letter);
+            if letter == '"' {
+                in_text = false;
+            }
+            continue;
+        }
+        match letter {
+            '"' => {
+                in_text = true;
+                word.push(letter);
+            }
+            '(' | '[' | '{' => {
+                depth += 1;
+                if depth > 1 {
+                    word.push(letter);
+                }
+            }
+            ')' | ']' | '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    found.push(word);
+                    return found;
+                }
+                word.push(letter);
+            }
+            ',' if depth == 1 => found.push(std::mem::take(&mut word)),
+            _ => word.push(letter),
+        }
+    }
+    found
+}
+
+/// Where a name in the text opens a call of its own: `tree_closed(` is the tail
+/// of another name, and `fn closed(` declares the one being called.
+fn calls_here(text: &str, at: usize) -> bool {
+    let before = &text[..at];
+    before
+        .chars()
+        .next_back()
+        .is_none_or(|letter| !letter.is_alphanumeric() && letter != '_')
+        && !before.trim_end().ends_with("fn")
+}
+
+/// The class each place that builds a failure names, through either door.
+fn classes_reported(text: &str, constants: &BTreeMap<String, String>) -> Vec<Named> {
     // The unit-test module at the foot of a file invents classes to exercise the
     // code around them. They are not classes the engine reports.
     let production = text.split("#[cfg(test)]").next().unwrap_or_default();
     let mut found = Vec::new();
     for (at, _) in production.match_indices("ActionError::new(") {
-        let after = production[at + "ActionError::new(".len()..].trim_start();
-        match after.strip_prefix('"').and_then(|rest| {
-            rest.find('"').map(|end| rest[..end].to_owned())
-        }) {
-            Some(class) => found.push(Some(class)),
-            None => found.push(None),
+        let arguments = arguments_at(production, at + "ActionError::new".len());
+        match arguments.first() {
+            Some(class) => found.push(named(class, constants)),
+            None => found.push(Named::Unreadable),
+        }
+    }
+    // The executor closes a step with a class nobody raised: the fourth
+    // argument, `None` when the step did not fail at all.
+    for (at, _) in production.match_indices("closed(") {
+        if !calls_here(production, at) {
+            continue;
+        }
+        let arguments = arguments_at(production, at + "closed".len());
+        let Some(class) = arguments.get(3) else {
+            found.push(Named::Unreadable);
+            continue;
+        };
+        let class = class.trim();
+        if class == "None" {
+            continue;
+        }
+        match class.strip_prefix("Some(").and_then(|rest| rest.strip_suffix(')')) {
+            Some(inside) => found.push(named(inside, constants)),
+            None => found.push(Named::Unreadable),
         }
     }
     found
@@ -91,16 +208,23 @@ fn measured() -> (Vec<String>, usize) {
 }
 
 fn measured_under(root: &Path) -> (Vec<String>, usize) {
+    let sources = every_source_under(root);
+    let read: Vec<String> = sources
+        .iter()
+        .filter_map(|file| std::fs::read_to_string(file).ok())
+        .collect();
+    let mut constants = BTreeMap::new();
+    for text in &read {
+        constants_in(text, &mut constants);
+    }
     let mut classes = Vec::new();
     let mut unreadable = 0;
-    for file in every_source_under(root) {
-        let Ok(text) = std::fs::read_to_string(&file) else {
-            continue;
-        };
-        for reported in classes_reported(&text) {
+    for text in &read {
+        for reported in classes_reported(text, &constants) {
             match reported {
-                Some(class) => classes.push(class),
-                None => unreadable += 1,
+                Named::Class(class) => classes.push(class),
+                Named::Relayed => {}
+                Named::Unreadable => unreadable += 1,
             }
         }
     }
@@ -114,7 +238,15 @@ fn measured_under(root: &Path) -> (Vec<String>, usize) {
 #[test]
 fn the_scan_finds_the_classes_that_are_known_to_be_there() {
     let (classes, _) = measured();
-    for known in ["engine_exit_error", "answer_not_json", "invalid_input"] {
+    // The last two come through `closed(…)` alone, one of them named by a
+    // constant: a scan reading `ActionError` only finds neither.
+    for known in [
+        "engine_exit_error",
+        "answer_not_json",
+        "invalid_input",
+        "process_disappeared",
+        "handoff_expired",
+    ] {
         assert!(
             classes.iter().any(|class| class == known),
             "the scan did not find «{known}», which is written out in the source: \
@@ -234,8 +366,11 @@ fn the_scans_blind_spot_does_not_grow() {
 }
 
 /// **THE VERDICT HAS ONLY EVER SEEN A TREE WITH NOTHING WRONG IN IT.** A mute
-/// class and a class the scan cannot read are both planted in a throwaway tree
-/// under the temporary directory, and the same two verdicts are asked of it.
+/// class and a class the scan cannot read are planted in a throwaway tree under
+/// the temporary directory, through both doors and by both spellings, and the
+/// same two verdicts are asked of it. A close that broke nothing and a close
+/// relaying a failure already counted are planted beside them: neither is a
+/// class of its own, and counting either would make every seed here drift.
 #[test]
 fn a_mute_class_planted_in_a_throwaway_tree_is_found() {
     let root = std::env::temp_dir().join(format!(
@@ -247,10 +382,19 @@ fn a_mute_class_planted_in_a_throwaway_tree_is_found() {
     std::fs::create_dir_all(&src).expect("a throwaway crate directory");
     std::fs::write(
         src.join("lib.rs"),
-        "fn fall(reason: &str) -> ActionError {\n    \
+        "const A_CLASS_IN_A_CONSTANT: &str = \"a_class_a_constant_names_with_no_sentence\";\n\
+         fn fall(reason: &str) -> ActionError {\n    \
          ActionError::new(\"a_class_nobody_wrote_a_sentence_for\", reason)\n}\n\
          fn fall_again(class: &str) -> ActionError {\n    \
-         ActionError::new(class, \"read off something outside this repository\")\n}\n",
+         ActionError::new(class, \"read off something outside this repository\")\n}\n\
+         fn shut(now: i64) -> Completion {\n    \
+         closed(Outcome::Broke, None, None, Some(\"a_class_a_close_hands_over_with_no_sentence\"), now)\n}\n\
+         fn shut_by_constant(now: i64) -> Completion {\n    \
+         closed(Outcome::Broke, None, None, Some(A_CLASS_IN_A_CONSTANT), now)\n}\n\
+         fn shut_well(now: i64) -> Completion {\n    \
+         closed(Outcome::Went, Some(json!({})), None, None, now)\n}\n\
+         fn shut_relaying(error: ActionError, now: i64) -> Completion {\n    \
+         closed(Outcome::Waiting, None, None, Some(error.class.as_str()), now)\n}\n",
     )
     .expect("the planted source writes");
 
@@ -261,7 +405,11 @@ fn a_mute_class_planted_in_a_throwaway_tree_is_found() {
 
     assert_eq!(
         named,
-        vec!["a_class_nobody_wrote_a_sentence_for".to_owned()],
+        vec![
+            "a_class_a_close_hands_over_with_no_sentence".to_owned(),
+            "a_class_a_constant_names_with_no_sentence".to_owned(),
+            "a_class_nobody_wrote_a_sentence_for".to_owned(),
+        ],
         "a class with no sentence was written into a source and the verdict did \
          not name it: whoever hit it would read the bare class name"
     );

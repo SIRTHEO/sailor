@@ -380,11 +380,12 @@ fn announced_close(step_id: &str, attempt: u32, epoch: u64, completion: &Complet
     })
 }
 
-/// Resumes a run the ledger holds — one parked on a person and just closed —
-/// through this window: the run joins the registry, every step reaches the
-/// console, and Stop applies to it. The root is the one the window stands
-/// in, and the answer says so, because the ledger keeps no root of a run's own.
+/// Resumes a run parked on a person and just closed, through this window: it
+/// joins the registry, every step reaches the console, and Stop applies. The
+/// root is the window's, the ledger keeping none of a run's own. **The first
+/// argument is the rule's answer**: no door resumes before asking whose run it is.
 pub(crate) fn resume(
+    _rule: sailor::step_cmd::TheRunIsItsDoorsToResume,
     app: &AppHandle,
     runs: &Arc<Runs>,
     ledger: Ledger,

@@ -356,6 +356,12 @@
         "output_schema": {
           "type": "object",
           "properties": {
+            "status": {
+              "type": "one_of",
+              "values": [
+                "passed"
+              ]
+            },
             "commit": {
               "type": "string"
             },
@@ -370,6 +376,7 @@
             }
           },
           "required": [
+            "status",
             "commit",
             "verdict",
             "findings",
