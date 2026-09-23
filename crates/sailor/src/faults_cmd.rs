@@ -440,10 +440,14 @@ fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, 
     // the rows are replaced where they stand and the prose around them stays.
     let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
     if open_only {
-        let on_the_page = faults::on_the_public_page(&all).len();
-        let open = all.iter().filter(|fault| fault.still_open()).count();
-        std::fs::write(file, faults::render_open_into(&document, &all))
-            .map_err(|error| format!("{file}: {error}"))?;
+        let stood = store.stood_now().map_err(|error| error.to_string())?;
+        let then = store
+            .as_it_stood(&stood)
+            .map_err(|error| error.to_string())?;
+        let on_the_page = faults::on_the_public_page(&then).len();
+        let open = then.iter().filter(|fault| fault.still_open()).count();
+        let page = faults::stood_written_into(&faults::render_open_into(&document, &then), &stood);
+        std::fs::write(file, page).map_err(|error| format!("{file}: {error}"))?;
         return Ok(catalogue::say(
             "cli.faults.written_open",
             &[
@@ -482,10 +486,13 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
             || faults::is_the_count_sentence(line)
     });
     if written.is_empty() && a_public_page {
-        return Err(catalogue::say(
-            "cli.faults.check_public_page",
-            &[("file", file)],
-        ));
+        return match faults::stood_in(&text) {
+            Some(stood) => the_page_against_the_store(store, file, &text, &stood),
+            None => Err(catalogue::say(
+                "cli.faults.check_public_page",
+                &[("file", file)],
+            )),
+        };
     }
     if written.is_empty() {
         return Err(catalogue::say(
@@ -554,6 +561,81 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         said.push('\n');
     }
     Err(said.trim_end().to_owned())
+}
+
+/// The public page against the store as it stood when the page was counted:
+/// what opened or closed since is the next render's, not a drift.
+fn the_page_against_the_store(
+    store: &Faults,
+    file: &str,
+    text: &str,
+    stood: &faults::Stood,
+) -> Result<String, String> {
+    let then = store
+        .as_it_stood(stood)
+        .map_err(|error| error.to_string())?;
+    let drifts = faults::how_the_page_drifts(text, &then);
+    let through = stood.through.to_string();
+    let when = [
+        ("file", file),
+        ("through", through.as_str()),
+        ("at", stood.at.as_str()),
+    ];
+    if drifts.is_empty() {
+        let open_then = then
+            .iter()
+            .filter(|fault| fault.still_open())
+            .count()
+            .to_string();
+        let open_now = store
+            .still_open()
+            .map_err(|error| error.to_string())?
+            .to_string();
+        let mut said = when.to_vec();
+        said.extend([("open", open_then.as_str()), ("now", open_now.as_str())]);
+        return Ok(catalogue::say("cli.faults.page_agrees", &said));
+    }
+    let numbers = |pick: fn(&faults::Drift) -> Option<i64>| -> Vec<i64> {
+        drifts.iter().filter_map(pick).collect()
+    };
+    let missing = numbers(|drift| match drift {
+        faults::Drift::NotInTheStore(number) => Some(*number),
+        _ => None,
+    });
+    let closed = numbers(|drift| match drift {
+        faults::Drift::NotOpenThen(number) => Some(*number),
+        _ => None,
+    });
+    let mut said = catalogue::say("cli.faults.page_differs", &when);
+    if !missing.is_empty() {
+        let listed = format!("{missing:?}");
+        said.push_str(&format!(
+            "\n  {}",
+            catalogue::say(
+                "cli.faults.page_row_not_in_the_store",
+                &[("numbers", &listed)]
+            )
+        ));
+    }
+    if !closed.is_empty() {
+        let listed = format!("{closed:?}");
+        said.push_str(&format!(
+            "\n  {}",
+            catalogue::say("cli.faults.page_row_not_open_then", &[("numbers", &listed)])
+        ));
+    }
+    for drift in &drifts {
+        let line = match drift {
+            faults::Drift::CountDiffers { page, store } => catalogue::say(
+                "cli.faults.page_count_differs",
+                &[("page", &page.to_string()), ("store", &store.to_string())],
+            ),
+            faults::Drift::NoCountSentence => catalogue::say("cli.faults.page_has_no_count", &[]),
+            _ => continue,
+        };
+        said.push_str(&format!("\n  {line}"));
+    }
+    Err(said)
 }
 
 /// Brings in a hand-written table. Once, and it says so.
@@ -919,6 +1001,52 @@ mod tests {
         let said = check(&store, std::slice::from_ref(&file)).expect_err("an empty public page is not a register");
 
         assert!(said.contains("render --open"), "the empty public page got the generic answer: {said}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The page is held to the store as it stood when it was counted: a fault
+    /// opened since leaves it agreeing, and a row the store never held does not.
+    #[test]
+    fn checking_the_public_page_holds_it_to_the_store_as_it_stood() {
+        let (dir, store, number) = a_store_holding("check-stood", &a_fault());
+        store
+            .set_public_summary(number, "The window forgets a flow.")
+            .expect("a summary");
+        let page = dir.join("page.md");
+        let header = format!(
+            "# Faults still open\n\n{}\n|---|---|---|---|\n",
+            faults::PUBLIC_HEADER
+        );
+        std::fs::write(&page, header).expect("a public page");
+        let file = page.display().to_string();
+        let options: BTreeMap<String, String> = [
+            ("file".to_owned(), file.clone()),
+            ("open".to_owned(), "true".to_owned()),
+        ]
+        .into_iter()
+        .collect();
+        render(&store, &options).expect("rendering");
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        store
+            .record(&a_fault())
+            .expect("a fault opened after the count");
+
+        let agreed = check(&store, std::slice::from_ref(&file))
+            .expect("the page agrees with the store as it stood");
+        assert!(
+            agreed.contains("1 open then") && agreed.contains("2 open now"),
+            "{agreed}"
+        );
+
+        let text = std::fs::read_to_string(&page).expect("the page");
+        let forged = text.replace(
+            "|---|---|---|---|\n",
+            "|---|---|---|---|\n| 7 | 03/09 | A row nobody recorded. | **open** |\n",
+        );
+        std::fs::write(&page, forged).expect("a row nobody recorded");
+        let refused =
+            check(&store, std::slice::from_ref(&file)).expect_err("a row the store never held");
+        assert!(refused.contains("[7]"), "{refused}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

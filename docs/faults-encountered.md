@@ -36,4 +36,6 @@ for a vulnerability, follow [`SECURITY.md`](../SECURITY.md) instead.
 | 190 | 14/09 | Flow steps are falsely marked as `engine_exhausted` when an engine echoes prompt text containing the word `quota` to standard error. | **open** |
 | 193 | 14/09 | `sailor flow publish` rejects flows containing steps with a field named `key` by misinterpreting the field name as an exposed credential. | **open** |
 
-**Twenty-five open faults are described on this page; sixty-three more are kept only in the fault store.**
+**Twenty-five open faults are described on this page; a hundred and one more are kept only in the fault store.**
+
+Counted from the fault store through fault 315, as it stood at 2026-09-23T14:11:03.400Z.

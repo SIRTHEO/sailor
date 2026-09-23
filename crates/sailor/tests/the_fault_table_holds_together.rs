@@ -294,3 +294,25 @@ fn the_count_sentence_matches_the_rows_of_the_page() {
          rather than editing the sentence"
     );
 }
+
+/// **A PAGE FROZEN AT A COMMIT IS COMPARED WITH THE STORE AS IT STOOD THEN.**
+/// Without the line, the journey compares it with a store that kept moving and
+/// is red by construction; and no row may be newer than the line says.
+#[test]
+fn the_page_says_what_it_was_counted_from() {
+    let text = page();
+    let stood = faults::stood_in(&text).expect(
+        "the page does not say which moment of the store it was counted from. Render the page \
+         again from the store",
+    );
+    let newer: Vec<usize> = faults()
+        .iter()
+        .map(|fault| fault.number)
+        .filter(|number| *number as i64 > stood.through)
+        .collect();
+    assert!(
+        newer.is_empty(),
+        "these rows are newer than the fault the page says it was counted through ({}): {newer:?}",
+        stood.through
+    );
+}

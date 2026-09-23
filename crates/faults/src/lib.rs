@@ -392,12 +392,22 @@ pub struct Faults {
     /// A store only ever opened by a binary without `faults link` has no
     /// table for them, and read-only it cannot be given one.
     the_github_issues: bool,
+    the_standing_changes: bool,
 }
 
 fn the_public_summaries_are_there(connection: &Connection) -> Result<bool, FaultError> {
     let found: i64 = connection.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'public_summaries'",
         [],
+        |row| row.get(0),
+    )?;
+    Ok(found == 1)
+}
+
+fn a_table_is_there(connection: &Connection, name: &str) -> Result<bool, FaultError> {
+    let found: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        params![name],
         |row| row.get(0),
     )?;
     Ok(found == 1)
@@ -496,12 +506,14 @@ impl Faults {
         let the_reading_columns = the_reading_columns_are_there(&connection)?;
         let the_public_summaries = the_public_summaries_are_there(&connection)?;
         let the_github_issues = the_github_issues_are_there(&connection)?;
+        let the_standing_changes = a_table_is_there(&connection, "standing_changes")?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns,
             the_public_summaries,
             the_github_issues,
+            the_standing_changes,
         })
     }
 
@@ -549,6 +561,16 @@ impl Faults {
                  issue_url TEXT NOT NULL
              );",
         )?;
+        // Every change of standing, so a page counted at one instant can be
+        // compared with the store as it stood then (see `stood`).
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS standing_changes (
+                 number INTEGER NOT NULL,
+                 was TEXT NOT NULL,
+                 became TEXT NOT NULL,
+                 at TEXT NOT NULL
+             );",
+        )?;
         connection.pragma_update(None, "user_version", FAULTS_SCHEMA_VERSION)?;
         Ok(Faults {
             connection,
@@ -556,6 +578,7 @@ impl Faults {
             the_reading_columns: true,
             the_public_summaries: true,
             the_github_issues: true,
+            the_standing_changes: true,
         })
     }
 
@@ -621,6 +644,8 @@ impl Faults {
         ])?;
         a_status_the_count_can_read(&fault.status)?;
         let happened = Happening::read(&fault.happened_on);
+        let was = self.standing_held(fault.number)?;
+        let transaction = self.connection.unchecked_transaction()?;
         self.connection.execute(
             "INSERT OR REPLACE INTO faults
                  (number, happened_on, what_happened, how_it_showed, what_would_prevent,
@@ -638,6 +663,10 @@ impl Faults {
                 happened.value(),
             ],
         )?;
+        if let Some(was) = was {
+            self.write_the_change(fault.number, was, standing_of(&fault.status))?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -733,13 +762,17 @@ impl Faults {
     pub fn set_status(&self, number: i64, status: &str) -> Result<Fault, FaultError> {
         nothing_that_breaks_a_row(&[("status", status)])?;
         a_status_the_count_can_read(status)?;
+        let was = self.standing_held(number)?;
+        let transaction = self.connection.unchecked_transaction()?;
         let touched = self.connection.execute(
             "UPDATE faults SET status = ?2, standing = ?3 WHERE number = ?1",
             params![number, status, standing_of(status).word()],
         )?;
-        if touched == 0 {
+        let Some(was) = was.filter(|_| touched > 0) else {
             return Err(FaultError::Unknown(number));
-        }
+        };
+        self.write_the_change(number, was, standing_of(status))?;
+        transaction.commit()?;
         self.get(number)
     }
 
@@ -824,5 +857,7 @@ impl Faults {
 }
 
 mod document;
+mod stood;
 
 pub use document::*;
+pub use stood::*;
