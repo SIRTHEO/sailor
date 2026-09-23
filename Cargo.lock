@@ -431,6 +431,7 @@ dependencies = [
  "profiles",
  "registry",
  "release",
+ "rusqlite",
  "serde",
  "serde_json",
  "sessions",

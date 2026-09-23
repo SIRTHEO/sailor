@@ -392,7 +392,7 @@ pub struct Faults {
     /// A store only ever opened by a binary without `faults link` has no
     /// table for them, and read-only it cannot be given one.
     the_github_issues: bool,
-    the_standing_changes: bool,
+    the_history: bool,
 }
 
 fn the_public_summaries_are_there(connection: &Connection) -> Result<bool, FaultError> {
@@ -506,14 +506,14 @@ impl Faults {
         let the_reading_columns = the_reading_columns_are_there(&connection)?;
         let the_public_summaries = the_public_summaries_are_there(&connection)?;
         let the_github_issues = the_github_issues_are_there(&connection)?;
-        let the_standing_changes = a_table_is_there(&connection, "standing_changes")?;
+        let the_history = a_table_is_there(&connection, stood::HISTORY)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns,
             the_public_summaries,
             the_github_issues,
-            the_standing_changes,
+            the_history,
         })
     }
 
@@ -561,16 +561,9 @@ impl Faults {
                  issue_url TEXT NOT NULL
              );",
         )?;
-        // Every change of standing, so a page counted at one instant can be
-        // compared with the store as it stood then (see `stood`).
-        connection.execute_batch(
-            "CREATE TABLE IF NOT EXISTS standing_changes (
-                 number INTEGER NOT NULL,
-                 was TEXT NOT NULL,
-                 became TEXT NOT NULL,
-                 at TEXT NOT NULL
-             );",
-        )?;
+        // Kept by triggers, so a binary that predates them is written down too
+        // once any newer one has opened the store (see `stood`).
+        stood::keep_the_history(&connection)?;
         connection.pragma_update(None, "user_version", FAULTS_SCHEMA_VERSION)?;
         Ok(Faults {
             connection,
@@ -578,7 +571,7 @@ impl Faults {
             the_reading_columns: true,
             the_public_summaries: true,
             the_github_issues: true,
-            the_standing_changes: true,
+            the_history: true,
         })
     }
 
@@ -644,8 +637,6 @@ impl Faults {
         ])?;
         a_status_the_count_can_read(&fault.status)?;
         let happened = Happening::read(&fault.happened_on);
-        let was = self.standing_held(fault.number)?;
-        let transaction = self.connection.unchecked_transaction()?;
         self.connection.execute(
             "INSERT OR REPLACE INTO faults
                  (number, happened_on, what_happened, how_it_showed, what_would_prevent,
@@ -663,10 +654,6 @@ impl Faults {
                 happened.value(),
             ],
         )?;
-        if let Some(was) = was {
-            self.write_the_change(fault.number, was, standing_of(&fault.status))?;
-        }
-        transaction.commit()?;
         Ok(())
     }
 
@@ -762,17 +749,13 @@ impl Faults {
     pub fn set_status(&self, number: i64, status: &str) -> Result<Fault, FaultError> {
         nothing_that_breaks_a_row(&[("status", status)])?;
         a_status_the_count_can_read(status)?;
-        let was = self.standing_held(number)?;
-        let transaction = self.connection.unchecked_transaction()?;
         let touched = self.connection.execute(
             "UPDATE faults SET status = ?2, standing = ?3 WHERE number = ?1",
             params![number, status, standing_of(status).word()],
         )?;
-        let Some(was) = was.filter(|_| touched > 0) else {
+        if touched == 0 {
             return Err(FaultError::Unknown(number));
-        };
-        self.write_the_change(number, was, standing_of(status))?;
-        transaction.commit()?;
+        }
         self.get(number)
     }
 

@@ -305,6 +305,11 @@ fn the_page_says_what_it_was_counted_from() {
         "the page does not say which moment of the store it was counted from. Render the page \
          again from the store",
     );
+    assert!(
+        stood.change.is_some(),
+        "the page was counted from a store that kept no history, so no check can tell what \
+         stood then. Render the page again with a binary that keeps it"
+    );
     let newer: Vec<usize> = faults()
         .iter()
         .map(|fault| fault.number)
