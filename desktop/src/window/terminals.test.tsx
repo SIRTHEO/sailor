@@ -107,6 +107,25 @@ describe("the terminals, in the three columns", () => {
     expect(document.querySelector(".window-row[aria-current]")?.textContent).toContain("zsh");
   });
 
+  /** A machine that will not answer at all, which is the third state of the question. */
+  function machineRefuses(why: string) {
+    (window as unknown as { __TAURI__: unknown }).__TAURI__ = {
+      core: { invoke: () => Promise.reject(new Error(why)) },
+      event: { listen: () => Promise.resolve(() => {}) },
+    };
+  }
+
+  test("REFUSED, THE FIELD SAYS WHY instead of looking for ever", async () => {
+    machineRefuses("the engine is not answering");
+    render(<TheWindow native />);
+    fireEvent.click(screen.getByRole("button", { name: "Terminals" }));
+    await waitFor(() => {
+      expect(document.querySelector(".window-field")?.textContent).toContain("the engine is not answering");
+    });
+    const field = document.querySelector(".window-field")?.textContent ?? "";
+    expect(field, "«Looking…» answers for asking, never for refused").not.toContain("Looking");
+  });
+
   test("with none open, the panel says so rather than drawing nothing", async () => {
     machineHolds([]);
     render(<TheWindow native />);

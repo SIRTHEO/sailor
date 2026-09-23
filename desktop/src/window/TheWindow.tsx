@@ -158,7 +158,18 @@ function Terminals({ native, ceiling, at }: { native: boolean; ceiling: number |
 
   let field;
   if (held === null) {
-    field = <FieldEmpty say={t(asked.state === "answered" ? "window.terminals.open_one" : "window.looking")} />;
+    // Three states, not two, the way the panel beside it already does: folding
+    // «I could not ask» into «Looking…» leaves the field searching forever
+    // while the panel says why nobody answered.
+    field = (
+      <FieldEmpty
+        say={
+          asked.state === "mute"
+            ? asked.why
+            : t(asked.state === "asking" ? "window.looking" : "window.terminals.open_one")
+        }
+      />
+    );
   } else {
     const liveness = livenessOf(held, closed, channel.on);
     field = (
