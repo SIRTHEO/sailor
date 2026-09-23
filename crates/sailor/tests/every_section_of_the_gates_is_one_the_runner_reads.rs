@@ -116,7 +116,8 @@ fn the_runner_reads_every_section_the_manifest_declares() {
     let root = root();
     let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
     let plan = the_plan(&root);
-    for section in the_sections(&manifest) {
+    let sections = the_sections(&manifest);
+    for section in &sections {
         assert!(
             plan.contains(&section.letter),
             "«{}» is a section of {THE_GATES} and the runner's plan holds none of its lines: \
@@ -124,6 +125,12 @@ fn the_runner_reads_every_section_the_manifest_declares() {
             section.letter
         );
     }
+    workspace::measured_against(
+        sections.len(),
+        "sections of the gates",
+        plan.len(),
+        "letters the runner plans",
+    );
 }
 
 /// Two sections under one letter read exactly as one section read twice: the
