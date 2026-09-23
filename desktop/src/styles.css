@@ -7537,7 +7537,6 @@ tr[data-followable]:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
 }
 
 .window-panel__name {

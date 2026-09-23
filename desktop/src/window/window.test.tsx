@@ -124,3 +124,16 @@ describe("a row reached by the keyboard", () => {
       .toEqual([["outline-offset", "2px"]]);
   });
 });
+
+describe("the head of the panel", () => {
+  /** The 12px was the prototype's `gap`, and a gap with one child separates it
+   *  from nothing: the head's own `padding-bottom` is the whole separation. */
+  test("DROPS THE GAP OF A SLOT THAT LEFT, and keeps its own padding", () => {
+    render(<Panel title="Workspaces"><ul className="window-rows" /></Panel>);
+    const head = document.querySelector(".window-panel__head")!;
+    expect([...head.children].map((child) => child.className)).toEqual(["window-panel__title"]);
+    const styles = styleTree(head, parseStylesheet(stylesheetSource));
+    expect(styles.get(head.firstElementChild!)?.declarations.get("margin-bottom")).toBeUndefined();
+    expect(styles.get(head)?.declarations.get("padding")).toBe("20px 20px 12px");
+  });
+});
