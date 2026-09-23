@@ -2,7 +2,25 @@
 
 A release is a program a person can use, not a suite that passed. This file is the journey a person walks on the **installed** binary before the release is called done; each walk is recorded below with the version it was walked on and what each step actually showed. A step whose expectation is not met is red, and a red step stops the release, whatever the suite said.
 
-Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplevel)`; every command uses the installed `sailor` on PATH, never `cargo run`. The store used is a scratch one under `target/`, never this machine's own.
+Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplevel)`; every command uses the installed `sailor` on PATH, never `cargo run`. The store used is a scratch one under `target/`, never this machine's own, save in steps 0 and 10, which hold the public page to the store it was counted from.
+
+## Before the release is cut
+
+Step 10 checks the public page as it is committed, so the page is brought up to date before the release is cut, never during the walk.
+
+0. On a branch cut from the trunk being released, build that trunk into a target of its own, render the page from this machine's own store with `SAILOR_LEDGER` unset so no scratch store stands in for it, and check it:
+
+   ```sh
+   git fetch && git switch -c work/the-page-counted-for-the-release origin/$(git config --get sailor.trunk)
+   CARGO_TARGET_DIR=$SAILOR_REPO/target/page cargo build -j 1 -p sailor
+   env -u SAILOR_LEDGER $SAILOR_REPO/target/page/debug/sailor faults render --open --file docs/faults-encountered.md
+   env -u SAILOR_LEDGER $SAILOR_REPO/target/page/debug/sailor faults check docs/faults-encountered.md
+   git commit -m "docs(faults): the public page counted for the release" -- docs/faults-encountered.md
+   ```
+
+   The check must say «agrees». The page reaches the trunk through an ordinary pull request, and the release is cut from the trunk that holds it.
+
+   The first time this runs, it is the first thing that writes the history's triggers into the machine's store. The binary in service, older than them, keeps working against them: add, close, reopen, summary, reword, link, unlink and list each ran against a store that held them, in about 15 ms a command, and every change they made to a fault or to its summary was written down. A page rendered from any copy of the store, and not from the store itself, answers «cannot tell» on the walk, because a copy's history is not the store's.
 
 ## The steps
 
@@ -17,7 +35,7 @@ Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplev
 | 7 | the same for `beta` (its check names a file the worker is never told to write) | the run ends «waiting» at `handoff`; the row carries the reason the acceptance did not pass |
 | 8 | the window (`cd desktop && npm run desktop`, with the same `SAILOR_LEDGER`) | the parked `beta` row is visible with its reason and a way to open the run; nothing else claims attention |
 | 9 | `sailor step approve --run <beta run id> --step handoff --as <name>` | «step handoff approved»; the run ends `failed` with «the required step acceptance did not pass», because an approval does not make the acceptance pass; `beta`'s queue row stays `parked`, the option the approval leaves standing; the run leaves the attention list: it names a waiting run's handed steps, runs stopped at their cap, dead terminals, unreachable engines and an unreadable store, and a run that ended `failed` is none of these |
-| 10 | `sailor faults render --open --file docs/faults-encountered.md` with the candidate binary right before the walk, then `sailor faults check docs/faults-encountered.md` (the machine's own store) | «agrees with the store as it stood through fault N»: the page equals a fresh render of the store as it stood at its stamp, row by row, text included, and the count sentence with them. Faults opened or closed after the render, by any binary, do not move it; any other line is red and named. «cannot tell what stood then» is red too: the store's history does not reach the stamp, which is why the page is rendered with the candidate first |
+| 10 | `env -u SAILOR_LEDGER sailor faults check docs/faults-encountered.md` on the page as committed at the candidate, with no render first; the one step read against this machine's own store | «agrees with the store as it stood through fault N»: the page equals a render of the store as it stood at its stamp, row by row, text included, and the count sentence with them. Faults opened or closed after the page was counted, by any binary, do not move it. Any line the check names is red, and «cannot tell what stood then» is red too: the page was not counted from this store's history, which step 0 is for. The walk leaves the page as committed |
 
 ## Walks
 
@@ -25,4 +43,4 @@ Every path is `$SAILOR_REPO/...` with `SAILOR_REPO=$(git rev-parse --show-toplev
 |---|---|---|---|---|
 | 2026-09-14 | 0.1.0 (b3d8efdf) | 2, 3, 4, 5, 6, 7, 8, 9 | 1: `sailor version` prints «sailor 0.1.0» and no commit, so a person cannot tell which build is in service. 10: the open count matches (54) but the store says 177 faults where the register says 186 — rows added to the document were never added to the store. And the walk itself broke something: the window opened on the scratch store ran the machine's scheduled flows against it and took down a worktree a live terminal was working in (fault 187). | the coordinator |
 | 2026-09-22 | 0.1.0 (82859477) | 1, 2, 3, 4, 5, 6, 7 | 10: the store holds 88 open faults and the page says 87, because fault 274 was opened after the page was rendered; the page is rendered again from the store with this change. 2 as written seeded a real engine as the cheap worker, so 6 and 7 first called it and spent about a dollar (fault 275); both passed once the fake worker was named. 8 and 9 not walked, the release having stopped at 10. | the coordinator |
-| 2026-09-23 | 0.1.0 (3a03bdae) | 1, 2, 3, 6, 7, 9 | 10: the store holds 126 open faults and the page counts 88, because faults are opened all day and the page is frozen at the commit that rendered it: the step compared a moving store with a fixed page and was red by construction. It now compares the page with the store as it stood when the page was counted. 4 as written: one engine reads not known, since its descriptor declares no way to ask it; the expectation now names that answer. 5 as written: the fixture worker's descriptor contradicted itself and declared no refusal, so its line was left untried; the fixture now declares both. 9: the run ends `failed` and the row stays `parked`, which is right and is now what the step says. 8 not walked. | an agent; the window was not opened |
+| 2026-09-23 | 0.1.0 (3a03bdae) | 1, 2, 3, 6, 7, 9 | 10: the store holds 126 open faults and the page counts 88, because faults are opened all day and the page is frozen at the commit that rendered it: the step compared a moving store with a fixed page and was red by construction. It now compares the page with the store as it stood when the page was counted. 4 as written: one engine reads not known, since its descriptor declares no way to ask it; the expectation now names that answer. 5 as written: the fixture worker's descriptor contradicted itself and declared no refusal, so its line was left untried; the fixture now declares both. 9: the run ends `failed` and the row stays `parked`, which is right and is now what the step says. 8 not walked. | the coordinator; the window was not opened |
