@@ -73,9 +73,10 @@ fn the_sections(manifest: &str) -> Vec<Section> {
     sections
 }
 
-/// A directory of this run's own, so two suites at once never share one.
-fn scratch() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("sailor-gates-{}", std::process::id()));
+/// A directory of this run's own, so neither two suites at once nor two
+/// checks in this one ever share one.
+fn scratch(label: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("sailor-gates-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("the scratch directory");
     dir
@@ -158,7 +159,7 @@ fn every_line_a_section_holds_reaches_the_runner() {
     let root = root();
     let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
     let whole = the_plan_of(&root, &root.join(THE_GATES)).expect("the runner prints its plan");
-    let scratch = scratch();
+    let scratch = scratch("shortened");
     let shortened = scratch.join("gates.md");
     let lines: Vec<&str> = manifest.lines().collect();
     for section in the_sections(&manifest) {
@@ -224,91 +225,152 @@ fn the_runner_still_answers_without_being_asked_for_its_plan() {
     );
 }
 
-/// The body of the runner's own answer to «does this letter apply», so that
-/// what a check holds it to is the text that decides, never a copy of it.
+/// The shell the runner is written for, named outright: what road a `sh` on
+/// the path would be is a fact about this machine.
+const A_SHELL: &str = "/bin/sh";
+
+/// The two places a POSIX system keeps the tools an arm reaches for. Written
+/// out for the same reason.
+const THE_ONLY_PATH: &str = "/usr/bin:/bin";
+
+/// The line the runner's own answer to «does this letter apply» opens with.
+const DECIDES: &str = "applies() {";
+
+/// A tracked file no section of the manifest is about, so every letter but `A`
+/// has to answer no to it.
+const A_FILE_NO_SECTION_IS_ABOUT: &str = "CODE_OF_CONDUCT.md";
+
+/// The body of the runner's own answer to «does this letter apply», from the
+/// line that opens it to the line that closes it, so what a check holds it to
+/// is the text that decides, never a copy of it.
 fn decides(runner: &str) -> String {
-    runner
-        .split("applies()")
-        .nth(1)
-        .and_then(|rest| rest.split_once('}'))
-        .map(|(body, _)| body.to_owned())
+    let lines: Vec<&str> = runner.lines().collect();
+    let opened = lines
+        .iter()
+        .position(|line| *line == DECIDES)
         .expect("the runner says which letters apply")
+        + 1;
+    let closed = lines[opened..]
+        .iter()
+        .position(|line| *line == "}")
+        .expect("the runner closes what it opened");
+    lines[opened..opened + closed].join("\n")
 }
 
-/// Every quoted word a letter's own arm holds, whatever command it is spelled
-/// with. Reading the arm by the exact words `grep -E -q` made the check blind
-/// to `grep -Eq`, and narrowing the words by how a pattern tends to look would
-/// go blind again at the first plain one: nothing here is told what a pattern
-/// is, and it is enough that one of them names something real.
-fn the_matches(runner: &str) -> Vec<(String, Vec<String>)> {
-    decides(runner)
-        .lines()
-        .filter_map(|line| {
-            let (letter, rest) = line.trim().split_once(')')?;
-            let quoted = rest
-                .split('\'')
-                .skip(1)
-                .step_by(2)
-                .map(str::to_owned)
-                .collect();
-            Some((letter.to_owned(), quoted))
-        })
+/// The runner's own arms, lifted out of the script and asked the one question
+/// that decides anything: this file changed — are this letter's lines yours?
+/// They are handed one path and nothing else. No repository stands under them,
+/// none of this machine's environment reaches them, and the directory they run
+/// in is an empty one of this run's own: what an arm can read is what it was
+/// given, and how it is spelled is its own business.
+fn answers_for(arms: &str, here: &Path, letter: &str, changed: &str) -> bool {
+    Command::new(A_SHELL)
+        .args([
+            "-c",
+            &format!("{DECIDES}\n{arms}\n}}\napplies \"$1\""),
+            "gates",
+            letter,
+        ])
+        .env_clear()
+        .env("PATH", THE_ONLY_PATH)
+        .env("changed", changed)
+        .current_dir(here)
+        .output()
+        .expect("the arm answers")
+        .status
+        .success()
+}
+
+/// What a section's heading says its letter is for: the names it spells out
+/// between backticks, each broken into the parts a path would carry.
+fn what_it_names(says: &str) -> Vec<Vec<String>> {
+    says.split('`')
+        .skip(1)
+        .step_by(2)
+        .map(|name| name.split("::").map(str::to_owned).collect())
         .collect()
 }
 
-/// A letter is dead when nothing in the tree could ever make it apply, and as
-/// dead when its arm names nothing to look for. `A` answers to everything and
-/// is written with no word of its own, so it is the one letter exempt.
+/// The first file this tree tracks whose path carries every part of a name, in
+/// the order the name spells them.
+fn a_file_named(parts: &[String], tracked: &[String]) -> Option<String> {
+    tracked
+        .iter()
+        .find(|path| {
+            let mut rest = path.as_str();
+            parts.iter().all(|part| match rest.find(part.as_str()) {
+                Some(at) => {
+                    rest = &rest[at + part.len()..];
+                    true
+                }
+                None => false,
+            })
+        })
+        .cloned()
+}
+
+/// Every file this tree tracks, in the order git lists them.
+fn tracked_by(root: &Path) -> Vec<String> {
+    let said = Command::new("git")
+        .args(["ls-files"])
+        .current_dir(root)
+        .output()
+        .expect("git lists the tree");
+    String::from_utf8_lossy(&said.stdout)
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// A letter is dead when nothing in this tree could make it apply, and as dead
+/// when it applies to everything. Neither is read out of the words its arm is
+/// spelled with: the arm is run, over the files its own section says it is
+/// for, and over one file no section is about. `A` is every run's and answers
+/// to everything, so it is the one letter exempt; the letters decided
+/// elsewhere are held by the check that names them.
 #[test]
 fn every_letter_the_runner_decides_could_be_reached_by_this_tree() {
     let root = root();
     let runner = std::fs::read_to_string(root.join(THE_RUNNER)).expect("the runner");
-    let tracked = Command::new("git")
-        .args(["ls-files"])
-        .current_dir(&root)
-        .output()
-        .expect("git lists the tree");
-    let tracked = String::from_utf8_lossy(&tracked.stdout).into_owned();
-    let arms = the_matches(&runner);
-    for letter in the_plan(&root) {
-        // `A` is every run's, written with no word of its own, and the letters
-        // decided elsewhere are held by the check that names them.
+    let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
+    let arms = decides(&runner);
+    let tracked = tracked_by(&root);
+    let here = scratch("arms");
+    assert!(
+        tracked.iter().any(|path| path == A_FILE_NO_SECTION_IS_ABOUT),
+        "{A_FILE_NO_SECTION_IS_ABOUT} is the file every letter has to answer no to, and this \
+         tree does not track it"
+    );
+    for section in the_sections(&manifest) {
+        let letter = section.letter.as_str();
         if letter == "A" || DECIDED_ELSEWHERE.iter().any(|(named, _)| *named == letter) {
             continue;
         }
-        let words = arms
-            .iter()
-            .find(|(named, _)| *named == letter)
-            .map(|(_, words)| words.clone())
-            .unwrap_or_default();
+        let names = what_it_names(&section.says);
         assert!(
-            words.iter().any(|word| matches_a_file(word, &tracked)),
-            "«{letter}» is decided by {words:?}, and no file this tree tracks answers to any of \
-             them: its lines are read and then run for nobody"
+            !names.is_empty(),
+            "«{letter}» opens «{}» and names nothing between backticks: nothing says what \
+             its arm is supposed to answer yes to",
+            section.says
+        );
+        for parts in names {
+            let name = parts.join("::");
+            let touched = a_file_named(&parts, &tracked).unwrap_or_else(|| {
+                panic!("«{letter}» is the section for `{name}`, and this tree tracks no such file")
+            });
+            assert!(
+                answers_for(&arms, &here, letter, &touched),
+                "«{letter}» is the section for `{name}`, and the runner answers that {touched} \
+                 is none of its business: its lines are read and then run for nobody"
+            );
+        }
+        assert!(
+            !answers_for(&arms, &here, letter, A_FILE_NO_SECTION_IS_ABOUT),
+            "«{letter}» applies to {A_FILE_NO_SECTION_IS_ABOUT}, which no section is about: an \
+             arm that answers yes to everything decides nothing"
         );
     }
-}
-
-/// Whether the runner's own word, read by the tool the runner reads it with,
-/// names a file this tree holds.
-fn matches_a_file(word: &str, tracked: &str) -> bool {
-    use std::io::Write;
-    let Ok(mut child) = Command::new("grep")
-        .args(["-E", "-q", word])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    else {
-        return false;
-    };
-    let wrote = child
-        .stdin
-        .take()
-        .expect("the file list goes in")
-        .write_all(tracked.as_bytes());
-    let ended = child.wait().expect("grep answers");
-    wrote.is_ok() && ended.success()
+    let _ = std::fs::remove_dir_all(&here);
 }
 
 #[test]
