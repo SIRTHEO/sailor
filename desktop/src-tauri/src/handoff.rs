@@ -131,9 +131,10 @@ pub(crate) fn take_handed_step(run_id: String, step_id: String) -> Result<String
     sailor::step_cmd::open_step_in(&ledger, &found)
 }
 
-/// Closes a handed step with the outcome the person declares, then resumes
-/// the run through this window: it joins the registry of runs, so the console
-/// follows it and Stop applies, and the answer says which root it resumed in.
+/// Closes a handed step with the outcome the person declares, and carries the
+/// run on by the rule both doors share: only a run parked on a person that
+/// nobody else resumes. The resume this door hands in goes through the window,
+/// so the run joins the registry, the console follows it and Stop applies.
 #[tauri::command]
 pub(crate) fn close_handed_step(
     app: tauri::AppHandle,
@@ -155,8 +156,10 @@ pub(crate) fn close_handed_step(
         found.insert("said".to_owned(), said);
     }
     let closed = sailor::step_cmd::close_step_in(&ledger, &flow, &found)?;
-    let resuming = crate::run::resume(&app, &runs, ledger, flow, run_id)?;
-    Ok(format!("{closed}\n{resuming}"))
+    let store = ledger.clone();
+    sailor::step_cmd::carry_the_run_on(&ledger, &run_id, closed, || {
+        crate::run::resume(&app, &runs, store, flow, run_id.clone())
+    })
 }
 
 #[cfg(test)]
