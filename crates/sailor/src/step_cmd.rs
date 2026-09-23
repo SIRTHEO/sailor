@@ -325,9 +325,8 @@ fn close_step(found: &BTreeMap<String, String>) -> Result<String, String> {
 
 /// Resumes the run a close answered, as the window's close does: the step after
 /// a handoff only ever starts through a resume, and a close that left it to a
-/// printed line left six answered reviews parked for a day.
-/// Only a run parked on a person: a `running` one has a process of its own, and
-/// one that ended is not reopened by a close.
+/// printed line left six answered reviews parked for a day. The close is written
+/// before the resume starts, so how the resume ends is reported, never failed on.
 fn carry_the_run_on(
     ledger: &Ledger,
     flow: &FlowFile,
@@ -343,13 +342,18 @@ fn carry_the_run_on(
             )
         )
     })?;
-    if !header.is_some_and(|header| header.status == "waiting") {
+    if !header.is_some_and(|header| resumed_on_its_own(&header)) {
         return Ok(closed);
     }
-    match crate::flow_cmd::resume_run_in(ledger, flow, run_id) {
-        Ok(resumed) => Ok(format!("{closed}\n{resumed}")),
-        Err(resumed) => Err(format!("{closed}\n{resumed}")),
-    }
+    let resumed = crate::flow_cmd::resume_run_in(ledger, flow, run_id).unwrap_or_else(|said| said);
+    Ok(format!("{closed}\n{resumed}"))
+}
+
+/// Whether a run is parked on a person and nobody else resumes it: a `running`
+/// run has a process of its own, one that ended is not reopened, and a child is
+/// its parent's to resume, with the cap and the wall the parent hands it.
+pub(crate) fn resumed_on_its_own(header: &ledger::RunRecord) -> bool {
+    header.status == "waiting" && header.parent_run_id.is_none()
 }
 
 /// The outcome whoever closes declares.

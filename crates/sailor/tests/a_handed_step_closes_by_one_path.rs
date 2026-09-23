@@ -335,3 +335,42 @@ fn a_close_does_not_reopen_a_run_that_ended() {
     assert_eq!(status_of(&ledger), "failed", "a close brought an ended run back");
     assert_eq!(recorded(&ledger), None, "the step after the handoff ran on an ended run");
 }
+
+/// A child run is its parent's to resume: resumed alone it would run without
+/// the cap and the wall the parent hands it, and the parent would never learn.
+#[test]
+fn a_close_leaves_a_child_run_to_its_parent() {
+    let scratch = Scratch::new("child");
+    let flows_dir = write_flow(&scratch, &a_flow());
+    let ledger = a_run_waiting_for_a_person(&scratch);
+    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
+    ledger
+        .record_run(&RunRecord {
+            parent_run_id: Some("the-parent".to_owned()),
+            ..header
+        })
+        .expect("making it a child");
+    close_as_the_command_line_does(&scratch, &flows_dir);
+    assert_eq!(status_of(&ledger), "waiting", "a close resumed a child on its own");
+    assert_eq!(recorded(&ledger), None);
+}
+
+/// **THE CLOSE IS WRITTEN WHATEVER THE RESUME COMES TO.** A step handed back
+/// broken fails this run on the resume; the command still succeeds, since
+/// a failed exit would send whoever closed it to close it again.
+#[test]
+fn a_close_succeeds_whatever_the_resume_comes_to() {
+    let scratch = Scratch::new("broke");
+    let flows_dir = write_flow(&scratch, &a_flow());
+    let ledger = a_run_waiting_for_a_person(&scratch);
+    let codes = on_the_command_line(
+        &scratch,
+        &flows_dir,
+        &[
+            TAKE_IT,
+            &["close", "--run", "run-1", "--step", "review", "--as", "mira", "--outcome", "broke"],
+        ],
+    );
+    assert_eq!(codes, [0, 0], "the close was written, and said it failed");
+    assert_eq!(status_of(&ledger), "failed", "the resume did not run");
+}
