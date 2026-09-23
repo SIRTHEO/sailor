@@ -7674,6 +7674,13 @@ tr[data-followable]:hover {
   background: var(--surface-2);
 }
 
+/* A row is as wide as the column that scrolls it, so a ring outside the row is
+   a ring outside the clip: the left and right edges vanish and what is left
+   reads as a divider. Drawn inside, it keeps all four. */
+.window-row:focus-visible {
+  outline-offset: -2px;
+}
+
 /* The mark is a bar and a weight, never a tint: the tint on this window means
    a machine is doing something. It lands on the press, not on the release. */
 .window-row[aria-current],

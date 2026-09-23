@@ -96,3 +96,31 @@ describe("the row the field is holding", () => {
     ).toEqual([undefined]);
   });
 });
+
+/** `parseStylesheet` skips a stateful selector, so the state is given a name
+ *  of the same weight: one attribute costs exactly what one pseudo-class does,
+ *  and the cascade comes out where the browser puts it. */
+const FOCUSED = "data-focus-visible";
+
+function sheetWithFocusNamed() {
+  return parseStylesheet(stylesheetSource.replaceAll(":focus-visible", `[${FOCUSED}]`));
+}
+
+describe("a row reached by the keyboard", () => {
+  test("KEEPS ITS RING INSTEAD OF LEAVING A RULE under it", () => {
+    render(<WorkspaceRows projects={TWO} chosen={null} now={0} onChoose={vi.fn()} />);
+    const row = document.querySelector(".window-row")!;
+    row.setAttribute(FOCUSED, "true");
+    const styles = styleTree(document.querySelector(".window-rows")!, sheetWithFocusNamed());
+    expect(
+      styles.get(row)?.declarations.get("outline-offset"),
+      "a row is as wide as the column that clips it: a ring outside the row has no room",
+    ).toBe("-2px");
+  });
+
+  test("and every other element keeps the ring the sheet draws for all of them", () => {
+    const global = sheetWithFocusNamed().rules.filter((rule) => rule.selector === `[${FOCUSED}]`);
+    expect(global.flatMap((rule) => rule.declarations.filter(([name]) => name === "outline-offset")))
+      .toEqual([["outline-offset", "2px"]]);
+  });
+});
