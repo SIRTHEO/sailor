@@ -1,10 +1,9 @@
 //! A flow held by a person: it no longer starts by itself, and says why.
 //!
-//! Holding a shipped flow used to mean writing a copy of it with a manual
-//! trigger, and that copy then outlived every correction the shipped flow
-//! received, in silence. A hold is one entry in the store instead: it names
-//! who asked and why, and taking it off writes a second entry, so the story
-//! of a hold is read back rather than remembered.
+//! A hold is one entry in the store, not a copy of the flow: a copy outlives
+//! every later correction of the flow it replaces, in silence. The entry names
+//! who asked and why, and taking it off writes a second one, so the story of
+//! a hold is read back rather than remembered.
 
 use crate::{Ledger, LedgerError, StoreRecord};
 use serde_json::{json, Value};
