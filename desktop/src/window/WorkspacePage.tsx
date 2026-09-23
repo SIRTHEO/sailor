@@ -22,8 +22,13 @@ export function WorkspacePage({ native, project }: { native: boolean; project: P
     <dl className="window-facts">
       <dt>{t("window.workspace.folder")}</dt>
       <dd className="window-facts__path">{project.root}</dd>
-      {asked.state === "asking" && <dd>{t("window.looking")}</dd>}
-      {asked.state === "mute" && <dd className="window-facts__absent">{asked.why}</dd>}
+      {/* These two answer for the whole declaration and not for a key of it, so
+          they take the row instead of the 140px label column auto-placement
+          would squeeze them into. */}
+      {asked.state === "asking" && <dd className="window-facts__state">{t("window.looking")}</dd>}
+      {asked.state === "mute" && (
+        <dd className="window-facts__state window-facts__absent">{asked.why}</dd>
+      )}
       {asked.state === "answered" && (
         <>
           <dt>{t("window.workspace.rules")}</dt>

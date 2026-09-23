@@ -7709,6 +7709,13 @@ tr[data-followable]:hover {
   font-size: var(--text-body);
 }
 
+/* A state line answers for the whole declaration, so it takes the row: left to
+   auto-placement it lands in the 140px label column, which is where the reason
+   a declaration could not be read would be squeezed. */
+.window-facts__state {
+  grid-column: 1 / -1;
+}
+
 .window-facts dt {
   color: var(--muted);
 }
