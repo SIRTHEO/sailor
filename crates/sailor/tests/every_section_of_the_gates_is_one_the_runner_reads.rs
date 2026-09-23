@@ -236,10 +236,6 @@ const THE_ONLY_PATH: &str = "/usr/bin:/bin";
 /// The line the runner's own answer to «does this letter apply» opens with.
 const DECIDES: &str = "applies() {";
 
-/// A tracked file no section of the manifest is about, so every letter but `A`
-/// has to answer no to it.
-const A_FILE_NO_SECTION_IS_ABOUT: &str = "CODE_OF_CONDUCT.md";
-
 /// The body of the runner's own answer to «does this letter apply», from the
 /// line that opens it to the line that closes it, so what a check holds it to
 /// is the text that decides, never a copy of it.
@@ -336,12 +332,12 @@ fn a_section_spells_out_what_arms_it_and_leaves_nothing_in_prose() {
     }
 }
 
-/// The first file this tree tracks whose path carries every part of a name, in
+/// Every file this tree tracks whose path carries all the parts of a name, in
 /// the order the name spells them.
-fn a_file_named(parts: &[String], tracked: &[String]) -> Option<String> {
+fn the_files_named(parts: &[String], tracked: &[String]) -> Vec<String> {
     tracked
         .iter()
-        .find(|path| {
+        .filter(|path| {
             let mut rest = path.as_str();
             parts.iter().all(|part| match rest.find(part.as_str()) {
                 Some(at) => {
@@ -352,6 +348,7 @@ fn a_file_named(parts: &[String], tracked: &[String]) -> Option<String> {
             })
         })
         .cloned()
+        .collect()
 }
 
 /// Every file this tree tracks, in the order git lists them.
@@ -367,25 +364,20 @@ fn tracked_by(root: &Path) -> Vec<String> {
         .collect()
 }
 
-/// A letter is dead when nothing in this tree could make it apply, and as dead
-/// when it applies to everything. Neither is read out of the words its arm is
-/// spelled with: the arm is run, over the files its own section says it is
-/// for, and over one file no section is about. `A` is every run's and answers
-/// to everything, so it is the one letter exempt; the letters decided
-/// elsewhere are held by the check that names them.
+/// An arm is held to its own scope, which is every file the section's names
+/// reach and no other. One file no section was about held only «applies to
+/// that file»: widening `E` from the window to the crates passed it, and the
+/// window's whole suite would have run on any change under `crates/`. So the
+/// arm is run over every file this tree tracks. `A` is every run's, and the
+/// letters decided elsewhere have no arm here.
 #[test]
-fn every_letter_the_runner_decides_could_be_reached_by_this_tree() {
+fn every_letter_the_runner_decides_reaches_its_own_section_and_no_further() {
     let root = root();
     let runner = std::fs::read_to_string(root.join(THE_RUNNER)).expect("the runner");
     let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
     let arms = decides(&runner);
     let tracked = tracked_by(&root);
     let here = scratch("arms");
-    assert!(
-        tracked.iter().any(|path| path == A_FILE_NO_SECTION_IS_ABOUT),
-        "{A_FILE_NO_SECTION_IS_ABOUT} is the file every letter has to answer no to, and this \
-         tree does not track it"
-    );
     for section in the_sections(&manifest) {
         let letter = section.letter.as_str();
         if letter == "A" || DECIDED_ELSEWHERE.iter().any(|(named, _)| *named == letter) {
@@ -398,22 +390,40 @@ fn every_letter_the_runner_decides_could_be_reached_by_this_tree() {
              its arm is supposed to answer yes to",
             section.says
         );
+        let mut its_own: Vec<String> = Vec::new();
         for parts in names {
             let name = parts.join("::");
-            let touched = a_file_named(&parts, &tracked).unwrap_or_else(|| {
-                panic!("«{letter}» is the section for `{name}`, and this tree tracks no such file")
-            });
+            let named = the_files_named(&parts, &tracked);
             assert!(
-                answers_for(&arms, &here, letter, &touched),
-                "«{letter}» is the section for `{name}`, and the runner answers that {touched} \
-                 is none of its business: its lines are read and then run for nobody"
+                !named.is_empty(),
+                "«{letter}» is the section for `{name}`, and this tree tracks no such file"
+            );
+            for touched in named {
+                assert!(
+                    answers_for(&arms, &here, letter, &touched),
+                    "«{letter}» is the section for `{name}`, and the runner answers that \
+                     {touched} is none of its business: its lines are read and then run for nobody"
+                );
+                its_own.push(touched);
+            }
+        }
+        let further: Vec<&str> = tracked
+            .iter()
+            .filter(|path| !its_own.contains(path))
+            .map(String::as_str)
+            .collect();
+        if answers_for(&arms, &here, letter, &further.join("\n")) {
+            let reached = further
+                .iter()
+                .find(|path| answers_for(&arms, &here, letter, path))
+                .expect("the file the arm reached");
+            panic!(
+                "«{letter}» opens «{}» and the runner answers that {reached} is its business \
+                 too, which that heading names nothing of: an arm reaching past its own \
+                 section runs its lines for work nobody declared them for",
+                section.says
             );
         }
-        assert!(
-            !answers_for(&arms, &here, letter, A_FILE_NO_SECTION_IS_ABOUT),
-            "«{letter}» applies to {A_FILE_NO_SECTION_IS_ABOUT}, which no section is about: an \
-             arm that answers yes to everything decides nothing"
-        );
     }
     let _ = std::fs::remove_dir_all(&here);
 }
