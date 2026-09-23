@@ -24,7 +24,8 @@ const ROW: &str = "happened_on, what_happened, how_it_showed, what_would_prevent
                    standing, happened_on_reading, happened_on_value";
 
 /// Each row of the history is what stood just before one change. The first
-/// row says when the history began: nothing before it was written down.
+/// row says when the history began: nothing before it was written down. An
+/// update that changes nothing writes no row, and nothing prunes the rest.
 pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError> {
     let old = |row: &str| {
         ROW.split(", ")
@@ -34,6 +35,11 @@ pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError
     };
     let faults_before = old("faults");
     let old_row = old("OLD");
+    let a_fault_changed = std::iter::once("number")
+        .chain(ROW.split(", ").map(str::trim))
+        .map(|column| format!("OLD.{column} IS NOT NEW.{column}"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
     connection.execute_batch(&format!(
         "CREATE TABLE IF NOT EXISTS {HISTORY} (
              seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +60,8 @@ pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError
                  SELECT {NOW}, 'fault', NEW.number, 0
                   WHERE NOT EXISTS (SELECT 1 FROM faults WHERE faults.number = NEW.number);
          END;
-         CREATE TRIGGER IF NOT EXISTS a_fault_is_changed AFTER UPDATE ON faults BEGIN
+         CREATE TRIGGER IF NOT EXISTS a_fault_is_changed AFTER UPDATE ON faults
+          WHEN {a_fault_changed} BEGIN
              INSERT INTO {HISTORY} (at, what, number, {ROW})
                  VALUES ({NOW}, 'fault', OLD.number, {old_row});
          END;
@@ -67,7 +74,8 @@ pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError
                  VALUES ({NOW}, 'summary', NEW.number,
                          (SELECT summary FROM public_summaries WHERE number = NEW.number));
          END;
-         CREATE TRIGGER IF NOT EXISTS a_summary_is_changed AFTER UPDATE ON public_summaries BEGIN
+         CREATE TRIGGER IF NOT EXISTS a_summary_is_changed AFTER UPDATE ON public_summaries
+          WHEN OLD.number IS NOT NEW.number OR OLD.summary IS NOT NEW.summary BEGIN
              INSERT INTO {HISTORY} (at, what, number, summary)
                  VALUES ({NOW}, 'summary', OLD.number, OLD.summary);
          END;
@@ -235,17 +243,39 @@ impl Faults {
             .optional()?)
     }
 
+    /// Whether the history began before the stamp's instant and holds its
+    /// change as the last one written by then. A stamp taken from another
+    /// copy of the store, or edited by hand, fails one of these.
+    fn reaches_back_to(&self, stood: &Stood) -> Result<bool, FaultError> {
+        let (Some(change), Some((_, kept_at))) = (stood.change, self.history_kept_since()?) else {
+            return Ok(false);
+        };
+        let at_of = |condition: &str| -> Result<Option<String>, FaultError> {
+            Ok(self
+                .connection
+                .query_row(
+                    &format!("SELECT at FROM {HISTORY} WHERE {condition} ORDER BY seq LIMIT 1"),
+                    params![change],
+                    |row| row.get(0),
+                )
+                .optional()?)
+        };
+        let Some(change_at) = at_of("seq = ?1")? else {
+            return Ok(false);
+        };
+        let next_at = at_of("seq > ?1")?;
+        Ok(kept_at <= stood.at
+            && change_at <= stood.at
+            && next_at.is_none_or(|next| next >= stood.at))
+    }
+
     /// The faults up to `through` as they stood at the stamp's change, or
     /// nothing when the history does not reach back that far.
     pub fn as_it_stood(&self, stood: &Stood) -> Result<Option<Vec<Fault>>, FaultError> {
-        let reaches_back = matches!(
-            (stood.change, self.history_kept_since()?),
-            (Some(change), Some((kept, _))) if kept <= change
-        );
-        if !reaches_back {
+        let read = self.connection.unchecked_transaction()?;
+        if !self.reaches_back_to(stood)? {
             return Ok(None);
         }
-        let read = self.connection.unchecked_transaction()?;
         let mut then: BTreeMap<i64, Fault> = self
             .all()?
             .into_iter()
@@ -282,10 +312,14 @@ impl Faults {
                     github_issue: None,
                 };
                 let now = then.remove(&number);
+                let public_summary = match &now {
+                    Some(it) => it.public_summary.clone(),
+                    None => self.summary_kept_for(number)?,
+                };
                 then.insert(
                     number,
                     Fault {
-                        public_summary: now.as_ref().and_then(|it| it.public_summary.clone()),
+                        public_summary,
                         github_issue: now.and_then(|it| it.github_issue),
                         ..before
                     },
@@ -305,6 +339,19 @@ impl Faults {
                 .filter(|fault| fault.number <= stood.through)
                 .collect(),
         ))
+    }
+
+    /// A fault taken out leaves its summary behind, and the summary's own
+    /// history turns it back to the stamp afterwards.
+    fn summary_kept_for(&self, number: i64) -> Result<Option<String>, FaultError> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT summary FROM public_summaries WHERE number = ?1",
+                params![number],
+                |row| row.get(0),
+            )
+            .optional()?)
     }
 
     /// The page against a fresh render of the store as it stood at its stamp.

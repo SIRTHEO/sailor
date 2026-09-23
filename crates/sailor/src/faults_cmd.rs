@@ -118,10 +118,10 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         Some(declared) => PathBuf::from(declared),
         None => Faults::default_path().map_err(|error| error.to_string())?,
     };
-    // Three of these verbs write and three only read, and the reading ones are
-    // what an agent runs from a sandbox that grants no writes.
-    // A page stamped with a moment is rendered from a store that keeps its
-    // history, or no later check could tell what stood then.
+    // `list`, `check` and `render` only read the store, so they run where
+    // nothing may be written, except a render of the open faults into a file:
+    // it stamps the page with a moment and opens the store to write, since
+    // only a store that keeps its history lets a later check tell what stood.
     let stamping = verb == "render" && options.contains_key("open") && options.contains_key("file");
     let opened = match verb {
         "render" if stamping => Faults::open(&path),

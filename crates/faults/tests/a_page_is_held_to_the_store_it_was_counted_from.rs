@@ -360,3 +360,171 @@ fn the_line_is_written_once_under_the_count_and_read_back() {
         "Counted from the fault store through fault 7, as it stood at 2026-09-01T00:00:00.000Z.";
     assert_eq!(faults::stood_in(older).map(|it| it.change), Some(None));
 }
+
+/// Close, reword, reopen: only the first change after the count says what stood.
+#[test]
+fn a_fault_changed_again_after_the_count_is_counted_as_it_first_stood() {
+    let (store, page, _) = a_store_and_its_page("changed-again");
+    store.set_status(1, "**closed** on 04/09").expect("closed");
+    let mut reworded = store.get(1).expect("the first");
+    reworded.what_happened = "Worded otherwise.".to_owned();
+    store.restore(&reworded).expect("reworded");
+    store.set_status(1, "**open**").expect("reopened");
+    for summary in ["Said once more.", "Said a third time."] {
+        store.set_public_summary(2, summary).expect("resummarised");
+    }
+
+    assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
+}
+
+/// No road of this crate deletes a fault; plain SQL can.
+#[test]
+fn a_fault_deleted_after_the_count_comes_back_with_its_summary() {
+    let (store, page, path) = a_store_and_its_page("deleted-after");
+    rusqlite::Connection::open(&path)
+        .expect("a second writer")
+        .execute_batch(
+            "DELETE FROM faults WHERE number = 1;
+             DELETE FROM public_summaries WHERE number = 2;
+             DELETE FROM faults WHERE number = 2;",
+        )
+        .expect("deleted by plain SQL");
+
+    assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
+}
+
+fn changes_kept(path: &PathBuf) -> i64 {
+    rusqlite::Connection::open(path)
+        .expect("a reader")
+        .query_row("SELECT COUNT(*) FROM store_history", [], |row| row.get(0))
+        .expect("the history counted")
+}
+
+#[test]
+fn an_update_that_changes_nothing_writes_no_history() {
+    let (_store, _, path) = a_store_and_its_page("no-change");
+    let before = changes_kept(&path);
+    let writer = rusqlite::Connection::open(&path).expect("a second writer");
+    writer
+        .execute_batch(
+            "UPDATE faults SET status = status, standing = standing;
+             UPDATE public_summaries SET summary = summary;",
+        )
+        .expect("updated to what it was");
+    assert_eq!(
+        changes_kept(&path),
+        before,
+        "an update that changed nothing"
+    );
+
+    writer
+        .execute_batch(
+            "UPDATE faults SET status = '**closed** on 04/09' WHERE number = 1;
+             UPDATE public_summaries SET summary = 'Otherwise.' WHERE number = 2;",
+        )
+        .expect("changed");
+    assert_eq!(changes_kept(&path), before + 2, "two changes");
+}
+
+fn restamped(page: &str, stamp: impl FnOnce(faults::Stood) -> faults::Stood) -> String {
+    let stood = faults::stood_in(page).expect("the page's stamp");
+    faults::stood_written_into(page, &stamp(stood))
+}
+
+fn cannot_tell(store: &Faults, page: &str, what: &str) {
+    match held(store, page) {
+        Held::CannotTell { .. } => {}
+        other => panic!("{what} was answered as {other:?}"),
+    }
+}
+
+/// Rows written in the same millisecond as a stamp read as written at it.
+fn a_millisecond_passes() {
+    std::thread::sleep(std::time::Duration::from_millis(3));
+}
+
+/// The page was counted from a copy that kept a history; the store it is
+/// held to began its own later, and its numbers mean other changes.
+#[test]
+fn a_history_begun_after_the_count_cannot_tell() {
+    let (store, page, path) = a_store_and_its_page("begun-after");
+    let stamped = faults::stood_in(&page)
+        .and_then(|it| it.change)
+        .expect("a change");
+    drop(store);
+    without_its_history(&path);
+    a_millisecond_passes();
+    let store = Faults::open(&path).expect("a newer binary opens it later");
+    while changes_kept(&path) <= stamped {
+        store.set_status(1, "**closed** on 04/09").expect("closed");
+        store.set_status(1, "**open**").expect("reopened");
+    }
+
+    cannot_tell(&store, &page, "a history begun after the stamp");
+}
+
+#[test]
+fn a_stamp_moved_into_the_past_cannot_tell() {
+    let (store, page, _) = a_store_and_its_page("moved-back");
+    let forged = restamped(&page, |stood| faults::Stood {
+        at: "2020-01-01T00:00:00.000Z".to_owned(),
+        ..stood
+    });
+    cannot_tell(&store, &forged, "a stamp moved to 2020");
+}
+
+/// A clock set back makes a history whose start is later than its rows.
+#[test]
+fn a_history_that_says_it_began_after_the_stamp_is_not_read() {
+    let (store, page, path) = a_store_and_its_page("kept-later");
+    rusqlite::Connection::open(&path)
+        .expect("a second writer")
+        .execute(
+            "UPDATE store_history SET at = '2999-01-01T00:00:00.000Z' WHERE what = 'kept'",
+            [],
+        )
+        .expect("the start moved on");
+    cannot_tell(
+        &store,
+        &page,
+        "a history begun after the stamp by its own word",
+    );
+}
+
+#[test]
+fn a_stamp_naming_a_change_the_history_never_held_cannot_tell() {
+    let (store, page, _) = a_store_and_its_page("never-changed");
+    let forged = restamped(&page, |stood| faults::Stood {
+        change: Some(999),
+        ..stood
+    });
+    cannot_tell(&store, &forged, "change 999");
+}
+
+#[test]
+fn a_stamp_naming_a_change_written_after_it_cannot_tell() {
+    let (store, page, _) = a_store_and_its_page("later-change");
+    a_millisecond_passes();
+    store.set_status(1, "**closed** on 04/09").expect("closed");
+    let forged = restamped(&page, |stood| faults::Stood {
+        change: stood.change.map(|change| change + 1),
+        ..stood
+    });
+    cannot_tell(&store, &forged, "a change written after the stamp");
+}
+
+#[test]
+fn a_stamp_naming_an_earlier_change_cannot_tell() {
+    let (store, _, _) = a_store_and_its_page("earlier-change");
+    a_millisecond_passes();
+    let page = counted(&store);
+    let forged = restamped(&page, |stood| faults::Stood {
+        change: stood.change.map(|change| change - 1),
+        ..stood
+    });
+    cannot_tell(
+        &store,
+        &forged,
+        "a change followed by another before the stamp",
+    );
+}
