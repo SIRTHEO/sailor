@@ -433,7 +433,7 @@ pub fn ask_the_parked_again(
 /// Resumes the runs waiting on a handover whose deadline has passed: the
 /// resume ends the wait, and nobody else ever resumes a run parked on a
 /// person who does not come. A run whose handover is still in time, or was
-/// answered, is left to the person.
+/// answered, is left to the person, and a child to its parent.
 fn wake_the_lapsed_handovers(
     ledger: &Ledger,
     now: i64,
@@ -448,7 +448,10 @@ fn wake_the_lapsed_handovers(
         let Ok(records) = ledger.steps(&run.run_id) else {
             continue;
         };
-        if !a_handover_lapsed(&records, now) {
+        let on_its_own = ledger
+            .run_header(&run.run_id)
+            .is_ok_and(|header| header.is_some_and(|header| crate::step_cmd::resumed_on_its_own(&header)));
+        if !on_its_own || !a_handover_lapsed(&records, now) {
             continue;
         }
         woken += 1;

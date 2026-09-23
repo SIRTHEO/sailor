@@ -188,7 +188,8 @@ fn a_handover_in_time_is_left_to_the_person() {
 }
 
 /// The beat resumes a run whose handover lapsed, and only that one: a wait in
-/// time and a wait already answered are left to the person.
+/// time and a wait already answered are left to the person, a child to its
+/// parent.
 #[test]
 fn the_beat_resumes_only_the_runs_whose_handover_lapsed() {
     let scratch = Scratch::new("beat");
@@ -196,6 +197,14 @@ fn the_beat_resumes_only_the_runs_whose_handover_lapsed() {
     a_run_waiting(&ledger, "lapsed", LAPSED);
     a_run_waiting(&ledger, "in-time", IN_TIME);
     a_run_waiting(&ledger, "answered", LAPSED);
+    a_run_waiting(&ledger, "a-child", LAPSED);
+    let child = ledger.run_header("a-child").expect("the store answers").expect("the run");
+    ledger
+        .record_run(&RunRecord {
+            parent_run_id: Some("its-parent".to_owned()),
+            ..child
+        })
+        .expect("making it a child");
     let mut taken = StepRecord::started(
         "answered",
         "review",
