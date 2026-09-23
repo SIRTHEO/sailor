@@ -288,9 +288,6 @@ impl Sessions {
     /// point: a detached window stays detached for the agent that arrives next.
     /// If this statement touched it a detach would last one session — "leave
     /// this process alone", where what was asked is "leave this window alone".
-    ///
-    /// A transcript is kept only for the session that wrote it: a new session
-    /// arriving without one leaves the column empty, never the old one's path.
     pub fn open_terminal(&self, arrival: &Arrival) -> Result<(), SessionError> {
         self.connection.execute(
             "INSERT INTO terminals
