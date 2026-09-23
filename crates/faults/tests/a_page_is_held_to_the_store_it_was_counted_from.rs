@@ -379,6 +379,32 @@ fn a_fault_deleted_after_the_count_comes_back_with_its_summary() {
     assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
 }
 
+/// No road of this crate renumbers a fault or a summary; plain SQL can.
+#[test]
+fn a_fault_renumbered_after_the_count_stood_under_its_old_number() {
+    let (store, page, path) = a_store_and_its_page("renumbered-after");
+    rusqlite::Connection::open(&path)
+        .expect("a second writer")
+        .execute("UPDATE faults SET number = 400 WHERE number = 2", [])
+        .expect("renumbered by plain SQL");
+
+    assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
+}
+
+#[test]
+fn a_summary_renumbered_after_the_count_stood_under_its_old_number() {
+    let (store, page, path) = a_store_and_its_page("summary-renumbered-after");
+    rusqlite::Connection::open(&path)
+        .expect("a second writer")
+        .execute(
+            "UPDATE public_summaries SET number = 3 WHERE number = 1",
+            [],
+        )
+        .expect("renumbered by plain SQL");
+
+    assert_eq!(held(&store, &page), Held::Agrees { open_then: 3 });
+}
+
 fn changes_kept(path: &PathBuf) -> i64 {
     rusqlite::Connection::open(path)
         .expect("a reader")

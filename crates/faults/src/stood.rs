@@ -25,7 +25,8 @@ const ROW: &str = "happened_on, what_happened, how_it_showed, what_would_prevent
 
 /// Each row of the history is what stood just before one change. The first
 /// row says when the history began: nothing before it was written down. An
-/// update that changes nothing writes no row, and nothing prunes the rest.
+/// update that changes nothing writes no row, and nothing prunes the rest. A
+/// renumbered row also writes its new number down as not there before.
 pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError> {
     let old = |row: &str| {
         ROW.split(", ")
@@ -64,6 +65,8 @@ pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError
           WHEN {a_fault_changed} BEGIN
              INSERT INTO {HISTORY} (at, what, number, {ROW})
                  VALUES ({NOW}, 'fault', OLD.number, {old_row});
+             INSERT INTO {HISTORY} (at, what, number, existed)
+                 SELECT {NOW}, 'fault', NEW.number, 0 WHERE OLD.number IS NOT NEW.number;
          END;
          CREATE TRIGGER IF NOT EXISTS a_fault_is_taken_out AFTER DELETE ON faults BEGIN
              INSERT INTO {HISTORY} (at, what, number, {ROW})
@@ -78,6 +81,8 @@ pub(crate) fn keep_the_history(connection: &Connection) -> Result<(), FaultError
           WHEN OLD.number IS NOT NEW.number OR OLD.summary IS NOT NEW.summary BEGIN
              INSERT INTO {HISTORY} (at, what, number, summary)
                  VALUES ({NOW}, 'summary', OLD.number, OLD.summary);
+             INSERT INTO {HISTORY} (at, what, number, summary)
+                 SELECT {NOW}, 'summary', NEW.number, NULL WHERE OLD.number IS NOT NEW.number;
          END;
          CREATE TRIGGER IF NOT EXISTS a_summary_is_taken_out AFTER DELETE ON public_summaries BEGIN
              INSERT INTO {HISTORY} (at, what, number, summary)

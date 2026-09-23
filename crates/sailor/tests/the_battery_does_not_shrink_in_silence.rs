@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 const TEST_BINARIES_TODAY: usize = 218;
 
 /// Every `#[test]` in the tree, the window's shell included.
-const TEST_FUNCTIONS_TODAY: usize = 2876;
+const TEST_FUNCTIONS_TODAY: usize = 2878;
 
 /// Every `.flow.json` in `flows/` and among the shipped ones.
 const FLOW_FILES_TODAY: usize = 30;
