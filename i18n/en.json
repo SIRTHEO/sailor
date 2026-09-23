@@ -11,6 +11,7 @@
   "run.failure.compensated_then_retry": "the step was interrupted, what it had done was undone, and it will be run again",
   "run.failure.digest_incomplete": "the step was not handed a value to digest in the shape it expects, so there is nothing to check the mandate against later",
   "run.failure.effect_unknown": "the step was interrupted and nothing can say whether what it does had already happened, so it waits for a person",
+  "run.failure.an_emptying_is_not_a_line": "the line empties a session, and only the step that reads the session's consent as it types may type it",
   "run.failure.git_failed": "git did not answer, so the change could not be read or the tree put back as found",
   "run.failure.handoff_expired": "nobody took the step on before the deadline the handover declared, and the wait ended",
   "run.failure.mandate_already_taken": "this mandate has already been taken by another session",

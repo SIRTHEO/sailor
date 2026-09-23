@@ -133,6 +133,63 @@ fn two_sessions_can_share_one_terminal_at_different_times() {
     );
 }
 
+/// A new session on the same terminal never inherits the transcript of the
+/// one before: whoever reads it would take the old session's words as the new
+/// one's.
+#[test]
+fn a_new_session_does_not_inherit_the_transcript_of_the_last() {
+    let scratch = Scratch::new("no-inherited-transcript");
+    let store = scratch.store();
+    store
+        .open_terminal(&arrival("ttys001", "/work/sailor", "aaa", 100))
+        .expect("open the first");
+
+    let unnamed = |session: &str, at| Arrival {
+        transcript_path: None,
+        ..arrival("ttys001", "/work/sailor", session, at)
+    };
+    store
+        .open_terminal(&unnamed("bbb", 200))
+        .expect("open the second");
+    let row = store.terminal("ttys001").expect("read").expect("row");
+    assert_eq!(row.session_id.as_deref(), Some("bbb"));
+    assert_eq!(
+        row.transcript_path, None,
+        "bbb wrote no transcript: {row:?}"
+    );
+
+    store
+        .open_terminal(&arrival("ttys001", "/work/sailor", "ccc", 300))
+        .expect("open the third");
+    store
+        .remember_terminal(&unnamed("ddd", 400))
+        .expect("remember");
+    let row = store.terminal("ttys001").expect("read").expect("row");
+    assert_eq!(
+        row.transcript_path, None,
+        "ddd wrote no transcript: {row:?}"
+    );
+
+    store
+        .open_terminal(&arrival("ttys001", "/work/sailor", "eee", 500))
+        .expect("open the fifth");
+    store
+        .open_terminal(&unnamed("eee", 600))
+        .expect("the same session again");
+    store
+        .remember_terminal(&Arrival {
+            session_id: None,
+            ..unnamed("eee", 700)
+        })
+        .expect("an event that names no session");
+    let row = store.terminal("ttys001").expect("read").expect("row");
+    assert_eq!(
+        row.transcript_path.as_deref(),
+        Some("/tmp/eee.jsonl"),
+        "the same session keeps its own transcript"
+    );
+}
+
 /// A killed terminal closes nothing. The row stays open, and stays open
 /// **visibly**: whoever reads the state must be able to say "this one is not
 /// alive, it was left there" instead of believing in a session that is gone.

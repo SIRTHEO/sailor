@@ -10,6 +10,7 @@
   "run.failure.base_commit_unknown": "il commit di base del compito non è in questo albero, quindi non c'è niente contro cui leggere la modifica",
   "run.failure.compensated_then_retry": "il passo è stato interrotto, quello che aveva fatto è stato disfatto, e verrà eseguito di nuovo",
   "run.failure.effect_unknown": "il passo è stato interrotto e nulla può dire se quello che fa fosse già avvenuto, quindi aspetta una persona",
+  "run.failure.an_emptying_is_not_a_line": "la riga svuota una sessione, e può scriverla solo il passo che legge il consenso della sessione mentre la scrive",
   "run.failure.git_failed": "git non ha risposto, quindi la modifica non si è potuta leggere o l'albero rimettere com'era",
   "run.failure.handoff_expired": "nessuno ha preso il passo prima della scadenza dichiarata dalla consegna, e l'attesa è finita",
   "run.failure.mandate_already_taken": "questo mandato è già stato preso da un'altra sessione",
