@@ -1341,6 +1341,15 @@
   "window.field.standing_here": "the window is standing here",
   "window.terminals.none": "No terminal is open on this machine.",
   "window.terminals.open_one": "A terminal opened anywhere on this machine is listed here, and the one you choose opens in this field.",
-  "window.not_yet.data": "The store is not in this window yet. It holds ten tables and no screen opens them.",
+  "window.data.none": "Nothing is kept on this machine yet.",
+  "window.data.pick_one": "Pick a store on the left, and where it lives opens here.",
+  "window.data.not_created": "not created yet",
+  "window.data.nothing_written": "Not created yet: nothing has been written here.",
+  "window.data.where": "Where it lives",
+  "window.data.how_many": "How many",
+  "window.data.size": "Size",
+  "window.data.since": "Since",
+  "window.data.not_counted": "not counted",
+  "window.data.no_date": "the disk keeps no date for it",
   "window.not_yet.keys": "The keys are not in this window yet. A workspace cannot own one either: see issue 98."
 }
