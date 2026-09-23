@@ -109,11 +109,10 @@ impl flow::ProcessProbe for HandoffLease {
 }
 
 /// Resumes a run: first reconciles what was left open, then executes **with the
-/// same id**. **SEPARATE FROM `sailor step close`, BECAUSE THEY ARE TWO POWERS.**
-/// `close` **remembers** — writes an outcome, spends nothing — while `resume`
-/// **acts**, opens fronts and pays for billed calls; merging them would make a
-/// write to the store spend money. `reconcile` had never run outside the tests,
-/// hence a probe written to declare dead nothing it cannot see.
+/// same id**. A close answering a parked run calls it too, from either door: the
+/// work after a handoff is what the person was asked to unblock.
+/// `reconcile` had never run outside the tests, hence a probe written to declare
+/// dead nothing it cannot see.
 pub(super) fn resume_run(run_id: &str) -> Result<String, String> {
     let ledger = crate::step_cmd::open_ledger()?;
     let flow = crate::step_cmd::flow_of_run(&ledger, run_id)?;

@@ -319,7 +319,41 @@ fn close_step(found: &BTreeMap<String, String>) -> Result<String, String> {
     let ledger = open_ledger()?;
     let run_id = required(found, "run")?;
     let flow = flow_of_run(&ledger, run_id)?;
-    close_step_in(&ledger, &flow, found)
+    let closed = close_step_in(&ledger, &flow, found)?;
+    carry_the_run_on(&ledger, &flow, run_id, closed)
+}
+
+/// Resumes the run a close answered, as the window's close does: the step after
+/// a handoff only ever starts through a resume, and a close that left it to a
+/// printed line left six answered reviews parked for a day. The close is written
+/// before the resume starts, so how the resume ends is reported, never failed on.
+fn carry_the_run_on(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    run_id: &str,
+    closed: String,
+) -> Result<String, String> {
+    let header = ledger.run_header(run_id).map_err(|error| {
+        format!(
+            "{closed}\n{}",
+            catalogue::say(
+                "cli.step.cannot_read_run",
+                &[("run_id", run_id), ("error", &error.to_string())],
+            )
+        )
+    })?;
+    if !header.is_some_and(|header| resumed_on_its_own(&header)) {
+        return Ok(closed);
+    }
+    let resumed = crate::flow_cmd::resume_run_in(ledger, flow, run_id).unwrap_or_else(|said| said);
+    Ok(format!("{closed}\n{resumed}"))
+}
+
+/// Whether a run is parked on a person and nobody else resumes it: a `running`
+/// run has a process of its own, one that ended is not reopened, and a child is
+/// its parent's to resume, with the cap and the wall the parent hands it.
+pub(crate) fn resumed_on_its_own(header: &ledger::RunRecord) -> bool {
+    header.status == "waiting" && header.parent_run_id.is_none()
 }
 
 /// The outcome whoever closes declares.
@@ -785,7 +819,8 @@ fn decide_step(found: &BTreeMap<String, String>, verdict: Verdict) -> Result<Str
     let ledger = open_ledger()?;
     let run_id = required(found, "run")?;
     let flow = flow_of_run(&ledger, run_id)?;
-    decide_step_in(&ledger, &flow, found, verdict)
+    let decided = decide_step_in(&ledger, &flow, found, verdict)?;
+    carry_the_run_on(&ledger, &flow, run_id, decided)
 }
 
 /// Why the decision went that way. **A REJECTION HAS TO SAY IT**: read back a
