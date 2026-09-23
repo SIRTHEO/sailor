@@ -201,6 +201,51 @@ fn every_line_a_section_holds_reaches_the_runner() {
     let _ = std::fs::remove_dir_all(&scratch);
 }
 
+/// A heading written down here is one every check in this file passes over,
+/// so a real one written among them takes all four off that section at once
+/// and nothing says so. Each is held to what it claims: the manifest opens
+/// it, and the runner reads no line under it. What a line is, is still the
+/// runner's to say — it is asked here exactly as it is asked for a section
+/// that does hold lines.
+#[test]
+fn a_heading_written_as_holding_no_lines_to_run_holds_none() {
+    let root = root();
+    let manifest = std::fs::read_to_string(root.join(THE_GATES)).expect("the gates");
+    let whole = the_plan_of(&root, &root.join(THE_GATES)).expect("the runner prints its plan");
+    let lines: Vec<&str> = manifest.lines().collect();
+    let scratch = scratch("prose");
+    let written_out = scratch.join("gates.md");
+    for (named, why) in HOLDS_NO_LINES_TO_RUN {
+        let opens = lines
+            .iter()
+            .position(|line| line.strip_prefix("## ") == Some(*named))
+            .unwrap_or_else(|| {
+                panic!(
+                    "«{named}» is written as holding no lines to run ({why}) and {THE_GATES} \
+                     opens no such heading: the checks here pass over a section that is not there"
+                )
+            });
+        let closes = lines[opens + 1..]
+            .iter()
+            .position(|line| line.starts_with("## "))
+            .map_or(lines.len(), |at| opens + 1 + at);
+        for index in opens + 1..closes {
+            if lines[index].trim().is_empty() {
+                continue;
+            }
+            assert!(
+                the_plan_apart_from(&root, &lines, Some(index), &written_out).as_deref()
+                    == Some(whole.as_str()),
+                "«{named}» is written as holding no lines to run ({why}), and the runner's plan \
+                 changes without «{}»: that heading holds a line, and writing it down here takes \
+                 every check in this file off it",
+                lines[index]
+            );
+        }
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+}
+
 /// The road every real run takes, which the plan never walks: a flag declared
 /// only there once stopped every other invocation while these stayed green.
 /// Saying something is not enough — a runner that listed nothing still would —
