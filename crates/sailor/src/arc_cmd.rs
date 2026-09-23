@@ -25,40 +25,82 @@ pub type Waits<'a> = &'a mut dyn FnMut(&str, &str) -> Option<String>;
 ///
 /// A flow declares it in its trigger step's `on`; a flow whose trigger names
 /// another source is not a candidate and leaves no row, because it was never
-/// asked.
+/// asked — unless it hides a copy that was, which [`silenced`] answers for.
 pub fn watchers(sources: &[FlowSource]) -> Vec<(String, String, On)> {
+    ui::gather::load_all_flows(sources)
+        .into_iter()
+        .filter_map(|(name, _, entry)| {
+            let flow = entry.ok()?;
+            let on = watch_of(&flow).ok()?;
+            Some((name, flow.id, on))
+        })
+        .collect()
+}
+
+/// The flows a less specific source ships watching and the copy that runs
+/// does not, each with the reason it stays still. Without it a copy in a
+/// person's home that switched a watcher off wrote nothing at all, and a
+/// flow that no longer starts read exactly like one that was never asked.
+pub fn silenced(sources: &[FlowSource]) -> Vec<(String, String)> {
+    let watching_in: Vec<(&str, Vec<String>)> = sources
+        .iter()
+        .map(|source| {
+            let names = watchers(std::slice::from_ref(source))
+                .into_iter()
+                .map(|(name, _, _)| name)
+                .collect();
+            (source.origin, names)
+        })
+        .collect();
     let mut found = Vec::new();
-    for (name, _, entry) in ui::gather::load_all_flows(sources) {
-        let Ok(flow) = entry else {
-            continue;
-        };
-        let Some(step) = flow
-            .graph
-            .steps()
-            .iter()
-            .find(|step| step.action == trigger::TRIGGER_ACTION)
+    for (name, origin, entry) in ui::gather::load_all_flows(sources) {
+        let Err(why) = entry
+            .map_err(|error| format!("does not load ({error})"))
+            .and_then(|flow| watch_of(&flow).map(|_| ()))
         else {
             continue;
         };
-        let declared = step
-            .with
-            .as_ref()
-            .or_else(|| flow.inputs.get(&step.id))
-            .cloned()
-            .unwrap_or_default();
-        if declared.get("source").and_then(serde_json::Value::as_str) != Some(SESSION_EVENT) {
-            continue;
-        }
-        let id = flow.id.clone();
-        match declared.get("on").cloned().map(serde_json::from_value) {
-            Some(Ok(on)) => found.push((name, id, on)),
-            // A flow that asks for this source and says nothing about which
-            // event would start on every event of every tree. It is left out
-            // and said so, rather than firing on everything.
-            _ => found.push((name, id, On::default())),
+        let hidden = watching_in
+            .iter()
+            .find(|(other, names)| *other != origin && names.contains(&name));
+        if let Some((hidden, _)) = hidden {
+            found.push((
+                name,
+                format!("not watching: the \"{origin}\" copy {why}, and it hides the \"{hidden}\" one, which watches session events"),
+            ));
         }
     }
     found
+}
+
+/// What one flow watches for, or why it does not watch at all.
+fn watch_of(flow: &flow::FlowFile) -> Result<On, String> {
+    let Some(step) = flow
+        .graph
+        .steps()
+        .iter()
+        .find(|step| step.action == trigger::TRIGGER_ACTION)
+    else {
+        return Err("has no trigger step".to_owned());
+    };
+    let declared = step
+        .with
+        .as_ref()
+        .or_else(|| flow.inputs.get(&step.id))
+        .cloned()
+        .unwrap_or_default();
+    match declared.get("source").and_then(serde_json::Value::as_str) {
+        Some(SESSION_EVENT) => {}
+        Some(other) => return Err(format!("declares the source \"{other}\"")),
+        None => return Err("declares no source".to_owned()),
+    }
+    // A flow that asks for this source and says nothing about which event
+    // would start on every event of every tree: `deferral` refuses it.
+    Ok(declared
+        .get("on")
+        .cloned()
+        .and_then(|on| serde_json::from_value(on).ok())
+        .unwrap_or_default())
 }
 
 /// The id of the shipped source. Written once: a flow declaring it by another
@@ -81,6 +123,9 @@ pub fn evaluate(
     waits: Waits<'_>,
 ) -> Vec<Verdict> {
     let mut written = Vec::new();
+    for (flow, why) in silenced(sources) {
+        written.push(note(store, event_id, &flow, DEFERRED, Some(&why), None, at));
+    }
     for (flow, id, on) in watchers(sources) {
         if let Some(why) = deferral(&on, happened) {
             written.push(note(store, event_id, &flow, DEFERRED, Some(why), None, at));
