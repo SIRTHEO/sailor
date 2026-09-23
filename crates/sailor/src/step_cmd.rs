@@ -320,18 +320,22 @@ fn close_step(found: &BTreeMap<String, String>) -> Result<String, String> {
     let run_id = required(found, "run")?;
     let flow = flow_of_run(&ledger, run_id)?;
     let closed = close_step_in(&ledger, &flow, found)?;
-    carry_the_run_on(&ledger, &flow, run_id, closed)
+    carry_the_run_on(&ledger, run_id, closed, || {
+        crate::flow_cmd::resume_run_in(&ledger, &flow, run_id)
+    })
 }
 
-/// Resumes the run a close answered, as the window's close does: the step after
-/// a handoff only ever starts through a resume, and a close that left it to a
+/// Resumes the run a close answered, whichever door closed it: the step after a
+/// handoff only ever starts through a resume, and a close that left it to a
 /// printed line left six answered reviews parked for a day. The close is written
-/// before the resume starts, so how the resume ends is reported, never failed on.
-fn carry_the_run_on(
+/// before the resume starts, so how the resume ends is reported, never failed
+/// on. Each door hands in its own resume — the window's runs on a thread of the
+/// window's own, so the console follows it — and neither decides whether to.
+pub fn carry_the_run_on(
     ledger: &Ledger,
-    flow: &FlowFile,
     run_id: &str,
     closed: String,
+    resume: impl FnOnce() -> Result<String, String>,
 ) -> Result<String, String> {
     let header = ledger.run_header(run_id).map_err(|error| {
         format!(
@@ -345,7 +349,7 @@ fn carry_the_run_on(
     if !header.is_some_and(|header| resumed_on_its_own(&header)) {
         return Ok(closed);
     }
-    let resumed = crate::flow_cmd::resume_run_in(ledger, flow, run_id).unwrap_or_else(|said| said);
+    let resumed = resume().unwrap_or_else(|said| said);
     Ok(format!("{closed}\n{resumed}"))
 }
 
@@ -820,7 +824,9 @@ fn decide_step(found: &BTreeMap<String, String>, verdict: Verdict) -> Result<Str
     let run_id = required(found, "run")?;
     let flow = flow_of_run(&ledger, run_id)?;
     let decided = decide_step_in(&ledger, &flow, found, verdict)?;
-    carry_the_run_on(&ledger, &flow, run_id, decided)
+    carry_the_run_on(&ledger, run_id, decided, || {
+        crate::flow_cmd::resume_run_in(&ledger, &flow, run_id)
+    })
 }
 
 /// Why the decision went that way. **A REJECTION HAS TO SAY IT**: read back a

@@ -4,7 +4,7 @@
 
 use flow::{Completion, FlowFile, Outcome, StepRecord, StepSpecies};
 use ledger::{Ledger, RunRecord};
-use sailor::step_cmd::{close_step_in, flow_of_run, open_step_in};
+use sailor::step_cmd::{carry_the_run_on, close_step_in, flow_of_run, open_step_in};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -178,16 +178,16 @@ fn a_verdict(scratch: &Scratch) -> PathBuf {
     path
 }
 
-/// **THE WINDOW'S ROUTE.** `close_handed_step` closes, then `crate::run::resume`
-/// runs `resume_run_with` on a thread; the handle and the registry of runs
-/// around it need a live window, the resume itself does not.
+/// **THE WINDOW'S ROUTE.** `close_handed_step` closes, hands its resume to
+/// `carry_the_run_on` and that decides; the resume it hands in runs
+/// `resume_run_with` on a thread the window owns, which only a live window has.
 fn close_as_the_window_does(scratch: &Scratch, ledger: &Ledger, flows_dir: &Path) {
     let verdict = a_verdict(scratch);
     open_step_in(ledger, &options(&[("run", "run-1"), ("step", "review"), ("as", "mira")]))
         .expect("the window takes it on");
     with_flows_dir(flows_dir, || {
         let flow = flow_of_run(ledger, "run-1").expect("the window finds the flow the run declares");
-        close_step_in(
+        let closed = close_step_in(
             ledger,
             &flow,
             &options(&[
@@ -200,9 +200,11 @@ fn close_as_the_window_does(scratch: &Scratch, ledger: &Ledger, flows_dir: &Path
             ]),
         )
         .expect("the window closes it");
-        let mut store = ledger.clone();
-        sailor::flow_cmd::resume_run_with(ledger, &flow, "run-1", &mut store, None)
-            .expect("the window resumes it");
+        carry_the_run_on(ledger, "run-1", closed, || {
+            let mut store = ledger.clone();
+            sailor::flow_cmd::resume_run_with(ledger, &flow, "run-1", &mut store, None)
+        })
+        .expect("the window carries the run on");
     });
 }
 
@@ -373,4 +375,64 @@ fn a_close_succeeds_whatever_the_resume_comes_to() {
     );
     assert_eq!(codes, [0, 0], "the close was written, and said it failed");
     assert_eq!(status_of(&ledger), "failed", "the resume did not run");
+}
+
+/// A child run's handed step is offered in the window like any other, and the
+/// window's close must leave it where the command line's does: resumed alone it
+/// would run without the cap and the wall its parent hands it.
+#[test]
+fn a_close_from_the_window_leaves_a_child_run_to_its_parent() {
+    let scratch = Scratch::new("window-child");
+    let flows_dir = write_flow(&scratch, &a_flow());
+    let ledger = a_run_waiting_for_a_person(&scratch);
+    let header = ledger.run_header("run-1").expect("the store answers").expect("the run");
+    ledger
+        .record_run(&RunRecord {
+            parent_run_id: Some("the-parent".to_owned()),
+            ..header
+        })
+        .expect("making it a child");
+    close_as_the_window_does(&scratch, &ledger, &flows_dir);
+    assert_eq!(status_of(&ledger), "waiting", "the window resumed a child on its own");
+    assert_eq!(recorded(&ledger), None);
+}
+
+/// A name read where it is **called**: over the whole file the check below
+/// stayed green with the call taken out.
+fn body_of(source: &str, signature: &str) -> String {
+    let from = source
+        .find(signature)
+        .unwrap_or_else(|| panic!("«{signature}» is gone: this check no longer measures anything"));
+    let rest = &source[from..];
+    let end = rest.find("\n}\n").map(|at| at + 2).unwrap_or(rest.len());
+    rest[..end].to_owned()
+}
+
+/// **THE TITLE OF THIS FILE IS A CLAIM, AND THIS IS WHAT HOLDS IT.** The route
+/// the tests above walk is the window's only while the window's own close asks
+/// the shared rule instead of resuming on its word. It resumed on its word for
+/// as long as this file said otherwise, and no test here could tell.
+#[test]
+fn the_windows_close_asks_the_shared_rule_rather_than_resuming_on_its_word() {
+    let source = std::fs::read_to_string(the_windows_handoff())
+        .expect("the window's handoff source is where the workspace says");
+    let body = body_of(&source, "pub(crate) fn close_handed_step(");
+
+    // THE CONTROL: a body that read as empty would agree with anything.
+    assert!(body.len() > 200, "«close_handed_step» read as {} bytes", body.len());
+    let asks = body.find("carry_the_run_on");
+    let resumes = body.find("crate::run::resume");
+    assert!(
+        asks.is_some_and(|asks| resumes.is_none_or(|resumes| asks < resumes)),
+        "the window's close resumes before it asks whether the run is its own to resume: \
+         a child, a run already running and a run that ended all go back through that door"
+    );
+}
+
+fn the_windows_handoff() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("the crate sits two levels under the root")
+        .join("desktop/src-tauri/src/handoff.rs")
 }
