@@ -191,6 +191,10 @@ pub(super) fn still_open_in(
             .unwrap_or_default()
             .into_iter()
             .find(|missed| missed.tty == tty),
+        waiting_elsewhere: sessions::mandate::waiting_in(deposit.directory())
+            .into_iter()
+            .filter(|mandate| mandate.written.tty != tty)
+            .collect(),
     })
 }
 
@@ -340,6 +344,20 @@ pub(super) fn what_is_still_open(found: &StillOpen) -> Option<String> {
                 ("missed", &missed.missed().to_string()),
                 ("owed", &missed.owed.to_string()),
                 ("said", missed.said.as_deref().unwrap_or("")),
+            ],
+        ));
+    }
+    if !found.waiting_elsewhere.is_empty() {
+        let which: Vec<String> = found
+            .waiting_elsewhere
+            .iter()
+            .map(|mandate| format!("{} ({})", mandate.written.tty, mandate.written.tree))
+            .collect();
+        lines.push(catalogue::say(
+            "cli.session.handovers_waiting_elsewhere",
+            &[
+                ("count", &which.len().to_string()),
+                ("which", &which.join(", ")),
             ],
         ));
     }

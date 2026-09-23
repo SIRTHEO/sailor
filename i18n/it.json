@@ -1316,6 +1316,7 @@
   "cli.flow.yours_has_drifted_and_more": "la tua copia di questo flusso non è più uguale a quella spedita col prodotto: {count} campo/i differiscono, e le riparazioni fatte a quella spedita da quando l'hai presa non sono nella tua — {fields}, e altri {more}\n",
   "cli.session.the_drop_was_filed": "Il mandato che hai lasciato per {tty} è stato depositato: «{head}». Per la consegna non è dovuto altro.",
   "cli.session.the_drop_was_refused": "Il mandato in {path} non è stato depositato: {why}. È ancora lì: correggilo e verrà preso al prossimo giro.",
+  "cli.session.handovers_waiting_elsewhere": "**{count} passaggi di mano aspettano su altri terminali e nessuno li ha presi:** {which}. Un terminale chiuso con un mandato ve lo ha lasciato per sempre; dal suo albero, `sailor terminal mandate --tty <quel terminale> --to <il tuo>` lo sposta a te.",
   "cli.session.handovers_missed": "**Questo terminale doveva passare la mano {owed} volte e ne ha mancate {missed}.** Si riempie, deposita un mandato e non viene mai svuotato, perché l'ultima lettura diceva: {said}. Una sessione che non è mai libera non passa la mano: viene compattata, e il filo si perde. Quando sei a oblige, chiudi quello che è aperto e non avviare altro lavoro in background.",
   "cli.flow.sensor_refused": "il flusso {flow} dichiara un sensore che non può girare senza nessuno a guardare: {reason}",
   "flow.sensor.malformed": "il «sensor» dell'innesco non è un sensore: {error}. Prende «action», «with», «pointer» e «cooldown_secs».",

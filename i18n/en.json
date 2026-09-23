@@ -1316,6 +1316,7 @@
   "cli.flow.yours_has_drifted_and_more": "your copy of this flow no longer matches the one shipped with the product: {count} field(s) differ, and the repairs made to the shipped one since you took it are not in yours — {fields}, and {more} more\n",
   "cli.session.the_drop_was_filed": "The mandate you left for {tty} has been deposited: «{head}». Nothing else is owed for the handover.",
   "cli.session.the_drop_was_refused": "The mandate at {path} was not deposited: {why}. It is still there: correct it and it will be taken at the next turn.",
+  "cli.session.handovers_waiting_elsewhere": "**{count} handover(s) wait on other terminals and nobody has taken them:** {which}. A terminal that closed with one left it there for good; from its tree, `sailor terminal mandate --tty <that terminal> --to <yours>` moves it to you.",
   "cli.session.handovers_missed": "**This terminal has been owed a handover {owed} time(s) and made {missed} fewer than that.** It stands full, deposits a mandate, and is never emptied, because the last reading said: {said}. A session that is never free is not handed on: it is compacted, and the thread is lost. When you stand at oblige, finish what is open and start no more background work.",
   "cli.flow.sensor_refused": "flow {flow} declares a sensor that may not run with nobody watching: {reason}",
   "flow.sensor.malformed": "the trigger's «sensor» is not a sensor: {error}. It takes «action», «with», «pointer» and «cooldown_secs».",

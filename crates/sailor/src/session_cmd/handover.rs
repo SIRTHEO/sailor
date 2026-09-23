@@ -120,6 +120,31 @@ fn the_mandate_of(
     ))
 }
 
+/// The event a terminal leaves when it closes on a mandate nobody took.
+pub(super) const HANDOVER_ORPHANED: &str = "handover_orphaned";
+
+/// What waits at this terminal's address as it closes, as the payload of the
+/// event that says so. **A CLOSED TERMINAL STRANDS ITS MANDATE**: no session
+/// will be greeted at that address again, so the close is where it is written.
+pub(super) fn left_behind(request: &Request<'_>, tty: &str) -> Option<String> {
+    let TheDeposit::Open(ledger) = request.deposit else {
+        return None;
+    };
+    let left = sessions::mandate::read(&sessions::mandate::address_in(ledger.directory(), tty))?;
+    if left.taken.is_some() {
+        return None;
+    }
+    Some(
+        serde_json::json!({
+            "goal": left.work.goal,
+            "tree": left.written.tree,
+            "session": left.written.session,
+            "deposited_at": left.written.at,
+        })
+        .to_string(),
+    )
+}
+
 /// Files a mandate the session left in its own home, and says what became of it.
 ///
 /// **THE DEPOSIT MUST NOT NEED A PERSON.** The session's own shell cannot write

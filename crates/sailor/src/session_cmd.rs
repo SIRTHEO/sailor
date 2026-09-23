@@ -110,7 +110,10 @@ pub const REFUSED: i32 = 3;
 mod handover;
 mod listing;
 
-use handover::{filed_what_was_dropped, handed_on, kept_by, received, the_ask_still_standing};
+use handover::{
+    filed_what_was_dropped, handed_on, kept_by, left_behind, received, the_ask_still_standing,
+    HANDOVER_ORPHANED,
+};
 use listing::{also_saying, close_the_gone, list_terminals, standing_of, Standing};
 
 pub fn run(args: &[String]) -> i32 {
@@ -621,6 +624,8 @@ struct StillOpen {
     page_unseen: Option<PageUnseen>,
     /// This terminal's own record of handovers owed and not made.
     handover: Option<ledger::HandoverMissed>,
+    /// Mandates nobody took on other terminals, open or long closed.
+    waiting_elsewhere: Vec<sessions::mandate::Mandate>,
 }
 
 /// The page of memories as it sits on disk: its address.
@@ -772,9 +777,19 @@ fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     let closed = store
         .close_terminal(request.tty, request.at)
         .map_err(|error| error.to_string())?;
+    let closing = event_named(request, "close");
     store
-        .record_event(&event_named(request, "close"))
+        .record_event(&closing)
         .map_err(|error| error.to_string())?;
+    if let Some(left) = left_behind(request, request.tty) {
+        store
+            .record_event(&TerminalEvent {
+                name: HANDOVER_ORPHANED.to_owned(),
+                payload: Some(left),
+                ..closing
+            })
+            .map_err(|error| error.to_string())?;
+    }
     let stopped = stop_announcing(request, &arrival_of(request));
     let key = if closed {
         "cli.session.closed"
@@ -1648,6 +1663,128 @@ mod tests {
                 _ => assert_eq!(taken.map(|taken| taken.by).as_deref(), Some("the-successor")),
             }
         }
+    }
+
+    /// A mandate left at `tty`, taken by `taken_by` when one is named.
+    fn a_mandate_at(store: &std::path::Path, tty: &str, taken_by: Option<&str>) {
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = tty.to_owned();
+        mandate.written.tree = format!("/the/tree/of/{tty}");
+        mandate.written.session = "the-one-that-filled-up".to_owned();
+        mandate.work.goal = format!("the work left at {tty}");
+        sessions::mandate::deposit(store, &mandate).expect("the mandate is deposited");
+        if let Some(by) = taken_by {
+            let path = sessions::mandate::address_in(store, tty);
+            sessions::mandate::consume(&path, by, now()).expect("it is taken");
+        }
+    }
+
+    fn orphaned_on(store: &Sessions, tty: &str) -> Vec<String> {
+        store
+            .events_on(tty)
+            .expect("its events")
+            .into_iter()
+            .filter(|event| event.name == HANDOVER_ORPHANED)
+            .map(|event| event.payload.unwrap_or_default())
+            .collect()
+    }
+
+    /// **A TERMINAL CLOSED ON A MANDATE NOBODY TOOK SAYS SO.** The close
+    /// recorded nothing, and the mandate waited at an address no session
+    /// would open again. One taken leaves nothing to say.
+    #[test]
+    fn closing_a_terminal_on_a_mandate_nobody_took_leaves_a_record() {
+        let scratch = Scratch::new("closed-on-a-mandate");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        for taken_by in [Some("the-successor"), None] {
+            a_mandate_at(deposit.directory(), "ttys004", taken_by);
+            asking(
+                "close",
+                r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#,
+                &store,
+                &TheDeposit::Open(&deposit),
+                &one_terminal(),
+                &named_line(),
+            )
+            .expect("the close goes through");
+        }
+
+        let orphaned = orphaned_on(&store, "ttys004");
+        assert_eq!(orphaned.len(), 1, "one record, for the untaken one: {orphaned:?}");
+        assert!(orphaned[0].contains("the work left at ttys004"), "{orphaned:?}");
+    }
+
+    /// The same when nobody closes it and the census finds the terminal gone.
+    #[test]
+    fn a_terminal_found_gone_on_a_mandate_nobody_took_leaves_a_record() {
+        let scratch = Scratch::new("gone-on-a-mandate");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        let two = Census::Terminals(
+            ["ttys004", "ttys009"]
+                .map(|tty| Terminal {
+                    tty: tty.to_owned(),
+                    ancestor: Some("Whatever".to_owned()),
+                    inhabitants: vec![],
+                })
+                .to_vec(),
+        );
+        for tty in ["ttys009", "ttys004"] {
+            let payload = Payload::parse(r#"{"session_id":"xyz","cwd":"/there"}"#).expect("parses");
+            act(&Request {
+                verb: "open",
+                options: &no_options(),
+                payload: &payload,
+                raw: "{}",
+                store: Some(&store),
+                deposit: &TheDeposit::NobodyNeedsItHere,
+                census: &two,
+                tty,
+                at: 900,
+            })
+            .expect("the terminal checks in");
+        }
+        a_mandate_at(deposit.directory(), "ttys009", None);
+
+        asking(
+            "event",
+            r#"{"session_id":"abc","cwd":"/here"}"#,
+            &store,
+            &TheDeposit::Open(&deposit),
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("an event on the terminal that stayed");
+
+        let orphaned = orphaned_on(&store, "ttys009");
+        assert_eq!(orphaned.len(), 1, "{orphaned:?}");
+        assert!(orphaned[0].contains("the work left at ttys009"), "{orphaned:?}");
+    }
+
+    /// **WHAT WAITS ON ANOTHER TERMINAL IS SAID ON THIS ONE.** The only
+    /// reading across terminals counted relay runs, and froze with the relay.
+    /// This terminal's own mandate and one already taken are not listed.
+    #[test]
+    fn the_greeting_names_the_mandates_waiting_on_other_terminals() {
+        let scratch = Scratch::new("waiting-elsewhere");
+        let ledger = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        a_mandate_at(ledger.directory(), "ttys019", None);
+        a_mandate_at(ledger.directory(), "ttys020", Some("the-successor"));
+        a_mandate_at(ledger.directory(), "ttysTEST", None);
+        let started = Started {
+            engine: None,
+            profile_home: None,
+            worktree: scratch.directory.clone(),
+            home: None,
+        };
+
+        let found = still_open_in(&ledger, None, &started, "ttysTEST").expect("open");
+        let said = what_is_still_open(&found).expect("something to say");
+
+        assert!(said.contains("ttys019 (/the/tree/of/ttys019)"), "{said}");
+        assert!(!said.contains("ttys020"), "a taken one is not waiting: {said}");
+        assert!(!said.contains("ttysTEST"), "this terminal's own is not elsewhere: {said}");
     }
 
     /// A terminal that closes stops holding the tree: whoever reads the survey

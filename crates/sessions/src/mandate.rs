@@ -269,6 +269,22 @@ pub fn read(path: &Path) -> Option<Mandate> {
     serde_json::from_str(&text).ok()
 }
 
+/// Every mandate nobody has taken, at whichever terminal, oldest first.
+pub fn waiting_in(store: &Path) -> Vec<Mandate> {
+    let Ok(entries) = std::fs::read_dir(store.join(MANDATES)) else {
+        return Vec::new();
+    };
+    let mut waiting: Vec<Mandate> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|it| it == "json"))
+        .filter_map(|path| read(&path))
+        .filter(|mandate| mandate.taken.is_none())
+        .collect();
+    waiting.sort_by_key(|mandate| mandate.written.at);
+    waiting
+}
+
 /// Marks it consumed by one session.
 ///
 /// It stays on disk, marked. Removing it would make a second resume look like
