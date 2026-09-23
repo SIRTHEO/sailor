@@ -5,6 +5,7 @@
 //! the wrong name — and a wrong name is what `remove` acts on.
 
 use ledger::holdings::Whose;
+use sailor::retire_index::IndexTending;
 use sailor::worktree_cmd::{render, render_open, still_the_opener, sweep, Holders};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -192,9 +193,11 @@ fn the_sweep_takes_down_the_merged_trees_and_names_the_ones_holding_work() {
     let scratch = a_scratch("sweeping");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let merged = workspace::create(&repo, "work/gia-dentro", None).expect("a merged tree");
-    let ahead = workspace::create(&repo, "work/ancora-fuori", None).expect("a tree of its own");
-    let dirty = workspace::create(&repo, "work/mai-committato", None).expect("a third tree");
+    let merged = workspace::create(&repo, "work/gia-dentro", None, &store).expect("a merged tree");
+    let ahead =
+        workspace::create(&repo, "work/ancora-fuori", None, &store).expect("a tree of its own");
+    let dirty =
+        workspace::create(&repo, "work/mai-committato", None, &store).expect("a third tree");
     std::fs::write(ahead.join("answer"), "a night of work\n").expect("work");
     run_git(&ahead, &["add", "answer"]);
     run_git(&ahead, &["commit", "-q", "-m", "not in the trunk"]);
@@ -248,7 +251,7 @@ fn a_merged_tree_somebody_is_working_in_is_kept_and_named() {
     let scratch = a_scratch("occupied");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let busy = workspace::create(&repo, "work/qualcuno-dentro", None).expect("a merged tree");
+    let busy = workspace::create(&repo, "work/qualcuno-dentro", None, &store).expect("a merged tree");
     written_down(&store, &repo, &busy);
 
     let said = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(std::slice::from_ref(&busy), &[]), &IdentityRule::default()).expect("the sweep runs");
@@ -273,7 +276,17 @@ fn a_tree_sailor_never_cut_is_named_and_never_taken_down() {
     let scratch = a_scratch("never-cut");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let by_hand = workspace::create(&repo, "work/tagliato-a-mano", None).expect("a tree");
+    let by_hand = tree_path(&repo, "tagliato-a-mano");
+    run_git(
+        &repo,
+        &[
+            "worktree",
+            "add",
+            &by_hand.to_string_lossy(),
+            "-b",
+            "work/tagliato-a-mano",
+        ],
+    );
 
     let said = sweep(&repo, &store as &dyn OpenTrees, &let_go_long_ago(&[], &[]), &IdentityRule::default()).expect("the sweep runs");
     let still_there = by_hand.exists();
@@ -290,27 +303,60 @@ fn a_tree_sailor_never_cut_is_named_and_never_taken_down() {
 
 /// **A TREE CUT BY THE GESTURE A PERSON TYPES IS ONE SAILOR ANSWERS FOR.** It
 /// was cut and never written down, so the flow that closes finished work could
-/// only name it: the branch merged and the tree stayed.
+/// only name it: the branch merged and the tree stayed. The row is written by
+/// the door that cuts, so `sailor worktree create` and the window get it
+/// without either of them remembering to.
 #[test]
 fn a_tree_cut_for_a_branch_is_written_down_as_it_is_cut() {
     let scratch = a_scratch("written-as-cut");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
 
-    let said = sailor::worktree_cmd::cut_and_written_down(
-        &repo,
-        "work/scritto-subito",
-        None,
-        &store as &dyn OpenTrees,
-    )
-    .expect("the tree is cut");
+    let cut_at =
+        workspace::create(&repo, "work/scritto-subito", None, &store).expect("the tree is cut");
     let rows = store.trees_left_open().expect("the rows");
     let _ = std::fs::remove_dir_all(&scratch);
 
+    let said = cut_at.to_string_lossy();
     assert!(
         rows.iter()
             .any(|row| row.path == said && row.step == "work/scritto-subito"),
         "the tree {said} was cut and not written down: {rows:?}"
+    );
+}
+
+/// **A TREE TAKEN DOWN GOES OFF THE PAGE WITH IT.** Cutting wrote the row and
+/// the gesture that removes one by name never paid it back, so `sailor
+/// worktree open` went on listing trees that are gone and the flow that closes
+/// finished work was answering for disk nobody would ever claim.
+#[test]
+fn a_tree_taken_down_by_name_leaves_the_register_with_it() {
+    let scratch = a_scratch("removed-leaves");
+    let repo = a_repository_in(&scratch);
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let cut = workspace::create(&repo, "work/tolto-per-nome", None, &store).expect("a tree");
+    let listed = store.trees_left_open().expect("the rows");
+
+    let said = sailor::worktree_cmd::remove_one(
+        &repo,
+        "tolto-per-nome",
+        &store as &dyn OpenTrees,
+        &IndexTending::of(&repo),
+    )
+    .expect("the tree comes down");
+    let after = store.trees_left_open().expect("the rows");
+    let gone = !cut.exists();
+    let _ = std::fs::remove_dir_all(&scratch);
+
+    assert_eq!(
+        listed.len(),
+        1,
+        "the tree was never written down: {listed:?}"
+    );
+    assert!(gone, "the tree is still on disk:\n{said}");
+    assert!(
+        after.is_empty(),
+        "the tree is gone and the register still offers it: {after:?}"
     );
 }
 
@@ -320,7 +366,7 @@ fn a_tree_cut_less_than_an_hour_ago_stays_whoever_cut_it() {
     let scratch = a_scratch("young");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let young = workspace::create(&repo, "work/appena-tagliato", None).expect("a tree");
+    let young = workspace::create(&repo, "work/appena-tagliato", None, &store).expect("a tree");
     written_down(&store, &repo, &young);
     let nobody = |_: &OpenTree| Whose::Nobody;
     let right_now = Holders { occupied: &[], standing: &[], owner: &nobody, now: seconds_now() };
@@ -343,7 +389,7 @@ fn a_tree_whose_opener_is_still_there_stays() {
     let scratch = a_scratch("opener-alive");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let held = workspace::create(&repo, "work/ancora-tenuto", None).expect("a tree");
+    let held = workspace::create(&repo, "work/ancora-tenuto", None, &store).expect("a tree");
     written_down(&store, &repo, &held);
     let alive = |_: &OpenTree| Whose::TheProcessThatTookIt;
     let its_opener_is_there = Holders { occupied: &[], standing: &[], owner: &alive, now: i64::MAX / 2 };
@@ -363,7 +409,7 @@ fn a_tree_a_process_works_in_stays_and_the_process_is_named() {
     let scratch = a_scratch("a-process-in-it");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let busy = workspace::create(&repo, "work/un-processo-dentro", None).expect("a tree");
+    let busy = workspace::create(&repo, "work/un-processo-dentro", None, &store).expect("a tree");
     written_down(&store, &repo, &busy);
     let mut inside = Command::new("sleep").arg("60").current_dir(&busy).spawn().expect("a process inside");
 

@@ -28,7 +28,7 @@ fn closing_a_tree_retires_its_identity_and_no_other() {
     let scratch = a_scratch("close");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let tree = workspace::create(&repo, "work/done", None).expect("a merged tree");
+    let tree = workspace::create(&repo, "work/done", None, &store).expect("a merged tree");
     let identity = identity_as_listed(&repo, "done");
     let index = an_index(&scratch, &identity, &[PRUNE_TOOL, "codebase_search"]);
 
@@ -50,11 +50,12 @@ fn closing_a_tree_retires_its_identity_and_no_other() {
 fn removing_a_tree_retires_its_identity_too() {
     let scratch = a_scratch("remove");
     let repo = a_repository_in(&scratch);
-    let tree = workspace::create(&repo, "work/done", None).expect("a tree");
+    let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
+    let tree = workspace::create(&repo, "work/done", None, &store).expect("a tree");
     let identity = identity_as_listed(&repo, "done");
     let index = an_index(&scratch, &identity, &[PRUNE_TOOL]);
 
-    let said = remove_one(&repo, "done", &index.tending).expect("the remove");
+    let said = remove_one(&repo, "done", &store, &index.tending).expect("the remove");
     let gone = !tree.exists();
     let applied = index.applied();
     let _ = std::fs::remove_dir_all(&scratch);
@@ -71,8 +72,8 @@ fn an_index_without_the_tool_or_out_of_reach_leaves_the_close_green_and_says_why
     let scratch = a_scratch("blind");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let first = workspace::create(&repo, "work/first", None).expect("a tree");
-    let second = workspace::create(&repo, "work/second", None).expect("a tree");
+    let first = workspace::create(&repo, "work/first", None, &store).expect("a tree");
+    let second = workspace::create(&repo, "work/second", None, &store).expect("a tree");
     let first_identity = identity_as_listed(&repo, "first");
     let second_identity = identity_as_listed(&repo, "second");
     let without_the_tool = an_index(&scratch, &first_identity, &["codebase_search"]);
@@ -113,8 +114,8 @@ fn a_repository_declaring_no_index_server_says_where_it_would() {
     let scratch = a_scratch("undeclared");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    workspace::create(&repo, "work/done", None).expect("a tree");
-    workspace::create(&repo, "work/other", None).expect("a tree");
+    workspace::create(&repo, "work/done", None, &store).expect("a tree");
+    workspace::create(&repo, "work/other", None, &store).expect("a tree");
     let none = IndexTending::with(IndexServer::NotDeclared, IdentityRule::default(), Duration::from_secs(10));
     let unreadable = IndexTending::with(
         IndexServer::CouldNotRead("the configuration is locked".to_owned()),
@@ -143,7 +144,7 @@ fn a_pinned_identity_another_tree_still_carries_is_kept() {
         .expect("the pin");
     run_git(&repo, &["add", ".an-index.json", ".sailor"]);
     run_git(&repo, &["commit", "-q", "-m", "pin the index"]);
-    let tree = workspace::create(&repo, "work/done", None).expect("a tree");
+    let tree = workspace::create(&repo, "work/done", None, &store).expect("a tree");
     let index = an_index_reading(&scratch, "shared-pin", &[PRUNE_TOOL], rule);
 
     let said = close_one(&repo, "done", &store as &dyn OpenTrees, &index.tending, NOBODY, NO_PROCESS).expect("the close");
@@ -163,7 +164,7 @@ fn the_sweep_writes_the_identity_down_and_the_gesture_retires_it() {
     let scratch = a_scratch("sweep");
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let tree = workspace::create(&repo, "work/done", None).expect("a merged tree");
+    let tree = workspace::create(&repo, "work/done", None, &store).expect("a merged tree");
     let identity = identity_as_listed(&repo, "done");
     let index = an_index(&scratch, &identity, &[PRUNE_TOOL]);
 

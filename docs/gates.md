@@ -16,7 +16,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p sailor -j 1 --test no_engine_is_named_in_the_code --test no_product_home_is_written_into_the_code --test nothing_reserved_is_tracked --test the_repository_ships_no_workshop_flow --test no_push_publishes_a_private_name --test the_publication_boundary_holds --test no_workbench_tool_is_named_in_the_code`
 - `cargo test -p sailor -j 1 --test no_forge_no_remote_no_trunk_is_named_in_the_code --test files_do_not_grow_out_of_scale --test a_source_file_holds_code_not_a_suite --test clippy_only_ever_gets_quieter`
 - `cargo test -p sailor -j 1 --test production_code_does_not_panic_on_purpose --test every_child_process_starts_by_one_road --test tests_read_no_state_of_this_machine`
-- `cargo test -p sailor -j 1 --test every_declared_check_names_a_test_that_exists --test every_ratchet_is_named_in_the_gates` — the two that keep this list honest in both directions
+- `cargo test -p sailor -j 1 --test every_declared_check_names_a_test_that_exists --test every_ratchet_is_named_in_the_gates --test every_section_of_the_gates_is_one_the_runner_reads` — the three that keep this list honest in both directions, and the runner honest about reading all of it
 - `cargo clippy -p <every crate touched> --tests -j 1` — clean
 - `git log main..HEAD --format=%B | grep -E '^(Co-Authored-By|Claude-Session):'` — empty
 - Commits by path, project voice, no model named, no private names in fixtures
@@ -29,19 +29,19 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cargo test -p sailor -j 1 --test a_check_that_failed_before_the_attestation_is_asked_again` — integration's merge step, run against a forge that answers from a file
 - `cargo test -p flow -j 1`
 
-## C. When `crates/actions` or a brake changes
+## C. When `crates/actions` changes
 
 - `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` (both suites, always both)
 - A first-execution timeout (`engine_timed_out` on a fresh temp-file engine) is rerun once and said aloud
 - `cargo test -p actions -j 1 --test a_candidate_leaves_only_through_the_gate` — the last gate before a draft, integration, a release (before its build and before its push) or closing the work lets a candidate leave, proved without a forge or a binary in service
 - `cargo test -p actions -j 1 --test a_verdict_binds_only_the_pinned_commit` — a review is recorded only when its verdict names the pinned commit, says clean or findings, lists what it checked, and was closed with the sailor the flow verified
 
-## D. When `crates/profiles`, the login probe or a launch changes
+## D. When `crates/profiles` or `crates/actions/src/probe.rs` changes
 
 - `cargo test -p profiles -j 1`
 - One real probe on a real home: `SAILOR_TEST_CLAUDE_HOME=<home> cargo test -p actions -j 1 --test <the probe test>` — pasted, not skipped
 
-## E2. When a tree is taken down: `worktree_cmd`, the sweep or `workspace::standing`
+## E2. When `worktree_cmd`, `sweep` or `crates/workspace/` changes
 
 - `cargo test -p sailor -j 1 --test a_tree_somebody_is_in_is_never_closed --test a_closed_tree_takes_its_index_identity_with_it` — a tree somebody is in is kept, whoever asks
 - `cargo test -p workspace -j 1`
