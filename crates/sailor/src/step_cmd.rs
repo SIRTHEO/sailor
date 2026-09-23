@@ -319,7 +319,37 @@ fn close_step(found: &BTreeMap<String, String>) -> Result<String, String> {
     let ledger = open_ledger()?;
     let run_id = required(found, "run")?;
     let flow = flow_of_run(&ledger, run_id)?;
-    close_step_in(&ledger, &flow, found)
+    let closed = close_step_in(&ledger, &flow, found)?;
+    carry_the_run_on(&ledger, &flow, run_id, closed)
+}
+
+/// Resumes the run a close answered, as the window's close does: the step after
+/// a handoff only ever starts through a resume, and a close that left it to a
+/// printed line left six answered reviews parked for a day.
+/// Only a run parked on a person: a `running` one has a process of its own, and
+/// one that ended is not reopened by a close.
+fn carry_the_run_on(
+    ledger: &Ledger,
+    flow: &FlowFile,
+    run_id: &str,
+    closed: String,
+) -> Result<String, String> {
+    let header = ledger.run_header(run_id).map_err(|error| {
+        format!(
+            "{closed}\n{}",
+            catalogue::say(
+                "cli.step.cannot_read_run",
+                &[("run_id", run_id), ("error", &error.to_string())],
+            )
+        )
+    })?;
+    if !header.is_some_and(|header| header.status == "waiting") {
+        return Ok(closed);
+    }
+    match crate::flow_cmd::resume_run_in(ledger, flow, run_id) {
+        Ok(resumed) => Ok(format!("{closed}\n{resumed}")),
+        Err(resumed) => Err(format!("{closed}\n{resumed}")),
+    }
 }
 
 /// The outcome whoever closes declares.
@@ -785,7 +815,8 @@ fn decide_step(found: &BTreeMap<String, String>, verdict: Verdict) -> Result<Str
     let ledger = open_ledger()?;
     let run_id = required(found, "run")?;
     let flow = flow_of_run(&ledger, run_id)?;
-    decide_step_in(&ledger, &flow, found, verdict)
+    let decided = decide_step_in(&ledger, &flow, found, verdict)?;
+    carry_the_run_on(&ledger, &flow, run_id, decided)
 }
 
 /// Why the decision went that way. **A REJECTION HAS TO SAY IT**: read back a
