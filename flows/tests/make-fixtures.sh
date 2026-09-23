@@ -35,16 +35,22 @@ true'
 
 # The cheap worker the journey runs: it acknowledges the mandate and writes
 # TASK_OK, so walking the journey never reaches an engine that is paid for.
+# Declared whole, like a shipped engine: `flow check` tries its line without a
+# mandate, and the refusal it declares is what calls that line sound.
 mkdir -p "$fixtures/bin"
 cat > "$fixtures/bin/fake-cheap-worker" <<'WORKER'
 #!/bin/sh
 input=$(cat)
+if [ -z "$input" ]; then
+  echo "fake-cheap-worker: no mandate on standard input" >&2
+  exit 2
+fi
 digest=$(printf '%s' "$input" | head -n 1 | sed -E 's/^Mandate ([^:]+):.*/\1/')
-[ -n "$input" ] && touch TASK_OK
+touch TASK_OK
 printf 'ack %s\nattempted' "$digest"
 WORKER
 chmod +x "$fixtures/bin/fake-cheap-worker"
-printf '%s\n' '[{"id": "fake-cheap-worker", "family": "ai_cli", "label": "Fake Cheap Worker", "detect": {"command": "fake-cheap-worker"}, "ask": {"args": [], "prompt": "stdin"}}]' > "$fixtures/descriptors.json"
+printf '%s\n' '[{"id": "fake-cheap-worker", "family": "ai_cli", "label": "Fake Cheap Worker", "detect": {"command": "fake-cheap-worker"}, "ask": {"args": [], "prompt": "stdin", "refuses_without_prompt": ["no mandate on standard input"]}, "capabilities": {"ask_without_interaction": true}}]' > "$fixtures/descriptors.json"
 
 echo "fixtures written under $fixtures"
 echo "seed their ledger with: cargo run -p sailor --example seed_take_the_next_work -- $fixtures fake-cheap-worker"

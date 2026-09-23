@@ -137,6 +137,55 @@ fn make_fixtures() -> PathBuf {
     fixtures
 }
 
+/// Tries a line the way `flow check` does, with an empty and closed stdin.
+struct TheFixtureWorker;
+
+impl actions::DryProbe for TheFixtureWorker {
+    fn run(&self, bin: &str, args: &[String], _stdin: Option<Vec<u8>>) -> actions::DryRun {
+        match std::process::Command::new(bin)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .output()
+        {
+            Ok(output) => actions::DryRun::Answered {
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            },
+            Err(error) => actions::DryRun::NoAnswer {
+                why: error.to_string(),
+            },
+        }
+    }
+}
+
+/// The journey's step 5 reads the fixture worker's descriptor as `flow check`
+/// reads any engine's: one that contradicts itself, or never says how it
+/// refuses a line with no mandate, leaves that line untried.
+#[test]
+fn the_journeys_worker_is_declared_whole_and_its_line_is_sound() {
+    let _fixtures_lock = FIXTURES_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let fixtures = make_fixtures();
+    let catalog =
+        toolbox::Catalog::load(&[toolbox::Source::File(fixtures.join("descriptors.json"))]);
+    assert!(catalog.problems.is_empty(), "{:?}", catalog.problems);
+    let worker = catalog
+        .live()
+        .into_iter()
+        .find(|loaded| loaded.descriptor.id == "fake-cheap-worker")
+        .expect("the fixture declares the worker");
+    assert_eq!(worker.descriptor.contradictions(), Vec::<String>::new());
+
+    let recipe = toolbox::ask_recipe_of(&worker.descriptor).expect("the worker can be asked");
+    let bin = fixtures.join("bin/fake-cheap-worker");
+    let verdict = actions::probe_dry_run(&TheFixtureWorker, &bin.to_string_lossy(), &recipe);
+    assert!(
+        matches!(verdict, actions::ProbeVerdict::Sound),
+        "{verdict:?}"
+    );
+}
+
 fn fresh_ledger(tag: &str) -> Ledger {
     let dir = std::env::temp_dir().join(format!(
         "queue-flow-{tag}-{}-{}",
