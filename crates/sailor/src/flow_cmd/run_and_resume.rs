@@ -95,16 +95,9 @@ impl flow::ProcessProbe for HandoffLease {
             ledger::StillHeld::Released => return Ok(false),
             ledger::StillHeld::Nobody => {}
         }
-        let Some(limit) = record
-            .input
-            .get("handoff_timeout_secs")
-            .and_then(Value::as_i64)
-        else {
-            // No readable deadline: it is held. The ambiguity is kept, it is
-            // not settled on the convenient side.
-            return Ok(true);
-        };
-        Ok(self.now < record.started_at.saturating_add(limit))
+        // No readable deadline: it is held. The ambiguity is kept, it is not
+        // settled on the convenient side.
+        Ok(actions::handoff::deadline_of(record).is_none_or(|deadline| self.now < deadline))
     }
 }
 

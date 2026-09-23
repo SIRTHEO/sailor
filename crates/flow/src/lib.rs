@@ -29,7 +29,7 @@ pub use executor::{
     RedoEvidence, RunStops, SharedState, Spend, SpendStop, StepInput, StopReason, SystemClock,
     Unmet,
     AFTER_REFUSAL, AT_ONCE, CURRENT_CAP, CURRENT_FRONT, CURRENT_HOLDER, CURRENT_RUN, CURRENT_STEP,
-    CURRENT_WALL,
+    CURRENT_WALL, HANDOFF_EXPIRED,
     WALL_REMAINING_SECS, WORKDIR_FIELD, WORKSPACE_ROOT,
 };
 pub use file::{CapKind, FlowFile, Provenance};
