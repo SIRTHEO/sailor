@@ -163,6 +163,7 @@
   "cli.flow.due_now_and_unplanned": "{due} dovuti adesso; {unplanned} senza innesco, che partono solo a mano",
   "cli.flow.every_so_many_seconds": "ogni {seconds}s dall'ultima corsa",
   "cli.flow.expired_back_among_the_ready": "scaduti e rimessi fra i pronti: {steps}",
+  "cli.flow.nobody_took_the_handover": "nessuno li ha presi in carico entro la scadenza, e l'attesa è finita: {steps}",
   "cli.flow.held_deadline_not_passed": "tenuti, la scadenza non è passata: {steps}",
   "cli.flow.in_the_store": "nel deposito: {runs} corse, di cui {costed} hanno speso qualcosa di noto",
   "cli.flow.in_turns": "in {turns} turni",
