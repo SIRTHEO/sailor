@@ -88,7 +88,6 @@ pub fn trees_root(repo: &Path) -> PathBuf {
     parent.join(format!("{stem}{BESIDE_A_CHECKOUT}"))
 }
 
-/// Where a new tree goes.
 pub fn tree_path(repo: &Path, name: &str) -> PathBuf {
     trees_root(repo).join(name)
 }
@@ -133,10 +132,9 @@ pub fn branch_names(repo: &Path) -> Result<Vec<String>, String> {
 }
 
 /// Cuts a tree for `branch`, creating the branch if it does not exist yet.
-/// Cutting and writing down are one gesture, as in [`tree_for`]: the register
-/// is what says a tree is Sailor's to take down again, and a caller that could
-/// cut without it would leave one nobody may close. A tree the register
-/// refused goes straight back.
+/// **CUTTING AND WRITING DOWN ARE ONE GESTURE**, here and in [`tree_for`]:
+/// only a tree on the register may be taken down, so one cut past it would be
+/// nobody's to close, and one the register refuses goes straight back.
 pub fn create(
     repo: &Path,
     branch: &str,
@@ -263,8 +261,7 @@ impl Drop for OneTreeAtATime {
 
 /// The tree one step of one run works in, detached so no branch is left behind.
 /// An existing one is the answer: a retried step needs what its first attempt
-/// left. Cutting and writing down are one gesture: a tree the register refused
-/// goes straight back, since nobody could ever find it again.
+/// left. It is written down as it is cut, as [`create`] is.
 pub fn tree_for(
     repo: &Path,
     run: &str,
@@ -339,7 +336,6 @@ pub enum Swept {
 /// Takes down the tree cut for one step, once nobody is coming back to it.
 /// Two things keep it, and neither is ever overridden: git's refusal over
 /// uncommitted work, and a commit that only this tree holds. See fault 89.
-/// Taking down and forgetting are one gesture, or Sailor keeps looking for it.
 pub fn close_tree(repo: &Path, tree: &Path, register: &dyn OpenTrees) -> Closing {
     if let Some(commit) = a_commit_no_branch_holds(repo, tree) {
         return Closing::HoldsACommitNobodyElseHas(commit);
@@ -464,18 +460,16 @@ pub fn remove(repo: &Path, name: &str, register: &dyn OpenTrees) -> Result<PathB
     Ok(path)
 }
 
-/// Taking a tree down and taking it off the register are one gesture, the
-/// mirror of [`create`]: a row left open is a tree `sailor worktree open` goes
-/// on listing after the directory is gone.
+/// Taking down and taking off the register are one gesture, the mirror of
+/// [`create`]: a row left open is a tree `sailor worktree open` lists after
+/// the directory is gone, and it is asked by the paths it holds, since a row
+/// carries whatever spelling wrote it and two spellings are one tree.
 pub fn remove_at(repo: &Path, at: &Path, register: &dyn OpenTrees) -> Result<(), String> {
     git(repo, &["worktree", "remove", &at.to_string_lossy()])?;
     off_the_register(register, at);
     Ok(())
 }
 
-/// The register is asked by the paths it holds and not only by the one this
-/// caller carries: a row was keyed by whatever spelling whoever wrote it down
-/// had in hand, and two spellings of one tree are one tree.
 fn off_the_register(register: &dyn OpenTrees, at: &Path) {
     let _ = register.tree_closed(&at.to_string_lossy());
     let here = standing::canonical(at);
@@ -490,7 +484,6 @@ fn off_the_register(register: &dyn OpenTrees, at: &Path) {
     }
 }
 
-/// One file git reports as changed, with its two-letter porcelain status.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ChangedFile {
     pub path: String,
@@ -548,9 +541,6 @@ pub fn changes(root: &Path) -> Result<Changes, String> {
     })
 }
 
-/// Where a tree stands right now: the branch, the commit, and a digest of
-/// everything not committed.
-///
 /// Read here and never asked of an agent. What a session claims about the tree
 /// it worked in is the half a successor must not have to trust.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
