@@ -39,10 +39,8 @@ impl Scratch {
     /// answers a token per account and writes down every other call. Asked
     /// to refuse, it refuses every call that is not for a token.
     fn new(label: &str, forge_refuses: bool) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "sailor-integrated-{label}-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("sailor-integrated-{label}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let repo = root.join("repo");
         std::fs::create_dir_all(repo.join("scripts")).expect("a scripts directory");
@@ -65,7 +63,12 @@ impl Scratch {
         scratch.git(&["config", "user.email", "test@example.test"]);
         scratch.git(&["config", "user.name", "test"]);
         scratch.git(&["config", "sailor.forgeAs", "an-account"]);
-        scratch.git(&["remote", "add", "origin", "https://github.com/an-owner/a-repository.git"]);
+        scratch.git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/an-owner/a-repository.git",
+        ]);
         std::fs::write(repo.join("readme.txt"), "a project\n").expect("a file");
         scratch.git(&["add", "readme.txt"]);
         scratch.git(&["commit", "-q", "-m", "the reviewed head"]);
@@ -153,14 +156,23 @@ fn the_status_names_the_run_and_the_reviewed_head_as_the_tree_s_account() {
 
     let calls = scratch.calls();
     assert_eq!(calls.lines().count(), 1, "{calls}");
-    assert!(calls.starts_with("GH_TOKEN=token-for-an-account "), "not the tree's account: {calls}");
+    assert!(
+        calls.starts_with("GH_TOKEN=token-for-an-account "),
+        "not the tree's account: {calls}"
+    );
     assert!(
         calls.contains(&format!("repos/an-owner/a-repository/statuses/{head} ")),
         "not the reviewed head: {calls}"
     );
-    assert!(calls.contains("state=success") && calls.contains("context=sailor/integrated"), "{calls}");
     assert!(
-        calls.contains(&format!("description=run {A_RUN}; verdict on {}", &head[..12])),
+        calls.contains("state=success") && calls.contains("context=sailor/integrated"),
+        "{calls}"
+    );
+    assert!(
+        calls.contains(&format!(
+            "description=run {A_RUN}; verdict on {}",
+            &head[..12]
+        )),
         "the status does not name the run and the verdict's commit: {calls}"
     );
 }
@@ -170,8 +182,16 @@ fn a_step_told_no_run_posts_nothing() {
     let scratch = Scratch::new("no-run", false);
     let refused = scratch.the_step(&scratch.head(), None);
     assert_ne!(refused.status.code(), Some(0), "{}", said(&refused));
-    assert!(said(&refused).contains("no run names this integration"), "{}", said(&refused));
-    assert_eq!(scratch.calls(), "", "a status was posted with no run to name");
+    assert!(
+        said(&refused).contains("no run names this integration"),
+        "{}",
+        said(&refused)
+    );
+    assert_eq!(
+        scratch.calls(),
+        "",
+        "a status was posted with no run to name"
+    );
 }
 
 #[test]
@@ -184,5 +204,9 @@ fn a_status_the_forge_refuses_breaks_the_step_and_says_why() {
         "{}",
         said(&refused)
     );
-    assert!(refused.stdout.is_empty(), "a refused status still answered: {}", said(&refused));
+    assert!(
+        refused.stdout.is_empty(),
+        "a refused status still answered: {}",
+        said(&refused)
+    );
 }

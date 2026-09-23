@@ -71,10 +71,16 @@ impl Action for Checks {
         let step = step_of(shared);
         self.order.lock().expect("the order").push(step.clone());
         if step == "manual_green" && !matches!(self.person, Person::Green) {
-            return Err(ActionError::new("check_failed", "the person did not write green"));
+            return Err(ActionError::new(
+                "check_failed",
+                "the person did not write green",
+            ));
         }
         if step == "integrated" && self.forge_refuses {
-            return Err(ActionError::new("check_failed", "the forge refused the status"));
+            return Err(ActionError::new(
+                "check_failed",
+                "the forge refused the status",
+            ));
         }
         let asked = self.person != Person::NotAsked;
         let run = shared.get(CURRENT_RUN).cloned().unwrap_or(Value::Null);
@@ -166,9 +172,18 @@ fn the_status_is_posted_after_every_check_and_before_the_merge() {
     let (decision, ran) = run(Person::Green, false);
     assert_eq!(decision, Some(Decision::Complete), "{ran:?}");
     let posted = at(&ran, "integrated").expect("the status was never posted");
-    for before in ["manual_gates", "manual_green", "ref_gate", "attest", "ready"] {
+    for before in [
+        "manual_gates",
+        "manual_green",
+        "ref_gate",
+        "attest",
+        "ready",
+    ] {
         let there = at(&ran, before).unwrap_or_else(|| panic!("«{before}» never ran: {ran:?}"));
-        assert!(there < posted, "«{before}» ran after the status was posted: {ran:?}");
+        assert!(
+            there < posted,
+            "«{before}» ran after the status was posted: {ran:?}"
+        );
     }
     let merged = at(&ran, "merge_request").expect("the merge never ran");
     assert!(posted < merged, "the merge ran before the status: {ran:?}");
@@ -187,7 +202,10 @@ fn with_no_line_left_to_a_person_the_status_is_still_posted_before_the_merge() {
 #[test]
 fn a_red_person_posts_nothing_and_merges_nothing() {
     let (decision, ran) = run(Person::Red, false);
-    assert!(matches!(decision, Some(Decision::Failed(_))), "{decision:?}");
+    assert!(
+        matches!(decision, Some(Decision::Failed(_))),
+        "{decision:?}"
+    );
     assert_eq!(at(&ran, "integrated"), None, "{ran:?}");
     assert_eq!(at(&ran, "merge_request"), None, "{ran:?}");
 }
@@ -195,7 +213,10 @@ fn a_red_person_posts_nothing_and_merges_nothing() {
 #[test]
 fn a_person_still_away_posts_nothing_and_merges_nothing() {
     let (decision, ran) = run(Person::StillAway, false);
-    assert!(matches!(decision, Some(Decision::Waiting(_))), "{decision:?}");
+    assert!(
+        matches!(decision, Some(Decision::Waiting(_))),
+        "{decision:?}"
+    );
     assert_eq!(at(&ran, "integrated"), None, "{ran:?}");
     assert_eq!(at(&ran, "merge_request"), None, "{ran:?}");
 }
@@ -203,7 +224,10 @@ fn a_person_still_away_posts_nothing_and_merges_nothing() {
 #[test]
 fn a_status_the_forge_refused_merges_nothing() {
     let (decision, ran) = run(Person::Green, true);
-    assert!(matches!(decision, Some(Decision::Failed(_))), "{decision:?}");
+    assert!(
+        matches!(decision, Some(Decision::Failed(_))),
+        "{decision:?}"
+    );
     assert!(at(&ran, "integrated").is_some(), "{ran:?}");
     assert_eq!(at(&ran, "merge_request"), None, "{ran:?}");
 }
