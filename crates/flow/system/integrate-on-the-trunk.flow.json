@@ -949,9 +949,6 @@
           "pointer": "/combined/answer/already",
           "value": false
         },
-        "needs": [
-          "gh"
-        ],
         "input_schema": {
           "type": "any"
         },
