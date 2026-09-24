@@ -161,7 +161,7 @@ while IFS="$tab" read -r letter kind text; do
         continue
     fi
     case "$text" in
-        "cd desktop && npm test"|"cd desktop && npx tsc --noEmit")
+        "cd desktop && npm test"|"cd desktop && npx tsc --noEmit"|"cd desktop && npm run walkthrough")
             words=${text#cd desktop && }
             if [ "$list_only" -eq 1 ]; then say "(in desktop) $words"; continue; fi
             # A tree cut for the gates has never installed the window's packages.
