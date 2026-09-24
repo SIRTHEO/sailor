@@ -1,5 +1,6 @@
 {
   "id": "consolidate-memories",
+  "version": 1,
   "description": "THE MEMORIES DO NOT GROW FOREVER. Once a day, at a quiet hour, one reading and no engine: every memory still valid, with its type, its label, its value and when it was written. One engine call, kind «writing», on private data: it reads them all and answers with two lists — what to keep, merged and reworded where two said the same thing, and what to drop because it is stale or contradicted by a later one. Feedback is never reworded: the person's own words are the memory. One gesture: the dropped labels are closed and the kept memories written, in one pass that refuses a secret and refuses a label on both lists, and the page every command line reads at its start is written again. Light, because a consolidation that costs a heavy run is one somebody switches off.",
   "schedule": {
     "recurrence": {

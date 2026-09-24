@@ -509,6 +509,9 @@ pub struct Chain {
     pub resolved_in: Option<PathBuf>,
     pub replaced: Vec<Candidate>,
     pub winner: Candidate,
+    /// Set when the winner replaces an older version of the shipped flow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale: Option<crate::versions::Stale>,
 }
 
 impl Chain {
@@ -525,7 +528,13 @@ pub struct Resolved {
     pub entry: Result<FlowFile, String>,
 }
 
-type Seen = (Vec<Candidate>, Option<Result<FlowFile, String>>);
+/// The candidates of one name, the entry of the last one, and the shipped
+/// entry the last one may replace.
+type Seen = (
+    Vec<Candidate>,
+    Option<Result<FlowFile, String>>,
+    Option<FlowFile>,
+);
 
 /// The one reading of precedence, by name: [`chains`] and [`load_all`] are
 /// views of it, so a mark and the flow it marks describe the same file.
@@ -552,21 +561,32 @@ pub fn resolve(sources: &[FlowSource], resolved_in: Option<&Path>) -> Vec<Resolv
                 origin: source.origin,
                 path,
             });
+            if source.is_builtin() {
+                slot.2 = entry.as_ref().ok().cloned();
+            }
             slot.1 = Some(entry);
         }
     }
     by_name
         .into_iter()
-        .filter_map(|(name, (mut candidates, entry))| {
+        .filter_map(|(name, (mut candidates, entry, shipped))| {
             let winner = candidates.pop()?;
+            let entry = entry?;
+            let stale = match (&entry, &shipped) {
+                (Ok(yours), Some(shipped)) if winner.origin != BUILTIN_ORIGIN => {
+                    crate::versions::stale(yours, shipped)
+                }
+                _ => None,
+            };
             Some(Resolved {
                 chain: Chain {
                     name,
                     resolved_in: resolved_in.map(Path::to_path_buf),
                     replaced: candidates,
                     winner,
+                    stale,
                 },
-                entry: entry?,
+                entry,
             })
         })
         .collect()
@@ -835,7 +855,18 @@ pub fn save_document_in(flows_dir: &Path, document: &serde_json::Value) -> Resul
     let file_name = format!("{id}.flow.json");
     reject_a_name_that_collides_only_by_case(flows_dir, &file_name)?;
     let target = flows_dir.join(&file_name);
-    let mut text = serde_json::to_string_pretty(document)
+    // A file that stands but does not parse still stands: it said nothing.
+    let standing = match fs::read_to_string(&target) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        read => Some(
+            read.ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or(serde_json::Value::Null),
+        ),
+    };
+    let mut document = document.clone();
+    crate::versions::stamp_the_copy(&mut document, standing.as_ref());
+    let mut text = serde_json::to_string_pretty(&document)
         .map_err(|error| format!("cannot compose the flow as JSON: {error}"))?;
     // Without the newline `git diff` says so on every rewritten flow.
     text.push('\n');
@@ -939,54 +970,7 @@ fn temp_path_for(target: &Path) -> PathBuf {
     target.with_file_name(format!(".{file_name}.tmp-{}-{unique}", std::process::id()))
 }
 
-/// What a flow of yours changes from the shipped flow it replaces, as JSON
-/// pointers: a field named is a field the reader can open in both files, which
-/// a rendered diff is not.
-pub fn what_yours_changes(yours: &FlowFile, shipped: &FlowFile) -> Vec<String> {
-    let (Ok(yours), Ok(shipped)) = (serde_json::to_value(yours), serde_json::to_value(shipped))
-    else {
-        return Vec::new();
-    };
-    let mut found = Vec::new();
-    walk_apart("", &yours, &shipped, &mut found);
-    found
-}
-
-fn walk_apart(
-    at: &str,
-    yours: &serde_json::Value,
-    shipped: &serde_json::Value,
-    found: &mut Vec<String>,
-) {
-    use serde_json::Value;
-    match (yours, shipped) {
-        (Value::Object(yours), Value::Object(shipped)) => {
-            let mut keys: Vec<&String> = yours.keys().chain(shipped.keys()).collect();
-            keys.sort_unstable();
-            keys.dedup();
-            for key in keys {
-                let under = format!("{at}/{key}");
-                match (yours.get(key), shipped.get(key)) {
-                    (Some(yours), Some(shipped)) => walk_apart(&under, yours, shipped, found),
-                    _ => found.push(under),
-                }
-            }
-        }
-        // By position, not by id: a step inserted in the middle does move
-        // every one after it, and matching by id would call that no change.
-        (Value::Array(yours), Value::Array(shipped)) => {
-            for index in 0..yours.len().max(shipped.len()) {
-                let under = format!("{at}/{index}");
-                match (yours.get(index), shipped.get(index)) {
-                    (Some(yours), Some(shipped)) => walk_apart(&under, yours, shipped, found),
-                    _ => found.push(under),
-                }
-            }
-        }
-        (yours, shipped) if yours != shipped => found.push(at.to_owned()),
-        _ => {}
-    }
-}
+pub use crate::versions::what_yours_changes;
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,6 @@
 {
   "id": "take-the-next-work",
+  "version": 1,
   "description": "One project's queue, taken one task at a time. The trigger carries the project; the store picks its highest-priority queued task, whole. A conditional write claims it — the same key refuses a second writer, so two runners racing the same queue take it at most once. The mandate the worker is about to receive is digested and recorded before it is sent, and the worker's answer must open with that digest acknowledged, or the task is parked without ever running the acceptance command. A cheap worker attempts it; the project's own acceptance command judges the result, required: the run has nothing to close on until that command has run and passed. What it decided is written back to the task's own record, and a task the cheap worker could not finish is hand off to a person instead of retried forever.",
   "graph": {
     "steps": [

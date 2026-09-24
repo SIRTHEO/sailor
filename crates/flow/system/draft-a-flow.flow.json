@@ -1,5 +1,6 @@
 {
   "id": "draft-a-flow",
+  "version": 1,
   "description": "A SKETCH BECOMES A FLOW. The person draws blocks and writes words on them — what each step does, what comes before what — and hands the drawing here as the mandate. One reading, no engine: the list of actions the engine actually has. One engine call, kind «writing»: it reads the sketch and the vocabulary and writes a whole flow file, keeping the person's words as the mandates and their arrows as the dependencies. One gesture: the draft is accepted only if it stands — the graph validates and every action named is real — and then written where the person's flows live, so the window shows it beside the others and they open it, correct it, and run it. A draft that does not stand is refused with the reason, and nothing is written.",
   "graph": {
     "steps": [

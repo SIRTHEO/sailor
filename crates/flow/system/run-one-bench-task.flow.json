@@ -1,5 +1,6 @@
 {
   "id": "run-one-bench-task",
+  "version": 1,
   "description": "ONE TASK OF THE FROZEN BENCHMARK, ONE RUN OF THE FLOW UNDER MEASUREMENT, ONE VERDICT. The root step restates the item it was handed, since a child run receives its item and nothing else; a clone is cut at the task's base commit under target/bench/baseline with no branch, tag or reflog left in it, so the history the agent can walk ends at the base and the fix is not one `git log --all` away; the flow under measurement runs there with the task's prompt as its whole mandate, through its own `sailor flow run`, so its run is a run of the ledger like any other; the deterministic judge reads the tree against the hidden tests; the run's equivalent cost, turns and wall time are read from the ledger; and the whole reading lands in the store under `bench-runs`. The diff the flow left is saved beside the trees before the tree is removed, so a rejected change can still be looked at. Nothing here is a verdict of an engine: the judge compiles and runs tests, and a run that never started is recorded as such rather than stopping the batch behind it.",
   "graph": {
     "steps": [

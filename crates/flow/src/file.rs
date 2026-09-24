@@ -71,6 +71,22 @@ pub struct FlowFile {
     /// Absent for a flow written from nothing, which is most of them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<Provenance>,
+    /// Which version of itself a shipped flow is. It rises with every change
+    /// to the shipped text; a flow of a person's own need not declare one.
+    #[serde(
+        default,
+        deserialize_with = "version",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub version: Option<u32>,
+    /// The version of the shipped flow this one replaces, as it was when it
+    /// was copied: a shipped flow that rose since is said, not hidden.
+    #[serde(
+        default,
+        deserialize_with = "replaces",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub replaces: Option<u32>,
 }
 
 /// Where a flow made from the catalogue came from. `version` is the digest of
@@ -138,13 +154,34 @@ fn max_turns<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let Some(turns) = whole_number(deserializer, "max_turns")? else {
+    small_number(deserializer, "max_turns")
+}
+
+fn version<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    small_number(deserializer, "version")
+}
+
+fn replaces<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    small_number(deserializer, "replaces")
+}
+
+fn small_number<'de, D>(deserializer: D, field: &str) -> Result<Option<u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let Some(number) = whole_number(deserializer, field)? else {
         return Ok(None);
     };
-    u32::try_from(turns).map(Some).map_err(|_| {
-        serde::de::Error::custom(
-            "`max_turns` is a count of runs, and this one is larger than any tree will hold",
-        )
+    u32::try_from(number).map(Some).map_err(|_| {
+        serde::de::Error::custom(format!(
+            "`{field}` is larger than any count this file will hold"
+        ))
     })
 }
 
@@ -247,19 +284,23 @@ mod tests {
     /// grow declarations its author never typed.
     #[test]
     fn a_wall_and_a_count_of_turns_are_kept_as_written() {
-        let declared = a_flow_declaring(r#", "wall_secs": 900, "max_turns": 3, "self_care": true"#)
-            .expect("valid flow");
+        let declared = a_flow_declaring(
+            r#", "wall_secs": 900, "max_turns": 3, "self_care": true, "version": 2, "replaces": 1"#,
+        )
+        .expect("valid flow");
         assert_eq!(declared.wall_secs, Some(900));
         assert_eq!(declared.max_turns, Some(3));
         assert!(declared.self_care);
+        assert_eq!((declared.version, declared.replaces), (Some(2), Some(1)));
 
         let bare = a_flow_declaring("").expect("valid flow");
         assert_eq!(bare.wall_secs, None);
         assert_eq!(bare.max_turns, None);
         assert!(!bare.self_care);
+        assert_eq!((bare.version, bare.replaces), (None, None));
 
         let written = serde_json::to_value(&bare).expect("a flow serializes");
-        for key in ["wall_secs", "max_turns", "self_care"] {
+        for key in ["wall_secs", "max_turns", "self_care", "version", "replaces"] {
             assert!(written.get(key).is_none(), "{written}");
         }
     }
@@ -282,5 +323,15 @@ mod tests {
             .to_string();
 
         assert!(said.contains("max_turns"), "{said}");
+    }
+
+    #[test]
+    fn a_version_that_is_not_a_whole_number_is_refused_by_name() {
+        for field in ["version", "replaces"] {
+            let said = a_flow_declaring(&format!(r#", "{field}": "1.2""#))
+                .expect_err("a dotted string is no version")
+                .to_string();
+            assert!(said.contains(field), "{said}");
+        }
     }
 }
