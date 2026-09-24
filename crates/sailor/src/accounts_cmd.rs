@@ -208,6 +208,19 @@ fn dispatch(args: &[String]) -> Result<String, String> {
     })
 }
 
+/// The accounts nobody can use now, judged as `sailor accounts --quota` judges
+/// them. The window's attention list asks this and nothing of its own: a home
+/// one surface calls signed in is never called unreachable by the other (fault 320).
+pub fn shut_now(now: i64) -> Result<Vec<AccountView>, String> {
+    let mut declared = overview(None)?;
+    declared.extend(crate::profiles_cmd::engines_own_homes(&declared));
+    let views = joined(&declared, &[], &asked_for_allowances(true), &BTreeMap::new(), now);
+    Ok(views
+        .into_iter()
+        .filter(|view| view.standing == Standing::Shut)
+        .collect())
+}
+
 /// **ASKING COSTS A ROUND TRIP PER ACCOUNT**, to the provider and to the
 /// keychain, so it is asked for and never assumed. The windows are five hours
 /// and seven days wide: nothing here wants asking every minute.
