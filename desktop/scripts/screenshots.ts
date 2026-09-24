@@ -20,21 +20,37 @@
  *
  * A scene that cannot be reached is not invented: it lands in `missing.txt`
  * with the reason.
+ *
+ * With `--walkthrough` (`npm run walkthrough`) the eyes also judge, and refuse:
+ * a scene not reached, a page that scrolls sideways, an error the page raised.
+ * They judge that each screen renders and fits, never whether it looks right;
+ * the pictures stay for whoever wants to look.
  */
-import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
-import { MACHINE, UNDER_A_TREE, placeNamed, type Section } from "../src/places";
+import { createServer as createVite, type ViteDevServer } from "vite";
+import type { Section } from "../src/places";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const outDir = join(root, "..", "target", "screenshots");
 
-/** Fixed in `vite.config.ts`: the native shell opens it by name. */
-const PORT = 5183;
-const URL = `http://localhost:${PORT}/`;
+const WALKTHROUGH = process.argv.includes("--walkthrough");
+
+let URL = "";
+
+/**
+ * The product's own names for its places. They come through vite, not an
+ * import: the catalogue under them is a module only vite's plugin answers, and
+ * outside it the script stopped loading at all.
+ */
+let places: typeof import("../src/places");
+
+/** A pixel of rounding is not a page that scrolls sideways. */
+const SIDEWAYS_TOLERANCE = 1;
 
 /** The two widths the contract sets: the phone and the desk. */
 const WIDTHS = [
@@ -88,9 +104,9 @@ async function openByPalette(page: Page, label: string): Promise<void> {
  * column, and everywhere else only the palette names it.
  */
 async function openPlace(page: Page, id: Section): Promise<void> {
-  const place = placeNamed(id);
+  const place = places.placeNamed(id);
   if (!place) throw new Error(`no place «${id}»: the product does not have it`);
-  if (!UNDER_A_TREE.includes(id)) {
+  if (!places.UNDER_A_TREE.includes(id)) {
     await openByPalette(page, place.name);
     return;
   }
@@ -101,7 +117,7 @@ async function openPlace(page: Page, id: Section): Promise<void> {
 
 /** A row of the machine's ground, by its row and not by a label typed here. */
 async function openMachineRow(page: Page, id: string): Promise<void> {
-  const row = MACHINE.find((one) => one.id === id);
+  const row = places.MACHINE.find((one) => one.id === id);
   if (!row) throw new Error(`no machine row «${id}»: the product does not have it`);
   await openByPalette(page, row.name);
 }
@@ -249,19 +265,28 @@ const SCENES: Scene[] = [
   },
 ];
 
-/** Waits for vite to answer, rather than sleeping a guessed duration. */
-async function waitForVite(timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(URL, { signal: AbortSignal.timeout(1000) });
-      if (response.ok) return;
-    } catch {
-      // not listening yet
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+/** A port nobody holds, asked of the system rather than guessed. */
+async function aFreePort(): Promise<number> {
+  return await new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", reject);
+    probe.listen(0, "localhost", () => {
+      const address = probe.address();
+      probe.close(() =>
+        typeof address === "object" && address ? resolve(address.port) : reject(new Error("no port")),
+      );
+    });
+  });
+}
+
+/** What a scene did wrong once it was reached; empty when it rendered and fits. */
+async function whatIsWrong(page: Page, width: number, raised: string[]): Promise<string[]> {
+  const wrong = raised.map((said) => `the page raised: ${said.split("\n")[0]}`);
+  const wide = (await page.evaluate("document.documentElement.scrollWidth")) as number;
+  if (wide > width + SIDEWAYS_TOLERANCE) {
+    wrong.push(`scrolls sideways: ${wide}px of page in a ${width}px window`);
   }
-  throw new Error(`vite does not answer on ${URL} after ${timeoutMs}ms`);
+  return wrong;
 }
 
 async function main(): Promise<void> {
@@ -269,31 +294,32 @@ async function main(): Promise<void> {
   await mkdir(outDir, { recursive: true });
 
   const missing: string[] = [];
+  const refused: string[] = [];
 
-  // Something already on the port belongs to someone else: it is not killed,
-  // and a second one would fail `strictPort` anyway.
-  let vite: ChildProcess | null = null;
-  let alreadyServing = false;
-  try {
-    const response = await fetch(URL, { signal: AbortSignal.timeout(800) });
-    alreadyServing = response.ok;
-  } catch {
-    alreadyServing = false;
-  }
-
-  if (alreadyServing) {
-    console.log(`--- ${URL} already answers: using it ---`);
-  } else {
-    console.log("--- starting vite ---");
-    vite = spawn("npm", ["run", "dev"], { cwd: root, stdio: "ignore" });
-    await waitForVite(30_000);
-  }
+  // Its own server on a free port, never one found answering: that one may
+  // draw another tree. `force` goes past the optimizer cache every worktree
+  // shares, which otherwise serves another tree's modules without a word.
+  const port = await aFreePort();
+  const vite: ViteDevServer = await createVite({
+    root,
+    logLevel: "error",
+    server: { port, strictPort: true },
+    optimizeDeps: { force: true },
+  });
+  await vite.listen();
+  URL = `http://localhost:${port}/`;
+  console.log(`--- vite on ${port} ---`);
+  places = (await vite.ssrLoadModule("/src/places.ts")) as typeof places;
 
   let browser: Browser | null = null;
   try {
     // The installed Chrome, not a download: hundreds of megabytes to
-    // photograph a few scenes is a price this tree need not pay.
-    browser = await chromium.launch({ channel: "chrome" });
+    // photograph a few scenes is a price this tree need not pay. A machine
+    // without it uses the chromium the driver already holds, and says so.
+    browser = await chromium.launch({ channel: "chrome" }).catch(async () => {
+      console.log("--- no installed Chrome: the driver's own chromium ---");
+      return await chromium.launch();
+    });
 
     for (const size of WIDTHS) {
       const context = await browser.newContext({
@@ -307,11 +333,17 @@ async function main(): Promise<void> {
         colorScheme: "dark",
       });
       const page = await context.newPage();
+      const raised: string[] = [];
+      page.on("pageerror", (error) => raised.push(`uncaught ${error.message}`));
+      page.on("console", (message) => {
+        if (message.type() === "error") raised.push(`console.error ${message.text()}`);
+      });
       await page.goto(URL, { waitUntil: "networkidle" });
 
       for (const scene of SCENES) {
         const stem = `${scene.name}-${size.name}`;
         try {
+          raised.length = 0;
           await page.goto(URL, { waitUntil: "networkidle" });
           await scene.reach(page);
 
@@ -328,10 +360,17 @@ async function main(): Promise<void> {
             "utf-8",
           );
 
-          console.log(`  ✓ ${stem}`);
+          const wrong = WALKTHROUGH ? await whatIsWrong(page, size.width, raised) : [];
+          if (wrong.length === 0) {
+            console.log(`  ✓ ${stem}`);
+          } else {
+            refused.push(`${scene.name} at ${size.width}px: ${wrong.join("; ")}`);
+            console.log(`  ✖ ${stem} — ${wrong.join("; ")}`);
+          }
         } catch (error) {
           const why = error instanceof Error ? error.message : String(error);
           missing.push(`${stem}: ${why}`);
+          if (WALKTHROUGH) refused.push(`${scene.name} at ${size.width}px: not reached: ${why}`);
           console.log(`  ✖ ${stem} — not reached: ${why}`);
         }
       }
@@ -340,7 +379,7 @@ async function main(): Promise<void> {
     }
   } finally {
     await browser?.close();
-    vite?.kill();
+    await vite.close();
   }
 
   // What was not reached is always written: an empty list and a list never
@@ -354,6 +393,15 @@ async function main(): Promise<void> {
   );
 
   console.log(`\n--- ${outDir} ---`);
+  if (WALKTHROUGH) {
+    if (refused.length === 0) {
+      console.log("walkthrough: every scene reached, fits its width and raised nothing");
+      return;
+    }
+    console.log(`walkthrough refused ${refused.length}:\n${refused.map((r) => `- ${r}`).join("\n")}`);
+    process.exitCode = 1;
+    return;
+  }
   if (missing.length === 0) return;
   console.log(`${missing.length} scenes missing: see missing.txt`);
   // A tolerance without a ceiling is not a tolerance: ten scenes out of eleven

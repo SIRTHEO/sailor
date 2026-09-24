@@ -53,7 +53,7 @@ suffixed `_TODAY` upward, comment ratios and long blocks downward.
 - `cd desktop && npm test` (the `Test Files` / `Tests` lines) and `npx tsc --noEmit`
 - `cargo test --manifest-path desktop/src-tauri/Cargo.toml -j 1`
 - `cargo test -p sailor -j 1 --test every_power_the_window_declares_is_one_it_can_reach`
-- A walkthrough on the fixture store, with screenshots, for any change a person sees
+- `cd desktop && npm run walkthrough` — every scene of the sample at 375 and 1440 pixels, refused on a scene it cannot reach, a page that scrolls sideways, or an error the page raised. It judges that each screen renders and fits, not whether it looks right: the pictures stay under target/screenshots for whoever wants to look
 
 ## F. Before integration
 
