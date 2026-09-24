@@ -103,6 +103,8 @@
   "cli.flow.no_schedule_yet_so_no_weight": "«{name}» has no schedule yet, so it has no weight to keep: write it. `sailor flow schedule {name} {value} {light}` or `{heavy}`. I do not choose it: a weight that appeared by itself reads as a measurement and is not one",
   "cli.flow.not_a_time_of_day": "«{value}» is not a time of day: hours run from 00 to 23 and minutes from 00 to 59",
   "cli.flow.parked_under_a_flow_that_waits_for_a_person": "its flow starts only when a person runs it, so nothing was ever going to bring this run back",
+  "cli.flow.parked_could_not_look": "the parked runs were left as they are, since the store would not say which of their flows are held: {why}",
+  "cli.flow.hold_could_not_be_read": "it waits, since whether this flow is held could not be read: {why}",
   "cli.flow.runs_to_ask_again": "{count} runs stopped on a step that said not yet, and are to be asked again:",
   "cli.flow.tools_no_descriptor_declares": "flow {flow} asks for tools no descriptor declares: {tools}. This is not «missing on this machine»: those names exist in no catalogue, so the flow runs nowhere until the name is corrected or a descriptor is added in ~/.config/sailor/tools.d/",
   "cli.flow.two_files_one_name": "«{name}» sits in two files — «{name}.flow.json» and «{name}.json» — and which of the two runs is decided by the order the system lists the directory in. I rewrite nothing until one is left: delete the one you do not want",

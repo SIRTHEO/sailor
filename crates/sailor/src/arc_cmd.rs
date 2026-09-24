@@ -165,11 +165,16 @@ pub fn why_it_waits(flow: &str, tty: &str) -> Option<String> {
 }
 
 /// The hold standing on a flow, as a person reads it. A ledger that cannot be
-/// opened answers none, for the reason `parked_for` gives.
+/// opened answers none, for the reason `parked_for` gives; one that opens and
+/// cannot read the hold waits, as the beat does, and says why.
 fn hold_on(flow: &str) -> Option<String> {
-    let store = machine_ledger()?;
-    let hold = store.flow_hold(flow).ok()??;
-    Some(crate::flow_cmd::hold::hold_said(&hold))
+    match machine_ledger()?.flow_hold(flow) {
+        Ok(hold) => hold.map(|hold| crate::flow_cmd::hold::hold_said(&hold)),
+        Err(why) => Some(catalogue::say(
+            "cli.flow.hold_could_not_be_read",
+            &[("why", &why.to_string())],
+        )),
+    }
 }
 
 /// Whether this flow already has a run parked for this terminal.
