@@ -19,6 +19,7 @@ pub mod starters;
 pub mod subflow;
 pub mod system;
 pub mod timekeeping;
+pub mod versions;
 pub mod workspace;
 
 pub use executor::{

@@ -31,9 +31,15 @@ fn shipped() -> &'static str {
     flow::system::FLOWS.first().expect("a flow ships inside the binary").0
 }
 
+/// A flow of yours, written as saving it would: a copy of a shipped flow
+/// says it replaces the version shipped today.
 fn write_flow(dir: &Path, id: &str) -> PathBuf {
+    write_flow_replacing(dir, id, flow::versions::shipped_version(id))
+}
+
+fn write_flow_replacing(dir: &Path, id: &str, replaces: Option<u32>) -> PathBuf {
     std::fs::create_dir_all(dir).expect("a flows folder");
-    let flow = json!({
+    let mut flow = json!({
         "id": id, "description": "a home flow", "inputs": {},
         "graph": {"steps": [{
             "id": "say", "deps": [], "action": "shell_check", "max_attempts": 1, "when": null,
@@ -41,6 +47,9 @@ fn write_flow(dir: &Path, id: &str) -> PathBuf {
             "input_schema": {"type": "any"}, "output_schema": {"type": "any"}
         }]}
     });
+    if let Some(replaces) = replaces {
+        flow["replaces"] = json!(replaces);
+    }
     let path = dir.join(format!("{id}.flow.json"));
     std::fs::write(&path, serde_json::to_string_pretty(&flow).expect("a flow serialises"))
         .expect("the flow file");
@@ -108,6 +117,84 @@ fn the_list_marks_a_flow_of_yours_that_replaces_a_shipped_one_and_says_where_it_
     assert_eq!(origin_in_the_list(&list, shipped()), Some(replaces), "{}", list.text);
     let outside = scratch.0.join("outside").display().to_string();
     assert!(list.text.contains(&outside), "the list says where it resolved: {}", list.text);
+}
+
+/// **A COPY OF AN OLDER VERSION IS SAID, NOT HIDDEN.** It still runs in place
+/// of the shipped flow, but its row says the shipped one rose past it, and the
+/// check of that flow says from which version to which.
+#[test]
+fn a_copy_of_an_older_version_is_marked_stale_in_the_list_and_the_check() {
+    let scratch = Scratch::new("stale");
+    let version = flow::versions::shipped_version(shipped()).expect("a shipped version");
+    write_flow_replacing(
+        &scratch.0.join("home").join("flows"),
+        shipped(),
+        Some(version - 1),
+    );
+
+    let list = sailor(&scratch, None, &["flow", "list"]);
+
+    assert_eq!(list.code, Some(0), "{}", list.text);
+    let stale = catalogue::say(
+        "cli.flow.list_origin_replaces_stale",
+        &[
+            ("origin", "yours"),
+            ("replaced", "built in"),
+            ("copied", &(version - 1).to_string()),
+            ("shipped", &version.to_string()),
+        ],
+    );
+    assert_eq!(
+        origin_in_the_list(&list, shipped()),
+        Some(stale),
+        "{}",
+        list.text
+    );
+    let foot = catalogue::say("cli.flow.list_stale_foot", &[]);
+    assert!(list.text.contains(&foot), "{}", list.text);
+
+    let check = sailor(
+        &scratch,
+        None,
+        &["flow", "check", shipped(), "--no-engines"],
+    );
+    let said = catalogue::say(
+        "cli.flow.yours_is_stale",
+        &[
+            ("copied", &(version - 1).to_string()),
+            ("shipped", &version.to_string()),
+        ],
+    );
+    assert!(check.text.contains(said.trim_end()), "{}", check.text);
+}
+
+/// **CAPPING A COPY DOES NOT SAY WHAT IT WAS COPIED FROM.** A copy that never
+/// said which version it replaces is still unsaid after `flow cap` rewrites
+/// it: nothing in the rewrite knows what it was copied from, and stamping the
+/// version shipped today would call it current and silence the list.
+#[test]
+fn capping_a_copy_that_never_said_its_version_leaves_it_unsaid() {
+    let scratch = Scratch::new("cap-unsaid");
+    let version = flow::versions::shipped_version(shipped()).expect("a shipped version");
+    let file = write_flow_replacing(&scratch.0.join("home").join("flows"), shipped(), None);
+
+    let capped = sailor(&scratch, None, &["flow", "cap", shipped(), "1000"]);
+
+    assert_eq!(capped.code, Some(0), "{}", capped.text);
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).expect("the copy reads"))
+            .expect("the copy parses");
+    assert_eq!(written.get("replaces"), None, "{written}");
+    let list = sailor(&scratch, None, &["flow", "list"]);
+    let unsaid = catalogue::say(
+        "cli.flow.list_origin_replaces_unsaid",
+        &[
+            ("origin", "yours"),
+            ("replaced", "built in"),
+            ("shipped", &version.to_string()),
+        ],
+    );
+    assert_eq!(origin_in_the_list(&list, shipped()), Some(unsaid), "{}", list.text);
 }
 
 #[test]
