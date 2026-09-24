@@ -235,13 +235,40 @@ pub(crate) fn collect_attention_queue() -> Result<Vec<AttentionRow>, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs() as i64);
-    match sailor::accounts_cmd::shut_now(now) {
+    match accounts_shut(now) {
         Ok(shut) => rows.extend(account_rows(&shut)),
         Err(why) => rows.push(unreachable_row(format!("the accounts cannot be read: {why}"))),
     }
 
     rank_attention_rows(&mut rows);
     Ok(rows)
+}
+
+/// How long the accounts' answer is kept. Asking starts a login check per
+/// profile and a round trip per account, and the list is polled every few
+/// seconds; allowances are five hours and seven days wide.
+const ACCOUNTS_ARE_ASKED_EVERY: i64 = 300;
+
+type Asked = (i64, Result<Vec<sailor::accounts_cmd::AccountView>, String>);
+static ACCOUNTS_ASKED: std::sync::Mutex<Option<Asked>> = std::sync::Mutex::new(None);
+
+fn accounts_shut(now: i64) -> Result<Vec<sailor::accounts_cmd::AccountView>, String> {
+    kept_or_asked(&ACCOUNTS_ASKED, now, sailor::accounts_cmd::shut_now)
+}
+
+fn kept_or_asked(
+    kept: &std::sync::Mutex<Option<Asked>>,
+    now: i64,
+    ask: impl FnOnce(i64) -> Result<Vec<sailor::accounts_cmd::AccountView>, String>,
+) -> Result<Vec<sailor::accounts_cmd::AccountView>, String> {
+    if let Some((at, answer)) = &*crate::locks::locked(kept) {
+        if now - at < ACCOUNTS_ARE_ASKED_EVERY {
+            return answer.clone();
+        }
+    }
+    let answer = ask(now);
+    *crate::locks::locked(kept) = Some((now, answer.clone()));
+    answer
 }
 
 /// One row per account nobody can use. A meter that would not be read this
@@ -276,7 +303,7 @@ fn unreachable_row(reason: String) -> AttentionRow {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn attention_queue() -> Result<Vec<AttentionRow>, String> {
     collect_attention_queue()
 }
@@ -443,5 +470,22 @@ mod tests {
             ]
         );
         assert!(rows.iter().all(|row| row.kind == "engine_unreachable"));
+    }
+
+    #[test]
+    fn the_accounts_are_asked_once_in_five_minutes_however_often_the_list_is() {
+        let kept = std::sync::Mutex::new(None);
+        let asked = std::cell::Cell::new(0);
+        let ask = |_: i64| {
+            asked.set(asked.get() + 1);
+            Ok(Vec::new())
+        };
+
+        for second in [0, 10, 299] {
+            kept_or_asked(&kept, 1_000 + second, ask).expect("answered");
+        }
+        assert_eq!(asked.get(), 1, "polled three times inside the window");
+        kept_or_asked(&kept, 1_300, ask).expect("answered");
+        assert_eq!(asked.get(), 2, "asked again once the window has passed");
     }
 }
