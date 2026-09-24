@@ -251,20 +251,32 @@ const ACCOUNTS_ARE_ASKED_EVERY: i64 = 300;
 
 type Asked = (i64, Result<Vec<sailor::accounts_cmd::AccountView>, String>);
 static ACCOUNTS_ASKED: std::sync::Mutex<Option<Asked>> = std::sync::Mutex::new(None);
+static ACCOUNTS_BEING_ASKED: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn accounts_shut(now: i64) -> Result<Vec<sailor::accounts_cmd::AccountView>, String> {
-    kept_or_asked(&ACCOUNTS_ASKED, now, sailor::accounts_cmd::shut_now)
+    kept_or_asked(&ACCOUNTS_ASKED, &ACCOUNTS_BEING_ASKED, now, sailor::accounts_cmd::shut_now)
 }
 
+fn kept_answer(kept: &std::sync::Mutex<Option<Asked>>, now: i64) -> Option<Asked> {
+    crate::locks::locked(kept)
+        .clone()
+        .filter(|(at, _)| now - at < ACCOUNTS_ARE_ASKED_EVERY)
+}
+
+/// The window opens with two screens asking at once: whoever comes second
+/// waits for the answer in flight instead of asking every account again.
 fn kept_or_asked(
     kept: &std::sync::Mutex<Option<Asked>>,
+    asking: &std::sync::Mutex<()>,
     now: i64,
     ask: impl FnOnce(i64) -> Result<Vec<sailor::accounts_cmd::AccountView>, String>,
 ) -> Result<Vec<sailor::accounts_cmd::AccountView>, String> {
-    if let Some((at, answer)) = &*crate::locks::locked(kept) {
-        if now - at < ACCOUNTS_ARE_ASKED_EVERY {
-            return answer.clone();
-        }
+    if let Some((_, answer)) = kept_answer(kept, now) {
+        return answer;
+    }
+    let _only_one_asks = crate::locks::locked(asking);
+    if let Some((_, answer)) = kept_answer(kept, now) {
+        return answer;
     }
     let answer = ask(now);
     *crate::locks::locked(kept) = Some((now, answer.clone()));
@@ -475,6 +487,7 @@ mod tests {
     #[test]
     fn the_accounts_are_asked_once_in_five_minutes_however_often_the_list_is() {
         let kept = std::sync::Mutex::new(None);
+        let asking = std::sync::Mutex::new(());
         let asked = std::cell::Cell::new(0);
         let ask = |_: i64| {
             asked.set(asked.get() + 1);
@@ -482,10 +495,29 @@ mod tests {
         };
 
         for second in [0, 10, 299] {
-            kept_or_asked(&kept, 1_000 + second, ask).expect("answered");
+            kept_or_asked(&kept, &asking, 1_000 + second, ask).expect("answered");
         }
         assert_eq!(asked.get(), 1, "polled three times inside the window");
-        kept_or_asked(&kept, 1_300, ask).expect("answered");
+        kept_or_asked(&kept, &asking, 1_300, ask).expect("answered");
         assert_eq!(asked.get(), 2, "asked again once the window has passed");
+    }
+
+    #[test]
+    fn two_screens_opening_together_ask_the_accounts_once() {
+        let kept = std::sync::Mutex::new(None);
+        let asking = std::sync::Mutex::new(());
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let ask = |_: i64| {
+            asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            Ok(Vec::new())
+        };
+
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                scope.spawn(|| kept_or_asked(&kept, &asking, 1_000, ask).expect("answered"));
+            }
+        });
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }
