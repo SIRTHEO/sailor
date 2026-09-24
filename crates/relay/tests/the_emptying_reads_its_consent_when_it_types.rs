@@ -73,7 +73,19 @@ impl Scratch {
                     "free_when": {
                         "the_prompt_shows": ["│ >"],
                         "and_none_of_these": ["Do you want"],
-                        "and_still_for_seconds": 0
+                        "and_still_for_seconds": 0,
+                        "and_leaves_nothing_open_in_its_record": {
+                            "a_background_launch_answers": "launched in the background",
+                            "the_task_is_named_after": "task: ",
+                            "a_stop_is_the_call": "Stop",
+                            "a_stop_names_the_task_in": "task",
+                            "a_report_carries": "<report>",
+                            "a_report_names_the_call_between": ["<call>", "</call>"],
+                            "a_queue_row_is": "queued",
+                            "the_queue_grows_on": ["in"],
+                            "and_shrinks_on": ["out"],
+                            "a_launch_is_lost_after_seconds": 3600
+                        }
                     }
                 },
                 {
@@ -252,6 +264,35 @@ fn a_context_nobody_can_measure_is_not_a_full_one() {
     let why = not_yet(&scratch.told_to_empty("ttys005"));
 
     assert!(why.contains("cannot be measured"), "{why}");
+    assert_eq!(scratch.what_landed(), None, "nothing is typed");
+}
+
+/// **AN AGENT IN FLIGHT IS WORK THE SCREEN DOES NOT SHOW.** The session is at
+/// oblige, handed on and idle at its prompt, and still waits on an agent it
+/// launched: emptying it now would lose whatever that agent reports.
+#[test]
+fn a_session_still_waiting_on_an_agent_it_launched_is_not_emptied() {
+    let scratch = Scratch::new("in-flight");
+    scratch.handing_on("ttys008");
+    let transcript = scratch.0.join(format!("{THE_AUTHOR}.jsonl"));
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock")
+        .as_secs() as i64;
+    let rows = [
+        json!({"message": {"usage": {"input_tokens": 260_000}}}),
+        json!({"type": "assistant", "timestamp": models::fuel::rfc3339_of_unix_secs(now),
+               "message": {"content": [{"type": "tool_use", "id": "call-1", "name": "Agent",
+               "input": {"description": "read the tree"}}]}}),
+        json!({"type": "user", "message": {"content": [{"type": "tool_result",
+               "tool_use_id": "call-1", "content": "launched in the background, task: t1"}]}}),
+    ];
+    let text: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    std::fs::write(&transcript, text).expect("the transcript is written");
+
+    let why = not_yet(&scratch.told_to_empty("ttys008"));
+
+    assert!(why.contains("read the tree"), "{why}");
     assert_eq!(scratch.what_landed(), None, "nothing is typed");
 }
 
