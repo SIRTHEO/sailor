@@ -237,7 +237,9 @@ pub(crate) fn collect_attention_queue() -> Result<Vec<AttentionRow>, String> {
         .map_or(0, |since| since.as_secs() as i64);
     match accounts_shut(now) {
         Ok(shut) => rows.extend(account_rows(&shut)),
-        Err(why) => rows.push(unreachable_row(format!("the accounts cannot be read: {why}"))),
+        Err(why) => rows.push(unreachable_row(format!(
+            "the accounts cannot be read: {why}"
+        ))),
     }
 
     rank_attention_rows(&mut rows);
@@ -254,7 +256,12 @@ static ACCOUNTS_ASKED: std::sync::Mutex<Option<Asked>> = std::sync::Mutex::new(N
 static ACCOUNTS_BEING_ASKED: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn accounts_shut(now: i64) -> Result<Vec<sailor::accounts_cmd::AccountView>, String> {
-    kept_or_asked(&ACCOUNTS_ASKED, &ACCOUNTS_BEING_ASKED, now, sailor::accounts_cmd::shut_now)
+    kept_or_asked(
+        &ACCOUNTS_ASKED,
+        &ACCOUNTS_BEING_ASKED,
+        now,
+        sailor::accounts_cmd::shut_now,
+    )
 }
 
 fn kept_answer(kept: &std::sync::Mutex<Option<Asked>>, now: i64) -> Option<Asked> {

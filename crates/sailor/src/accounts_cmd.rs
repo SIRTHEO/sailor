@@ -214,7 +214,13 @@ fn dispatch(args: &[String]) -> Result<String, String> {
 pub fn shut_now(now: i64) -> Result<Vec<AccountView>, String> {
     let mut declared = overview(None)?;
     declared.extend(crate::profiles_cmd::engines_own_homes(&declared));
-    let views = joined(&declared, &[], &asked_for_allowances(true), &BTreeMap::new(), now);
+    let views = joined(
+        &declared,
+        &[],
+        &asked_for_allowances(true),
+        &BTreeMap::new(),
+        now,
+    );
     Ok(views
         .into_iter()
         .filter(|view| view.standing == Standing::Shut)
