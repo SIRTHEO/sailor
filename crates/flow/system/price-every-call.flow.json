@@ -1,5 +1,6 @@
 {
   "id": "price-every-call",
+  "version": 1,
   "description": "EVERY CALL OF THE LEDGER CARRIES AN EQUIVALENT COST, OR THE RUN IS RED. The price list pins the rules — a model the engine named, the engine's assumed model when it named none, seconds of wall time for an engine on hardware, a pinned figure for a call that left no reading, nothing for a tool or a refusal that answered nothing — and `price_every_call` writes the figure onto every row still without one, with the rule that gave it. The verdict step fails when any call stays unpriced: a sum with an unknown inside is a floor, and a floor is not the number the evaluation loop divides by. No engine is asked; the flow costs nothing and can run after every batch. The count the verdict reads comes from a step of its own, not from the pricer's word about itself.",
   "graph": {
     "steps": [

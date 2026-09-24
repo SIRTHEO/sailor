@@ -6,10 +6,10 @@
 use std::path::{Path, PathBuf};
 
 /// Every `.rs` directly under a package's `tests/`, the window's shell included.
-const TEST_BINARIES_TODAY: usize = 219;
+const TEST_BINARIES_TODAY: usize = 220;
 
 /// Every `#[test]` in the tree, the window's shell included.
-const TEST_FUNCTIONS_TODAY: usize = 2890;
+const TEST_FUNCTIONS_TODAY: usize = 2900;
 
 /// Every `.flow.json` in `flows/` and among the shipped ones.
 const FLOW_FILES_TODAY: usize = 30;
@@ -18,7 +18,7 @@ const FLOW_FILES_TODAY: usize = 30;
 /// `#[test]`**, so counting that mark alone left 489 tests under no ratchet at
 /// all — fault 122, which is fault 52 in the half of the tree nobody taught the
 /// counter to see.
-const WINDOW_TESTS_TODAY: usize = 717;
+const WINDOW_TESTS_TODAY: usize = 718;
 
 /// How far a seed may sit from the tree, either way. **Zero.** A seed is a
 /// number in a file, and a file merges: a merge keeping the older side would

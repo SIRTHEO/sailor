@@ -731,6 +731,8 @@ mod tests {
             max_turns: None,
             self_care: false,
             from: None,
+            version: None,
+            replaces: None,
         }
     }
 

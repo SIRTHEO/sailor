@@ -64,17 +64,37 @@ pub(super) fn check_flow(sources: &[FlowSource], name: &str, try_engines: bool) 
 /// frozen where it was taken and asks its reader to diff it against the source;
 /// nothing did. Empty for a flow that hides nothing.
 fn how_far_yours_has_drifted(sources: &[FlowSource], name: &str, yours: &FlowFile) -> String {
-    let replaces_builtin = flow::system::chains(sources, None)
+    let Some(chain) = flow::system::chains(sources, None)
         .into_iter()
-        .find(|chain| chain.name == name)
-        .is_some_and(|chain| chain.replaces_builtin());
-    if !replaces_builtin {
+        .find(|chain| chain.name == name && chain.replaces_builtin())
+    else {
         return String::new();
-    }
+    };
     let Some(Ok(shipped)) = flow::system::builtin_registry().remove(name) else {
         return String::new();
     };
-    let apart = flow::system::what_yours_changes(yours, &shipped);
+    let stale = match &chain.stale {
+        None => String::new(),
+        Some(stale) => match stale.copied {
+            Some(copied) => catalogue::say(
+                "cli.flow.yours_is_stale",
+                &[
+                    ("copied", &copied.to_string()),
+                    ("shipped", &stale.shipped.to_string()),
+                ],
+            ),
+            None => catalogue::say(
+                "cli.flow.yours_is_stale_unsaid",
+                &[("shipped", &stale.shipped.to_string())],
+            ),
+        },
+    };
+    stale + &how_yours_differs(yours, &shipped)
+}
+
+/// The fields a copy changes from the shipped flow, or that it changes none.
+fn how_yours_differs(yours: &FlowFile, shipped: &FlowFile) -> String {
+    let apart = flow::system::what_yours_changes(yours, shipped);
     if apart.is_empty() {
         return catalogue::say("cli.flow.yours_matches_the_shipped_one", &[]);
     }

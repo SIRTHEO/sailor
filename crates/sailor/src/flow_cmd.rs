@@ -187,10 +187,33 @@ fn origin_said(origin: &str, chain: Option<&flow::system::Chain>) -> String {
             replaced.push(candidate.origin);
         }
     }
-    catalogue::say(
-        "cli.flow.list_origin_replaces",
-        &[("origin", origin), ("replaced", &replaced.join(", "))],
-    )
+    let replaced = replaced.join(", ");
+    let Some(stale) = &chain.stale else {
+        return catalogue::say(
+            "cli.flow.list_origin_replaces",
+            &[("origin", origin), ("replaced", &replaced)],
+        );
+    };
+    let shipped = stale.shipped.to_string();
+    match stale.copied {
+        Some(copied) => catalogue::say(
+            "cli.flow.list_origin_replaces_stale",
+            &[
+                ("origin", origin),
+                ("replaced", &replaced),
+                ("copied", &copied.to_string()),
+                ("shipped", &shipped),
+            ],
+        ),
+        None => catalogue::say(
+            "cli.flow.list_origin_replaces_unsaid",
+            &[
+                ("origin", origin),
+                ("replaced", &replaced),
+                ("shipped", &shipped),
+            ],
+        ),
+    }
 }
 
 /// `sailor flow where`: every file the name could come from, and the winner.
@@ -589,6 +612,13 @@ fn list_flows(sources: &[FlowSource]) -> Result<String, String> {
             report,
             "{}",
             catalogue::say("cli.flow.list_resolved_in", &[("directory", &resolved_in_said(&one.chain))])
+        );
+    }
+    if resolved.iter().any(|one| one.chain.stale.is_some()) {
+        let _ = writeln!(
+            report,
+            "{}",
+            catalogue::say("cli.flow.list_stale_foot", &[])
         );
     }
     if let Some(no_home) = flow::system::no_home_said(sources) {
