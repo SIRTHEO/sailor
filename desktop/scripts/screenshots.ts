@@ -26,11 +26,11 @@
  * They judge that each screen renders and fits, never whether it looks right;
  * the pictures stay for whoever wants to look.
  */
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type ConsoleMessage, type Page } from "playwright";
 import { createServer as createVite, type ViteDevServer } from "vite";
 import type { Section } from "../src/places";
 
@@ -279,9 +279,22 @@ async function aFreePort(): Promise<number> {
   });
 }
 
+/**
+ * A console line as the page meant it: React writes its warnings as a format
+ * and puts the component that did it among the arguments, which `text()` drops.
+ */
+async function spelledOut(message: ConsoleMessage): Promise<string> {
+  const args = await Promise.all(message.args().map((arg) => arg.jsonValue().catch(() => undefined)));
+  if (typeof args[0] !== "string") return message.text();
+  const rest = args.slice(1);
+  const head = args[0].replace(/%[sdifoOc]/g, () => (rest.length > 0 ? String(rest.shift()) : ""));
+  return [head, ...rest.map(String)].join(" ").replace(/\s+/g, " ").slice(0, 400);
+}
+
 /** What a scene did wrong once it was reached; empty when it rendered and fits. */
-async function whatIsWrong(page: Page, width: number, raised: string[]): Promise<string[]> {
-  const wrong = raised.map((said) => `the page raised: ${said.split("\n")[0]}`);
+async function whatIsWrong(page: Page, width: number, heard: Promise<string>[]): Promise<string[]> {
+  const raised = await Promise.all(heard);
+  const wrong = raised.map((said) => `the page raised: ${said}`);
   const wide = (await page.evaluate("document.documentElement.scrollWidth")) as number;
   if (wide > width + SIDEWAYS_TOLERANCE) {
     wrong.push(`scrolls sideways: ${wide}px of page in a ${width}px window`);
@@ -303,7 +316,10 @@ async function main(): Promise<void> {
   const vite: ViteDevServer = await createVite({
     root,
     logLevel: "error",
-    server: { port, strictPort: true },
+    // A tree that borrows another's packages through a link is served them
+    // by their real path, which the allowed folders do not cover: the fonts
+    // came back 403 and every scene was refused for it.
+    server: { port, strictPort: true, fs: { allow: [await realpath(join(root, "node_modules"))] } },
     optimizeDeps: { force: true },
   });
   await vite.listen();
@@ -333,10 +349,22 @@ async function main(): Promise<void> {
         colorScheme: "dark",
       });
       const page = await context.newPage();
-      const raised: string[] = [];
-      page.on("pageerror", (error) => raised.push(`uncaught ${error.message}`));
+      const raised: Promise<string>[] = [];
+      const heard = (said: string) => raised.push(Promise.resolve(said));
+      page.on("pageerror", (error) => heard(`uncaught ${error.message}`));
       page.on("console", (message) => {
-        if (message.type() === "error") raised.push(`console.error ${message.text()}`);
+        if (message.type() !== "error") return;
+        // Its address is in the response below; this line would say only the status.
+        if (message.text().startsWith("Failed to load resource")) return;
+        raised.push(spelledOut(message).then((said) => `console.error ${said}`));
+      });
+      page.on("response", (response) => {
+        if (response.status() >= 400) heard(`${response.status()} ${response.url()}`);
+      });
+      page.on("requestfailed", (request) => {
+        const why = request.failure()?.errorText ?? "";
+        // Leaving a page cancels what it still had in flight; nothing failed.
+        if (why !== "net::ERR_ABORTED") heard(`request failed ${request.url()}: ${why}`);
       });
       await page.goto(URL, { waitUntil: "networkidle" });
 
