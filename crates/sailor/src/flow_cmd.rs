@@ -24,7 +24,7 @@ mod engines;
 mod extensions;
 pub mod from_catalogue;
 mod hazards;
-pub(crate) mod hold;
+pub mod hold;
 mod relocate;
 mod run_and_resume;
 pub mod seeds;

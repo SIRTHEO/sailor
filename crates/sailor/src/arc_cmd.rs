@@ -15,16 +15,18 @@ use ui::gather::FlowSource;
 pub type Starter<'a> = &'a mut dyn FnMut(&str, &str) -> Result<String, String>;
 
 /// Why this flow must not start on this terminal now, if it must not: a run
-/// of it already parked there, or a hold a person put on it. Handed in like
-/// `Starter`, so the arc stays testable without a ledger to read.
+/// of it already parked there, or a hold a person put on it. Asked by the
+/// flow's id, the key both are written under. Handed in like `Starter`, so the
+/// arc stays testable without a ledger to read.
 pub type Waits<'a> = &'a mut dyn FnMut(&str, &str) -> Option<String>;
 
-/// Which flows watch for a session event, and what each of them asks of it.
+/// Which flows watch for a session event, by file name and by the id their
+/// runs and holds are written under, and what each asks of it.
 ///
 /// A flow declares it in its trigger step's `on`; a flow whose trigger names
 /// another source is not a candidate and leaves no row, because it was never
 /// asked.
-pub fn watchers(sources: &[FlowSource]) -> Vec<(String, On)> {
+pub fn watchers(sources: &[FlowSource]) -> Vec<(String, String, On)> {
     let mut found = Vec::new();
     for (name, _, entry) in ui::gather::load_all_flows(sources) {
         let Ok(flow) = entry else {
@@ -47,12 +49,13 @@ pub fn watchers(sources: &[FlowSource]) -> Vec<(String, On)> {
         if declared.get("source").and_then(serde_json::Value::as_str) != Some(SESSION_EVENT) {
             continue;
         }
+        let id = flow.id.clone();
         match declared.get("on").cloned().map(serde_json::from_value) {
-            Some(Ok(on)) => found.push((name, on)),
+            Some(Ok(on)) => found.push((name, id, on)),
             // A flow that asks for this source and says nothing about which
             // event would start on every event of every tree. It is left out
             // and said so, rather than firing on everything.
-            _ => found.push((name, On::default())),
+            _ => found.push((name, id, On::default())),
         }
     }
     found
@@ -78,7 +81,7 @@ pub fn evaluate(
     waits: Waits<'_>,
 ) -> Vec<Verdict> {
     let mut written = Vec::new();
-    for (flow, on) in watchers(sources) {
+    for (flow, id, on) in watchers(sources) {
         if let Some(why) = deferral(&on, happened) {
             written.push(note(store, event_id, &flow, DEFERRED, Some(why), None, at));
             continue;
@@ -88,7 +91,7 @@ pub fn evaluate(
         // event manufactured 57 parked runs out of 59 actions. Waking the
         // parked one is a separate decision and not taken here: the flow that
         // produced those 57 was switched off after it emptied a live session.
-        if let Some(why) = waits(&flow, &happened.tty) {
+        if let Some(why) = waits(&id, &happened.tty) {
             written.push(note(store, event_id, &flow, DEFERRED, Some(&why), None, at));
             continue;
         }

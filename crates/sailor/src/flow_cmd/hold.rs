@@ -59,7 +59,7 @@ pub(crate) fn standing_holds() -> BTreeMap<String, Hold> {
 }
 
 /// How a hold reads beside its flow.
-pub(crate) fn hold_said(hold: &Hold) -> String {
+pub fn hold_said(hold: &Hold) -> String {
     catalogue::say("cli.flow.held", &[("by", &hold.by), ("why", &hold.why)])
 }
 

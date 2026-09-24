@@ -23,6 +23,11 @@ impl Scratch {
 
     /// One flow whose only step is a trigger, declaring what it watches for.
     fn holding(&self, id: &str, with: serde_json::Value) -> &Self {
+        self.holding_in(id, id, with)
+    }
+
+    /// The same, in a file named apart from the id it declares.
+    fn holding_in(&self, file: &str, id: &str, with: serde_json::Value) -> &Self {
         let flow = json!({
             "id": id,
             "description": "a fixture whose only step is a trigger",
@@ -39,7 +44,7 @@ impl Scratch {
             }]},
         });
         std::fs::write(
-            self.0.join("flows").join(format!("{id}.flow.json")),
+            self.0.join("flows").join(format!("{file}.flow.json")),
             serde_json::to_string_pretty(&flow).expect("a flow serialises"),
         )
         .expect("the flow file is written");
@@ -106,7 +111,33 @@ fn a_flow_that_declares_the_source_is_a_candidate_and_one_that_does_not_is_not()
 
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].0, "watches");
-    assert_eq!(found[0].1.event, "UserPromptSubmit");
+    assert_eq!(found[0].2.event, "UserPromptSubmit");
+}
+
+/// A hold and a parked run are written under the flow's id, so that is what
+/// the arc asks about, even when the file is named otherwise.
+#[test]
+fn the_arc_asks_whether_a_flow_waits_by_its_id_not_its_file_name() {
+    let scratch = Scratch::new("by-id");
+    scratch.holding_in("a-file-name", "its-id", watching("UserPromptSubmit"));
+    let store = scratch.store();
+
+    let mut asked = Vec::new();
+    let mut waited_on = Vec::new();
+    evaluate(
+        &store,
+        12,
+        &happened(),
+        &scratch.sources(),
+        100,
+        &mut watching_starter(&mut asked),
+        &mut |flow, _tty| {
+            waited_on.push(flow.to_owned());
+            None
+        },
+    );
+
+    assert_eq!(waited_on, ["its-id"]);
 }
 
 /// **A FLOW ALREADY PARKED ON THIS TERMINAL IS NOT STARTED AGAIN.** Fault 163:

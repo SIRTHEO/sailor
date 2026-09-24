@@ -28,6 +28,11 @@ impl Scratch {
     /// One flow whose trigger watches for the end of a turn, so it starts by
     /// itself and a run of it parked is one the beat would wake.
     fn watching(&self, id: &str) -> Vec<FlowSource> {
+        self.watching_in(id, id)
+    }
+
+    /// The same, in a file named apart from the id it declares.
+    fn watching_in(&self, file: &str, id: &str) -> Vec<FlowSource> {
         let flow = json!({
             "id": id,
             "description": "a fixture whose only step is a trigger",
@@ -44,7 +49,7 @@ impl Scratch {
             }]},
         });
         std::fs::write(
-            self.0.join("flows").join(format!("{id}.flow.json")),
+            self.0.join("flows").join(format!("{file}.flow.json")),
             serde_json::to_string_pretty(&flow).expect("a flow serialises"),
         )
         .expect("the flow file is written");
@@ -182,6 +187,21 @@ fn the_beat_lets_a_held_flows_parked_run_go_instead_of_waking_it() {
     assert_eq!((woken, let_go), (0, 2), "held, nothing is woken: {said}");
     assert_eq!(status_of(&ledger, "held"), "stopped", "{said}");
     assert_eq!(resumed, ["free"], "{said}");
+}
+
+/// A run is written under its flow's id, and so is a hold: the beat reads
+/// both by that id, whatever the file is called.
+#[test]
+fn the_beat_knows_a_parked_run_by_its_flows_id_not_its_file_name() {
+    let scratch = Scratch::new("by-id");
+    let sources = scratch.watching_in("a-file-name", "its-id");
+    let ledger = scratch.ledger();
+    let mut resume = |_run_id: &str| Ok(String::new());
+
+    parked(&ledger, "its-id", "free", "ttys001");
+    let (said, woken, let_go) =
+        sailor::flow_cmd::beat::ask_the_parked_again(&sources, &ledger, 100, &mut resume);
+    assert_eq!((woken, let_go), (1, 0), "{said}");
 }
 
 /// A hold with no reason is refused, and taking one off keeps the reason it
