@@ -1,7 +1,7 @@
 //! The attention queue: what wants a person right now, and where.
 //!
 //! One single query answering: does anything want me, and where?
-//! Combines handed steps, capped runs, unreachable engine quotas, and dead terminals.
+//! Combines handed steps, capped runs, accounts nobody can use, and dead terminals.
 //! Ranks: unreadable (0), handed (1), cap_reached (2), engine_unreachable (3), terminal_dead (4).
 //! Links to a terminal if exactly one matches the run's worktree; otherwise links to the run.
 
@@ -235,34 +235,94 @@ pub(crate) fn collect_attention_queue() -> Result<Vec<AttentionRow>, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs() as i64);
-    let machine = toolbox::Machine::current();
-    let catalog = toolbox::Catalog::load(&toolbox::default_sources(&machine));
-    let readings = sailor::remaining_cmd::per_profile(&catalog, &machine, now);
-    for reading in readings {
-        if let Err(why) = reading.result {
-            let reason = if !why.said.trim().is_empty() {
-                format!("{}: {}", reading.engine, why.said)
-            } else {
-                "reason unknown".to_owned()
-            };
-            rows.push(AttentionRow {
-                kind: "engine_unreachable".to_owned(),
-                run_id: None,
-                step_id: None,
-                tty: None,
-                status_word: "unreachable".to_owned(),
-                reason,
-                since: None,
-                link: None,
-            });
-        }
+    match accounts_shut(now) {
+        Ok(shut) => rows.extend(account_rows(&shut)),
+        Err(why) => rows.push(unreachable_row(format!(
+            "the accounts cannot be read: {why}"
+        ))),
     }
 
     rank_attention_rows(&mut rows);
     Ok(rows)
 }
 
-#[tauri::command]
+/// How long the accounts' answer is kept. Asking starts a login check per
+/// profile and a round trip per account, and the list is polled every few
+/// seconds; allowances are five hours and seven days wide.
+const ACCOUNTS_ARE_ASKED_EVERY: i64 = 300;
+
+type Asked = (i64, Result<Vec<sailor::accounts_cmd::AccountView>, String>);
+static ACCOUNTS_ASKED: std::sync::Mutex<Option<Asked>> = std::sync::Mutex::new(None);
+static ACCOUNTS_BEING_ASKED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn accounts_shut(now: i64) -> Result<Vec<sailor::accounts_cmd::AccountView>, String> {
+    kept_or_asked(
+        &ACCOUNTS_ASKED,
+        &ACCOUNTS_BEING_ASKED,
+        now,
+        sailor::accounts_cmd::shut_now,
+    )
+}
+
+fn kept_answer(kept: &std::sync::Mutex<Option<Asked>>, now: i64) -> Option<Asked> {
+    crate::locks::locked(kept)
+        .clone()
+        .filter(|(at, _)| now - at < ACCOUNTS_ARE_ASKED_EVERY)
+}
+
+/// The window opens with two screens asking at once: whoever comes second
+/// waits for the answer in flight instead of asking every account again.
+fn kept_or_asked(
+    kept: &std::sync::Mutex<Option<Asked>>,
+    asking: &std::sync::Mutex<()>,
+    now: i64,
+    ask: impl FnOnce(i64) -> Result<Vec<sailor::accounts_cmd::AccountView>, String>,
+) -> Result<Vec<sailor::accounts_cmd::AccountView>, String> {
+    if let Some((_, answer)) = kept_answer(kept, now) {
+        return answer;
+    }
+    let _only_one_asks = crate::locks::locked(asking);
+    if let Some((_, answer)) = kept_answer(kept, now) {
+        return answer;
+    }
+    let answer = ask(now);
+    *crate::locks::locked(kept) = Some((now, answer.clone()));
+    answer
+}
+
+/// One row per account nobody can use. A meter that would not be read this
+/// minute, or a token a live run would renew, is not one: the account still
+/// works, and a person asked to look would find nothing to do.
+pub(crate) fn account_rows(shut: &[sailor::accounts_cmd::AccountView]) -> Vec<AttentionRow> {
+    shut.iter()
+        .filter(|view| view.standing == sailor::accounts_cmd::Standing::Shut)
+        .map(|view| {
+            let why = view
+                .quota
+                .as_ref()
+                .filter(|seen| seen.credential_is_dead)
+                .and_then(|seen| seen.refused.clone())
+                .unwrap_or_else(|| view.said.clone());
+            let whose = view.profile.as_deref().unwrap_or("its own home");
+            unreachable_row(format!("{} · {whose}: {why}", view.cli))
+        })
+        .collect()
+}
+
+fn unreachable_row(reason: String) -> AttentionRow {
+    AttentionRow {
+        kind: "engine_unreachable".to_owned(),
+        run_id: None,
+        step_id: None,
+        tty: None,
+        status_word: "unreachable".to_owned(),
+        reason,
+        since: None,
+        link: None,
+    }
+}
+
+#[tauri::command(async)]
 pub(crate) fn attention_queue() -> Result<Vec<AttentionRow>, String> {
     collect_attention_queue()
 }
@@ -372,5 +432,99 @@ mod tests {
         assert_eq!(rows[0].run_id.as_deref(), Some("r-1"));
         assert_eq!(rows[1].run_id.as_deref(), Some("r-2"));
         assert_eq!(rows[1].reason, "reason unknown");
+    }
+
+    fn an_account(
+        standing: sailor::accounts_cmd::Standing,
+        quota: Option<sailor::accounts_cmd::QuotaSeen>,
+    ) -> sailor::accounts_cmd::AccountView {
+        sailor::accounts_cmd::AccountView {
+            cli: "an-engine".to_owned(),
+            profile: Some("an-account".to_owned()),
+            active: false,
+            standing,
+            said: "not authenticated".to_owned(),
+            calls: 0,
+            spent_micros: 0,
+            tokens: 0,
+            last_call_at: 0,
+            ran_out_at: None,
+            quota,
+            worked: None,
+            repair: None,
+        }
+    }
+
+    /// Fault 320: an access token a live run would renew made the meter
+    /// refuse, and the list called a signed-in account unreachable.
+    #[test]
+    fn only_an_account_nobody_can_use_claims_a_person() {
+        use sailor::accounts_cmd::{QuotaSeen, Standing};
+        let meter_refused = QuotaSeen {
+            refused: Some("the access token has expired".to_owned()),
+            credential_is_dead: false,
+            provider_answered: true,
+            ..QuotaSeen::default()
+        };
+        let revoked = QuotaSeen {
+            refused: Some("the token was revoked".to_owned()),
+            credential_is_dead: true,
+            provider_answered: true,
+            ..QuotaSeen::default()
+        };
+
+        let rows = account_rows(&[
+            an_account(Standing::Ready, Some(meter_refused)),
+            an_account(Standing::Shut, Some(revoked)),
+            an_account(Standing::Shut, None),
+            an_account(Standing::Unknown, None),
+        ]);
+
+        let reasons: Vec<&str> = rows.iter().map(|row| row.reason.as_str()).collect();
+        assert_eq!(
+            reasons,
+            vec![
+                "an-engine · an-account: the token was revoked",
+                "an-engine · an-account: not authenticated",
+            ]
+        );
+        assert!(rows.iter().all(|row| row.kind == "engine_unreachable"));
+    }
+
+    #[test]
+    fn the_accounts_are_asked_once_in_five_minutes_however_often_the_list_is() {
+        let kept = std::sync::Mutex::new(None);
+        let asking = std::sync::Mutex::new(());
+        let asked = std::cell::Cell::new(0);
+        let ask = |_: i64| {
+            asked.set(asked.get() + 1);
+            Ok(Vec::new())
+        };
+
+        for second in [0, 10, 299] {
+            kept_or_asked(&kept, &asking, 1_000 + second, ask).expect("answered");
+        }
+        assert_eq!(asked.get(), 1, "polled three times inside the window");
+        kept_or_asked(&kept, &asking, 1_300, ask).expect("answered");
+        assert_eq!(asked.get(), 2, "asked again once the window has passed");
+    }
+
+    #[test]
+    fn two_screens_opening_together_ask_the_accounts_once() {
+        let kept = std::sync::Mutex::new(None);
+        let asking = std::sync::Mutex::new(());
+        let asked = std::sync::atomic::AtomicUsize::new(0);
+        let ask = |_: i64| {
+            asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            Ok(Vec::new())
+        };
+
+        std::thread::scope(|scope| {
+            for _ in 0..2 {
+                scope.spawn(|| kept_or_asked(&kept, &asking, 1_000, ask).expect("answered"));
+            }
+        });
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 }
