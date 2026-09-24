@@ -168,6 +168,35 @@ fn a_copy_of_an_older_version_is_marked_stale_in_the_list_and_the_check() {
     assert!(check.text.contains(said.trim_end()), "{}", check.text);
 }
 
+/// **CAPPING A COPY DOES NOT SAY WHAT IT WAS COPIED FROM.** A copy that never
+/// said which version it replaces is still unsaid after `flow cap` rewrites
+/// it: nothing in the rewrite knows what it was copied from, and stamping the
+/// version shipped today would call it current and silence the list.
+#[test]
+fn capping_a_copy_that_never_said_its_version_leaves_it_unsaid() {
+    let scratch = Scratch::new("cap-unsaid");
+    let version = flow::versions::shipped_version(shipped()).expect("a shipped version");
+    let file = write_flow_replacing(&scratch.0.join("home").join("flows"), shipped(), None);
+
+    let capped = sailor(&scratch, None, &["flow", "cap", shipped(), "1000"]);
+
+    assert_eq!(capped.code, Some(0), "{}", capped.text);
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).expect("the copy reads"))
+            .expect("the copy parses");
+    assert_eq!(written.get("replaces"), None, "{written}");
+    let list = sailor(&scratch, None, &["flow", "list"]);
+    let unsaid = catalogue::say(
+        "cli.flow.list_origin_replaces_unsaid",
+        &[
+            ("origin", "yours"),
+            ("replaced", "built in"),
+            ("shipped", &version.to_string()),
+        ],
+    );
+    assert_eq!(origin_in_the_list(&list, shipped()), Some(unsaid), "{}", list.text);
+}
+
 #[test]
 fn where_prints_every_candidate_and_the_one_that_runs() {
     let scratch = Scratch::new("where");

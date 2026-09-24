@@ -42,9 +42,10 @@ pub fn stale(yours: &FlowFile, shipped: &FlowFile) -> Option<Stale> {
 }
 
 /// Stamps a person's copy of a shipped flow with the version it replaces,
-/// and takes off the shipped `version` it may still carry. Saving twice
-/// stamps the same number, and a flow no product ships is left alone.
-pub fn stamp_the_copy(document: &mut Value) {
+/// and takes off the shipped `version` it may still carry. Only a copy
+/// written where no file `standing` was is taken to replace today's version;
+/// one rewritten in place keeps what it said, or its silence.
+pub fn stamp_the_copy(document: &mut Value, standing: Option<&Value>) {
     let Some(id) = document.get("id").and_then(Value::as_str) else {
         return;
     };
@@ -56,8 +57,14 @@ pub fn stamp_the_copy(document: &mut Value) {
     };
     let carried = fields.remove("version").and_then(|value| value.as_u64());
     let declared = fields.get("replaces").and_then(Value::as_u64);
-    let replaces = declared.or(carried).unwrap_or(u64::from(shipped));
-    fields.insert("replaces".to_owned(), Value::from(replaces));
+    let said_before = standing.and_then(|before| {
+        (before.get("replaces").and_then(Value::as_u64))
+            .or_else(|| before.get("version").and_then(Value::as_u64))
+    });
+    let written_anew = standing.is_none().then_some(u64::from(shipped));
+    if let Some(replaces) = declared.or(carried).or(said_before).or(written_anew) {
+        fields.insert("replaces".to_owned(), Value::from(replaces));
+    }
 }
 
 /// What a flow of yours changes from the shipped flow it replaces, as JSON
