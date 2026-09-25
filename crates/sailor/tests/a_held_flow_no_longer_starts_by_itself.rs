@@ -181,6 +181,25 @@ fn the_arc_waits_for_a_parked_run_and_for_a_hold_read_where_the_runs_are() {
         said.contains("written_at"),
         "it names what it could not read: {said}"
     );
+
+    std::env::set_var("SAILOR_LEDGER", scratch.0.join("no-ledger-here"));
+    assert_eq!(
+        why_it_waits("asks", "ttys002"),
+        None,
+        "no ledger holds nothing"
+    );
+
+    let newer = scratch.0.join("newer-ledger");
+    std::fs::create_dir_all(&newer).expect("a ledger directory");
+    rusqlite::Connection::open(newer.join("state.db"))
+        .and_then(|store| store.pragma_update(None, "user_version", 9_999))
+        .expect("a ledger written by a newer binary");
+    std::env::set_var("SAILOR_LEDGER", &newer);
+    let said = why_it_waits("asks", "ttys002").expect("a ledger that will not open is not none");
+    assert!(
+        said.contains("9999"),
+        "it names why it could not open: {said}"
+    );
 }
 
 /// **A HELD FLOW'S PARKED RUN IS LET GO, NEVER WOKEN**, and the same run

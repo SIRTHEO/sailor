@@ -209,11 +209,12 @@ pub fn why_it_waits(flow: &str, tty: &str) -> Option<String> {
     parked_for(flow, tty).then(|| ALREADY_PARKED.to_owned())
 }
 
-/// The hold standing on a flow, as a person reads it. A ledger that cannot be
-/// opened answers none, for the reason `parked_for` gives; one that opens and
-/// cannot read the hold waits, as the beat does, and says why.
+/// The hold standing on a flow, as a person reads it. Where no ledger exists
+/// nothing is held; one that exists and will not open, or cannot read the
+/// hold, waits and says why, as the beat does.
 fn hold_on(flow: &str) -> Option<String> {
-    match machine_ledger()?.flow_hold(flow) {
+    let directory = ledger::default_directory().filter(|dir| dir.exists())?;
+    match ledger::Ledger::open(directory).and_then(|store| store.flow_hold(flow)) {
         Ok(hold) => hold.map(|hold| crate::flow_cmd::hold::hold_said(&hold)),
         Err(why) => Some(catalogue::say(
             "cli.flow.hold_could_not_be_read",
