@@ -191,7 +191,7 @@ pub(super) fn still_open_in(
             .unwrap_or_default()
             .into_iter()
             .find(|missed| missed.tty == tty),
-        waiting_elsewhere: sessions::mandate::waiting_in(deposit.directory())
+        waiting_elsewhere: sessions::mandate::waiting_in(deposit.directory(), now)
             .into_iter()
             .filter(|mandate| mandate.written.tty != tty)
             .collect(),

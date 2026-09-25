@@ -269,8 +269,9 @@ pub fn read(path: &Path) -> Option<Mandate> {
     serde_json::from_str(&text).ok()
 }
 
-/// Every mandate nobody has taken, at whichever terminal, oldest first.
-pub fn waiting_in(store: &Path) -> Vec<Mandate> {
+/// Every mandate nobody has taken nor holds at `now`, at whichever terminal,
+/// oldest first.
+pub fn waiting_in(store: &Path, now: i64) -> Vec<Mandate> {
     let Ok(entries) = std::fs::read_dir(store.join(MANDATES)) else {
         return Vec::new();
     };
@@ -279,7 +280,7 @@ pub fn waiting_in(store: &Path) -> Vec<Mandate> {
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|it| it == "json"))
         .filter_map(|path| read(&path))
-        .filter(|mandate| mandate.taken.is_none())
+        .filter(|mandate| mandate.taken.is_none() && held_at(mandate, now).is_none())
         .collect();
     waiting.sort_by_key(|mandate| mandate.written.at);
     waiting
@@ -335,12 +336,18 @@ fn still_free_for(path: &Path, by: &str, at: i64) -> io::Result<Mandate> {
     if let Some(taken) = &mandate.taken {
         return Err(io::Error::other(format!("already taken by «{}»", taken.by)));
     }
-    if let Some(held) = &mandate.reserved {
-        if held.by != by && at - held.at < A_RESERVATION_HOLDS_FOR {
-            return Err(io::Error::other(format!("held for «{}»", held.by)));
-        }
+    if let Some(held) = held_at(&mandate, at).filter(|held| held.by != by) {
+        return Err(io::Error::other(format!("held for «{}»", held.by)));
     }
     Ok(mandate)
+}
+
+/// The reservation that still keeps it from every other session at `at`.
+fn held_at(mandate: &Mandate, at: i64) -> Option<&Reserved> {
+    mandate
+        .reserved
+        .as_ref()
+        .filter(|held| at - held.at < A_RESERVATION_HOLDS_FOR)
 }
 
 /// Runs `act` holding the lock of one mandate, so a read and the write that
@@ -358,14 +365,25 @@ fn under_lock<T>(path: &Path, act: impl FnOnce() -> io::Result<T>) -> io::Result
 /// marked with where it went. **ONE ACT, UNDONE WHOLE**: the greeting looks a
 /// mandate up by the terminal that arrives, and one left waiting at the old
 /// address reads as work still owed. A failing step takes back the earlier ones.
+/// Under the lock a take holds, so it never moves one a session is being handed.
 pub fn pass_on(store: &Path, from: &str, to: &str, at: i64) -> io::Result<PathBuf> {
     let origin = address_in(store, from);
+    under_lock(&origin, || pass_on_held(store, &origin, from, to, at))
+}
+
+fn pass_on_held(store: &Path, origin: &Path, from: &str, to: &str, at: i64) -> io::Result<PathBuf> {
     let mut mandate =
-        read(&origin).ok_or_else(|| io::Error::other(format!("no mandate waits for {from}")))?;
+        read(origin).ok_or_else(|| io::Error::other(format!("no mandate waits for {from}")))?;
     if let Some(taken) = &mandate.taken {
         return Err(io::Error::other(format!(
             "the mandate for {from} was already taken by «{}»",
             taken.by
+        )));
+    }
+    if let Some(held) = held_at(&mandate, at) {
+        return Err(io::Error::other(format!(
+            "the mandate for {from} is being handed to «{}»",
+            held.by
         )));
     }
     let destination = address_in(store, to);
@@ -388,7 +406,7 @@ pub fn pass_on(store: &Path, from: &str, to: &str, at: i64) -> io::Result<PathBu
         let _ = std::fs::remove_file(&aside);
         return Err(error);
     }
-    if let Err(error) = std::fs::remove_file(&origin) {
+    if let Err(error) = std::fs::remove_file(origin) {
         let _ = std::fs::remove_file(&destination);
         let _ = std::fs::remove_file(&aside);
         return Err(error);
@@ -558,6 +576,50 @@ mod tests {
         assert_eq!(read(&address_in(&store, "ttys012")), Some(theirs));
         let _ = std::fs::remove_dir_all(&store);
     }
+    /// **ONE SESSION PER MANDATE.** One held for a session being greeted is
+    /// neither offered elsewhere nor moved; once the hold lapses it is both.
+    #[test]
+    fn a_mandate_held_for_a_session_is_neither_offered_nor_passed_on() {
+        let store = scratch("passed-held");
+        deposit(&store, &filled("ttys013")).expect("deposit it");
+        reserve(&address_in(&store, "ttys013"), "the-successor", 100).expect("hold it");
+
+        assert!(waiting_in(&store, 110).is_empty());
+        assert!(pass_on(&store, "ttys013", "ttys014", 110).is_err());
+        let still = read(&address_in(&store, "ttys013")).expect("it stays where it was");
+        assert_eq!(
+            still.reserved.map(|held| held.by),
+            Some("the-successor".to_owned())
+        );
+        assert_eq!(read(&address_in(&store, "ttys014")), None);
+
+        let lapsed = 100 + A_RESERVATION_HOLDS_FOR;
+        assert_eq!(waiting_in(&store, lapsed).len(), 1);
+        pass_on(&store, "ttys013", "ttys014", lapsed).expect("a lapsed hold moves");
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// A move waits for a take in flight instead of reading beside it.
+    #[test]
+    fn a_mandate_is_passed_on_only_under_the_lock_a_take_holds() {
+        let store = scratch("passed-locked");
+        deposit(&store, &filled("ttys015")).expect("deposit it");
+        let origin = address_in(&store, "ttys015");
+        let lock = std::fs::File::create(origin.with_extension("lock")).expect("the lock");
+        lock.lock().expect("hold it as a take would");
+
+        let moving = store.clone();
+        let mover = std::thread::spawn(move || pass_on(&moving, "ttys015", "ttys016", 120));
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        assert!(read(&origin).is_some(), "it moved while a take held it");
+
+        lock.unlock().expect("let go");
+        let moved = mover.join().expect("the mover");
+        moved.expect("it moves once free");
+        assert_eq!(read(&origin), None);
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
     /// On Linux a terminal is `pts/3`: its mandate is one file among the others.
     #[test]
     fn a_mandate_for_a_terminal_named_with_a_slash_is_one_file() {
