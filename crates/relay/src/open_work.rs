@@ -66,6 +66,8 @@ pub(crate) fn read(record: impl BufRead, words: &OpenInRecord, now: i64) -> Opti
                 queued += 1;
             } else if words.and_shrinks_on.iter().any(|word| word == operation) {
                 queued = queued.saturating_sub(1);
+            } else if words.and_empties_on.iter().any(|word| word == operation) {
+                queued = 0;
             }
         }
         let content = &entry["message"]["content"];

@@ -724,6 +724,9 @@ pub struct OpenInRecord {
     pub a_queue_row_is: String,
     pub the_queue_grows_on: Vec<String>,
     pub and_shrinks_on: Vec<String>,
+    /// Operations that empty the whole queue at once.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub and_empties_on: Vec<String>,
     /// Past this, a launch that never reported is lost, not in flight.
     pub a_launch_is_lost_after_seconds: u64,
     #[serde(default, skip_serializing_if = "String::is_empty")]

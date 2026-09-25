@@ -132,6 +132,18 @@ fn a_message_queued_and_not_delivered_is_open() {
     assert_eq!(open(&rows, LAUNCHED_AT), [Open::Queued { count: 1 }]);
 }
 
+/// One operation hands on every queued message at once.
+#[test]
+fn a_queue_emptied_at_once_leaves_nothing_queued() {
+    let rows = vec![
+        prompt("go"),
+        json!({"type": "queue-operation", "operation": "enqueue", "content": "and then this"}),
+        json!({"type": "queue-operation", "operation": "enqueue", "content": "and this"}),
+        json!({"type": "queue-operation", "operation": "popAll"}),
+    ];
+    assert_eq!(open(&rows, LAUNCHED_AT), []);
+}
+
 #[test]
 fn a_record_that_cannot_be_read_is_not_a_record_with_nothing_open() {
     assert_eq!(
