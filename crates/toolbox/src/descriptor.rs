@@ -728,6 +728,9 @@ pub struct OpenInRecord {
     pub and_empties_on: Vec<String>,
     /// Past this, a launch that never reported is lost, not in flight.
     pub a_launch_is_lost_after_seconds: u64,
+    /// Past this, a queued message nothing took is lost; absent, never.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub a_queued_message_is_lost_after_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
     #[serde(flatten)]

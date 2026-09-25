@@ -15,7 +15,8 @@ pub(crate) enum Open {
     /// Launched in the background, not reported on, not stopped, and younger
     /// than the declared age at which a silent launch is taken as lost.
     Launched { what: String },
-    /// Messages queued for the session and not yet handed to it.
+    /// Messages queued for the session, not yet handed to it, and younger than
+    /// the declared age at which one nothing took is taken as lost.
     Queued { count: usize },
 }
 
@@ -47,7 +48,8 @@ pub(crate) fn read(record: impl BufRead, words: &OpenInRecord, now: i64) -> Opti
     let mut calls: BTreeMap<String, Call> = BTreeMap::new();
     let mut answers: BTreeMap<String, String> = BTreeMap::new();
     let (mut reported, mut stopped) = (BTreeSet::new(), BTreeSet::new());
-    let (mut queued, mut turn_began) = (0usize, 0usize);
+    let mut queued: Vec<(Option<i64>, String)> = Vec::new();
+    let mut turn_began = 0usize;
     for (row, line) in record.lines().enumerate() {
         let line = line.ok()?;
         let Ok(entry) = serde_json::from_str::<Value>(&line) else {
@@ -58,16 +60,24 @@ pub(crate) fn read(record: impl BufRead, words: &OpenInRecord, now: i64) -> Opti
         }
         if entry["type"] == words.a_queue_row_is.as_str() {
             let operation = entry["operation"].as_str().unwrap_or_default();
+            let message = entry["content"].as_str().unwrap_or_default();
             if words
                 .the_queue_grows_on
                 .iter()
                 .any(|word| word == operation)
             {
-                queued += 1;
+                queued.push((at(&entry), message.to_owned()));
             } else if words.and_shrinks_on.iter().any(|word| word == operation) {
-                queued = queued.saturating_sub(1);
+                // A removal names the message it takes; a row naming none takes the newest.
+                let taken = queued
+                    .iter()
+                    .position(|(_, queued)| !message.is_empty() && queued == message)
+                    .or(queued.len().checked_sub(1));
+                if let Some(taken) = taken {
+                    queued.remove(taken);
+                }
             } else if words.and_empties_on.iter().any(|word| word == operation) {
-                queued = 0;
+                queued.clear();
             }
         }
         let content = &entry["message"]["content"];
@@ -99,9 +109,7 @@ pub(crate) fn read(record: impl BufRead, words: &OpenInRecord, now: i64) -> Opti
                         .as_str()
                         .unwrap_or(&name)
                         .to_owned();
-                    let at = entry["timestamp"]
-                        .as_str()
-                        .and_then(models::fuel::unix_secs_of_rfc3339);
+                    let at = at(&entry);
                     let id = block["id"].as_str().unwrap_or_default().to_owned();
                     calls.insert(
                         id,
@@ -149,10 +157,24 @@ pub(crate) fn read(record: impl BufRead, words: &OpenInRecord, now: i64) -> Opti
             });
         }
     }
-    if queued > 0 {
-        open.push(Open::Queued { count: queued });
+    let lost_after = words.a_queued_message_is_lost_after_seconds;
+    let count = queued
+        .iter()
+        .filter(|(at, _)| {
+            !at.zip(lost_after)
+                .is_some_and(|(at, age)| now - at > age as i64)
+        })
+        .count();
+    if count > 0 {
+        open.push(Open::Queued { count });
     }
     Some(open)
+}
+
+fn at(entry: &Value) -> Option<i64> {
+    entry["timestamp"]
+        .as_str()
+        .and_then(models::fuel::unix_secs_of_rfc3339)
 }
 
 fn between<'a>(text: &'a str, tags: &'a [String; 2]) -> impl Iterator<Item = String> + 'a {

@@ -144,6 +144,44 @@ fn a_queue_emptied_at_once_leaves_nothing_queued() {
     assert_eq!(open(&rows, LAUNCHED_AT), []);
 }
 
+fn queued(operation: &str, at: &str, message: &str) -> Value {
+    json!({"type": "queue-operation", "operation": operation, "timestamp": at, "content": message})
+}
+
+/// A message nothing took, past the declared age, is lost: a notification the
+/// session never received would otherwise keep it full forever.
+#[test]
+fn a_queued_message_nothing_took_is_lost_past_the_declared_age() {
+    let rows = vec![
+        prompt("go"),
+        queued("enqueue", AT_LAUNCH, "<task-notification>"),
+        prompt("and later this"),
+    ];
+    let lost = words()
+        .a_queued_message_is_lost_after_seconds
+        .expect("the shipped line declares an age") as i64;
+    assert_eq!(open(&rows, LAUNCHED_AT + lost), [Open::Queued { count: 1 }]);
+    assert_eq!(open(&rows, LAUNCHED_AT + lost + 1), []);
+}
+
+/// A removal takes the message it names, so the one still waiting keeps its own age.
+#[test]
+fn a_removal_takes_the_message_it_names() {
+    let rows = vec![
+        prompt("go"),
+        queued("enqueue", AT_LAUNCH, "and then this"),
+        queued("enqueue", "2026-09-24T11:00:00Z", "and this"),
+        queued("remove", "2026-09-24T11:00:01Z", "and then this"),
+    ];
+    let lost = words()
+        .a_queued_message_is_lost_after_seconds
+        .unwrap_or_default() as i64;
+    assert_eq!(
+        open(&rows, LAUNCHED_AT + lost + 1),
+        [Open::Queued { count: 1 }]
+    );
+}
+
 #[test]
 fn a_record_that_cannot_be_read_is_not_a_record_with_nothing_open() {
     assert_eq!(
