@@ -58,29 +58,44 @@ fn a_saved_copy_says_which_version_it_replaces_and_carries_no_version_of_its_own
     let (name, version) = a_shipped_flow();
 
     let mut copied_by_hand = json!({"id": name, "version": version});
-    stamp_the_copy(&mut copied_by_hand);
+    stamp_the_copy(&mut copied_by_hand, None);
     assert_eq!(copied_by_hand, json!({"id": name, "replaces": version}));
 
     let mut written_anew = json!({"id": name});
-    stamp_the_copy(&mut written_anew);
+    stamp_the_copy(&mut written_anew, None);
     assert_eq!(written_anew, json!({"id": name, "replaces": version}));
 
+    let mut rewritten_in_place = json!({"id": name});
+    stamp_the_copy(&mut rewritten_in_place, Some(&json!({"id": name})));
+    assert_eq!(
+        rewritten_in_place,
+        json!({"id": name}),
+        "a copy that never said what it replaces is not told it is current"
+    );
+    let mut rewritten_in_place = json!({"id": name});
+    stamp_the_copy(&mut rewritten_in_place, Some(&json!({"id": name, "replaces": 0})));
+    assert_eq!(
+        rewritten_in_place,
+        json!({"id": name, "replaces": 0}),
+        "what the copy on disk said is kept when the rewrite drops it"
+    );
+
     let mut already_said = json!({"id": name, "replaces": 0, "version": version});
-    stamp_the_copy(&mut already_said);
+    stamp_the_copy(&mut already_said, None);
     assert_eq!(
         already_said,
         json!({"id": name, "replaces": 0}),
         "what a copy declares it replaces is kept, even when older"
     );
     let again = already_said.clone();
-    stamp_the_copy(&mut already_said);
+    stamp_the_copy(&mut already_said, None);
     assert_eq!(already_said, again, "saving twice stamps the same number");
 }
 
 #[test]
 fn a_flow_no_product_ships_is_left_as_written() {
     let mut own = json!({"id": "a-flow-of-a-persons-own", "version": 4});
-    stamp_the_copy(&mut own);
+    stamp_the_copy(&mut own, None);
     assert_eq!(own, json!({"id": "a-flow-of-a-persons-own", "version": 4}));
 }
 

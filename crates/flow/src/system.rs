@@ -848,9 +848,6 @@ pub fn flow_of_document(document: &serde_json::Value) -> Result<FlowFile, String
 /// Writes a flow **keeping the key order its author gave it**, where
 /// [`save_in`] rebuilds it. One door, so a refused graph enters by neither.
 pub fn save_document_in(flows_dir: &Path, document: &serde_json::Value) -> Result<(), String> {
-    let mut document = document.clone();
-    crate::versions::stamp_the_copy(&mut document);
-    let document = &document;
     let flow = flow_of_document(document)?;
     let id = safe_flow_id(&flow.id)?;
     fs::create_dir_all(flows_dir)
@@ -858,7 +855,18 @@ pub fn save_document_in(flows_dir: &Path, document: &serde_json::Value) -> Resul
     let file_name = format!("{id}.flow.json");
     reject_a_name_that_collides_only_by_case(flows_dir, &file_name)?;
     let target = flows_dir.join(&file_name);
-    let mut text = serde_json::to_string_pretty(document)
+    // A file that stands but does not parse still stands: it said nothing.
+    let standing = match fs::read_to_string(&target) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        read => Some(
+            read.ok()
+                .and_then(|text| serde_json::from_str(&text).ok())
+                .unwrap_or(serde_json::Value::Null),
+        ),
+    };
+    let mut document = document.clone();
+    crate::versions::stamp_the_copy(&mut document, standing.as_ref());
+    let mut text = serde_json::to_string_pretty(&document)
         .map_err(|error| format!("cannot compose the flow as JSON: {error}"))?;
     // Without the newline `git diff` says so on every rewritten flow.
     text.push('\n');

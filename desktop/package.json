@@ -13,6 +13,7 @@
     "desktop:build": "cargo tauri build",
     "test": "vitest run",
     "screenshots": "tsx scripts/screenshots.ts",
+    "walkthrough": "tsx scripts/screenshots.ts --walkthrough",
     "check:canvas": "tsx scripts/check-canvas.ts",
     "check:bundle": "tsx scripts/check-bundle.ts"
   },
