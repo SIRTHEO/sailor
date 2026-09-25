@@ -12,7 +12,8 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!("sailor-received-{}-{name}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("sailor-received-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).expect("a directory to write in");
         Scratch(path)
@@ -36,7 +37,10 @@ impl Drop for Scratch {
 }
 
 fn taken_by(path: &Path) -> Option<String> {
-    read(path).expect("still on disk").taken.map(|taken| taken.by)
+    read(path)
+        .expect("still on disk")
+        .taken
+        .map(|taken| taken.by)
 }
 
 #[test]
@@ -47,12 +51,24 @@ fn the_greeting_holds_the_mandate_and_only_the_session_that_speaks_takes_it() {
     let handed = reserve(&path, "the-successor", 100).expect("the greeting holds it");
     assert_eq!(handed.work.goal, "carry the work on");
     assert_eq!(taken_by(&path), None, "handing it is not receiving it");
-    assert!(reserve(&path, "a-second-greeting", 110).is_err(), "held for one session");
-    assert!(!receive(&path, "a-second-greeting", 111).expect("reads"), "not its to take");
+    assert!(
+        reserve(&path, "a-second-greeting", 110).is_err(),
+        "held for one session"
+    );
+    assert!(
+        !receive(&path, "a-second-greeting", 111).expect("reads"),
+        "not its to take"
+    );
 
-    assert!(receive(&path, "the-successor", 120).expect("reads"), "it speaks, and takes it");
+    assert!(
+        receive(&path, "the-successor", 120).expect("reads"),
+        "it speaks, and takes it"
+    );
     assert_eq!(taken_by(&path).as_deref(), Some("the-successor"));
-    assert!(reserve(&path, "a-later-session", 10_000).is_err(), "taken once");
+    assert!(
+        reserve(&path, "a-later-session", 10_000).is_err(),
+        "taken once"
+    );
 }
 
 /// **A SESSION THAT NEVER SPEAKS DOES NOT KEEP IT.** The one that started and
@@ -97,6 +113,9 @@ fn greetings_racing_on_one_terminal_hand_the_mandate_to_one_session() {
                 .filter(|was_handed| *was_handed)
                 .count()
         });
-        assert_eq!(handed, 1, "round {round}: {handed} sessions were handed one mandate");
+        assert_eq!(
+            handed, 1,
+            "round {round}: {handed} sessions were handed one mandate"
+        );
     }
 }

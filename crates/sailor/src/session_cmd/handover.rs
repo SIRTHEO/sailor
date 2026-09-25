@@ -706,8 +706,8 @@ mod tests {
         mandate.work.never = vec!["do not type into what nobody holds".to_owned()];
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
-        let handed =
-            the_mandate_of(&directory, "ttys001", "the-successor", "", 100).expect("a mandate arrives");
+        let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 100)
+            .expect("a mandate arrives");
         assert!(handed.contains("carry the relay to the end"), "{handed}");
         assert!(
             handed.contains("read the screen of a held terminal"),
@@ -726,7 +726,10 @@ mod tests {
         let held = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys001"))
             .expect("it is still on disk");
         assert_eq!(held.taken, None, "handing it is not receiving it");
-        assert_eq!(held.reserved.map(|held| held.by).as_deref(), Some("the-successor"));
+        assert_eq!(
+            held.reserved.map(|held| held.by).as_deref(),
+            Some("the-successor")
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -738,7 +741,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
 
-        assert_eq!(the_mandate_of(&directory, "ttys009", "whoever", "", 100), None);
+        assert_eq!(
+            the_mandate_of(&directory, "ttys009", "whoever", "", 100),
+            None
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 

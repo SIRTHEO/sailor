@@ -291,8 +291,6 @@ const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "
 /// The forms that announce this terminal to the other agents, or stop.
 const NEEDS_THE_DEPOSIT: &[&str] = &["open", "event", "close", "detach"];
 
-
-
 /// How one of our hooks is told from anyone else's: by the fact that it invokes
 /// **this** command. Not by a name written beside it, which can be changed
 /// without changing what it does.
@@ -319,10 +317,6 @@ const MARKS: &[&str] = &[MARK, WHAT_WE_ARE];
 fn ours(text: &str) -> bool {
     MARKS.iter().all(|mark| text.contains(mark))
 }
-
-
-
-
 
 /// The same inverse, with the list and the machine handed over, for the same
 /// reason [`grafting`] has it: a check must be able to ask about a command line
@@ -488,13 +482,6 @@ fn took_the_two_commands_out(directory: &std::path::Path) -> Result<String, Stri
     Ok(said)
 }
 
-
-
-
-
-
-
-
 /// Which of a line's two addresses was grafted, and what that leaves open.
 ///
 /// A file whose place moves with a variable has two homes, and the one a
@@ -517,9 +504,6 @@ fn which_home(
     }
 }
 
-
-
-
 fn act(request: &Request<'_>) -> Result<Report, String> {
     match request.verb {
         "open" => open_terminal(request),
@@ -538,8 +522,6 @@ fn act(request: &Request<'_>) -> Result<Report, String> {
 fn anchor_of(request: &Request<'_>) -> Anchor {
     anchor_from(request.payload, request.tty.to_owned(), request.census)
 }
-
-
 
 fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
@@ -596,8 +578,6 @@ fn rules_in(worktree: &std::path::Path) -> Vec<flow::workspace::Rule> {
     flow::workspace::rules_of(&root)
 }
 
-
-
 /// A neighbour by name, and **where they are when it is not where you are**:
 /// the same repository is reached from several directories, and «ttys010»
 /// alone would send a reader to look in their own.
@@ -607,7 +587,6 @@ fn named(row: &sessions::TerminalRow, here: &str) -> String {
     }
     format!("{} ({})", row.tty, row.worktree)
 }
-
 
 /// What the ledger holds open that nothing picks up on its own, in **two lists
 /// and not one**: a run `waiting` was handed to a person, one stopped on «not
@@ -650,10 +629,7 @@ struct Started<'a> {
 
 /// The engine the hook named, under the profile in force for it.
 fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
-    let engine = request
-        .options
-        .get("cli")
-        .and_then(|id| engine_named(id));
+    let engine = request.options.get("cli").and_then(|id| engine_named(id));
     let profile_home = engine.and_then(profile_home_of);
     Started {
         engine,
@@ -667,10 +643,16 @@ fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
 /// and the profiles say `claude`: the executable the descriptor detects joins them.
 fn engine_named(id: &str) -> Option<&'static profiles::KnownCli> {
     let machine = toolbox::Machine::current();
-    engine_in(&toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine)), id)
+    engine_in(
+        &toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine)),
+        id,
+    )
 }
 
-fn engine_in(catalog: &toolbox::descriptor::Catalog, id: &str) -> Option<&'static profiles::KnownCli> {
+fn engine_in(
+    catalog: &toolbox::descriptor::Catalog,
+    id: &str,
+) -> Option<&'static profiles::KnownCli> {
     profiles::find_cli(id).ok().or_else(|| {
         catalog
             .descriptors
@@ -698,18 +680,6 @@ fn profile_home_of(engine: &profiles::KnownCli) -> Option<PathBuf> {
 fn profile_home_from(session_env: Option<&str>) -> Option<PathBuf> {
     session_env.filter(|dir| !dir.is_empty()).map(PathBuf::from)
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 fn record_event(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
@@ -769,8 +739,6 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     }
     Ok(Report::spoken(also_saying(said, announced)))
 }
-
-
 
 fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
@@ -960,7 +928,11 @@ mod tests {
     #[test]
     fn a_hook_that_names_its_tool_finds_the_command_line_behind_it() {
         let catalog = toolbox::descriptor::Catalog::load(&[toolbox::descriptor::Source::Builtin]);
-        for (tool, line) in [("claude-code", "claude"), ("codex", "codex"), ("gemini-cli", "gemini")] {
+        for (tool, line) in [
+            ("claude-code", "claude"),
+            ("codex", "codex"),
+            ("gemini-cli", "gemini"),
+        ] {
             assert_eq!(
                 engine_in(&catalog, tool).map(|engine| engine.id.as_str()),
                 Some(line),
@@ -976,7 +948,8 @@ mod tests {
     /// goes red.
     #[test]
     fn a_sessions_own_config_dir_outranks_the_store_switched_active_profile() {
-        let engine = profiles::find_cli("claude").expect("a known command line moves its home by a variable");
+        let engine = profiles::find_cli("claude")
+            .expect("a known command line moves its home by a variable");
         let moves_by_a_variable = matches!(engine.home, profiles::HomeMechanism::EnvVar(_));
         assert!(
             moves_by_a_variable,
@@ -1644,7 +1617,8 @@ mod tests {
         let mut mandate = sessions::mandate::Mandate::default();
         mandate.written.tty = "ttys004".to_owned();
         mandate.written.session = "the-one-that-filled-up".to_owned();
-        sessions::mandate::deposit(deposit.directory(), &mandate).expect("the mandate is deposited");
+        sessions::mandate::deposit(deposit.directory(), &mandate)
+            .expect("the mandate is deposited");
         sessions::mandate::reserve(&path, "the-successor", now()).expect("the greeting holds it");
 
         for session in ["somebody-else", "the-successor"] {
@@ -1660,7 +1634,10 @@ mod tests {
             let taken = sessions::mandate::read(&path).expect("still on disk").taken;
             match session {
                 "somebody-else" => assert_eq!(taken, None, "another session took it"),
-                _ => assert_eq!(taken.map(|taken| taken.by).as_deref(), Some("the-successor")),
+                _ => assert_eq!(
+                    taken.map(|taken| taken.by).as_deref(),
+                    Some("the-successor")
+                ),
             }
         }
     }
@@ -1711,8 +1688,15 @@ mod tests {
         }
 
         let orphaned = orphaned_on(&store, "ttys004");
-        assert_eq!(orphaned.len(), 1, "one record, for the untaken one: {orphaned:?}");
-        assert!(orphaned[0].contains("the work left at ttys004"), "{orphaned:?}");
+        assert_eq!(
+            orphaned.len(),
+            1,
+            "one record, for the untaken one: {orphaned:?}"
+        );
+        assert!(
+            orphaned[0].contains("the work left at ttys004"),
+            "{orphaned:?}"
+        );
     }
 
     /// The same when nobody closes it and the census finds the terminal gone.
@@ -1759,7 +1743,10 @@ mod tests {
 
         let orphaned = orphaned_on(&store, "ttys009");
         assert_eq!(orphaned.len(), 1, "{orphaned:?}");
-        assert!(orphaned[0].contains("the work left at ttys009"), "{orphaned:?}");
+        assert!(
+            orphaned[0].contains("the work left at ttys009"),
+            "{orphaned:?}"
+        );
     }
 
     /// **WHAT WAITS ON ANOTHER TERMINAL IS SAID ON THIS ONE.** The only
@@ -1783,8 +1770,14 @@ mod tests {
         let said = what_is_still_open(&found).expect("something to say");
 
         assert!(said.contains("ttys019 (/the/tree/of/ttys019)"), "{said}");
-        assert!(!said.contains("ttys020"), "a taken one is not waiting: {said}");
-        assert!(!said.contains("ttysTEST"), "this terminal's own is not elsewhere: {said}");
+        assert!(
+            !said.contains("ttys020"),
+            "a taken one is not waiting: {said}"
+        );
+        assert!(
+            !said.contains("ttysTEST"),
+            "this terminal's own is not elsewhere: {said}"
+        );
     }
 
     /// A terminal that closes stops holding the tree: whoever reads the survey
@@ -2392,7 +2385,8 @@ mod tests {
         };
 
         let here = still_open_in(&ledger, None, &started_in(&deep), "ttysTEST").expect("open");
-        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory), "ttysTEST").expect("open");
+        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory), "ttysTEST")
+            .expect("open");
         let labels = |found: &StillOpen| {
             found
                 .remembered
@@ -3070,7 +3064,8 @@ mod tests {
             worktree: PathBuf::new(),
             home: None,
         };
-        let found = still_open_in(&deposit, None, &nobody, "ttysTEST").expect("reading the two lists");
+        let found =
+            still_open_in(&deposit, None, &nobody, "ttysTEST").expect("reading the two lists");
 
         assert_eq!(
             found

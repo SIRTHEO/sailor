@@ -180,14 +180,23 @@ fn a_copy_that_hides_a_watcher_leaves_a_row_that_says_why_it_did_not_start() {
     );
 
     assert!(asked.is_empty(), "nothing was started: {asked:?}");
-    assert_eq!(verdicts.len(), 1, "one row, and none for the flow nobody shipped watching: {verdicts:?}");
+    assert_eq!(
+        verdicts.len(),
+        1,
+        "one row, and none for the flow nobody shipped watching: {verdicts:?}"
+    );
     assert_eq!(verdicts[0].flow, "relay");
     assert_eq!(verdicts[0].verdict, DEFERRED);
     assert_eq!(
         verdicts[0].why.as_deref(),
         Some("not watching: the \"yours\" copy declares the source \"manual\", and it hides the \"built in\" one, which watches session events")
     );
-    assert!(store.already_judged(21, "relay").expect("the store answers"), "the row is in the store");
+    assert!(
+        store
+            .already_judged(21, "relay")
+            .expect("the store answers"),
+        "the row is in the store"
+    );
 }
 
 /// **A FLOW ALREADY PARKED ON THIS TERMINAL IS NOT STARTED AGAIN.** Fault 163:
