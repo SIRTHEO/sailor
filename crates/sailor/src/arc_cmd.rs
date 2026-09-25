@@ -210,15 +210,22 @@ pub fn why_it_waits(flow: &str, tty: &str) -> Option<String> {
 }
 
 /// The hold standing on a flow, as a person reads it. Where no ledger exists
-/// nothing is held; one that exists and will not open, or cannot read the
-/// hold, waits and says why, as the beat does.
+/// nothing is held; one nobody could look for, one that will not open, or a
+/// hold that cannot be read waits and says why, as the beat does.
 fn hold_on(flow: &str) -> Option<String> {
-    let directory = ledger::default_directory().filter(|dir| dir.exists())?;
-    match ledger::Ledger::open(directory).and_then(|store| store.flow_hold(flow)) {
+    let directory = ledger::default_directory()?;
+    let hold = match directory.try_exists() {
+        Ok(false) => return None,
+        Ok(true) => ledger::Ledger::open(directory)
+            .and_then(|store| store.flow_hold(flow))
+            .map_err(|why| why.to_string()),
+        Err(why) => Err(why.to_string()),
+    };
+    match hold {
         Ok(hold) => hold.map(|hold| crate::flow_cmd::hold::hold_said(&hold)),
         Err(why) => Some(catalogue::say(
             "cli.flow.hold_could_not_be_read",
-            &[("why", &why.to_string())],
+            &[("why", &why)],
         )),
     }
 }

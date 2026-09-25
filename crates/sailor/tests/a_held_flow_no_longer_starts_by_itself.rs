@@ -8,6 +8,7 @@ use flow::StepRecord;
 use ledger::{Ledger, RunRecord};
 use sailor::arc_cmd::{why_it_waits, ALREADY_PARKED, SESSION_EVENT};
 use serde_json::json;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -187,6 +188,17 @@ fn the_arc_waits_for_a_parked_run_and_for_a_hold_read_where_the_runs_are() {
         why_it_waits("asks", "ttys002"),
         None,
         "no ledger holds nothing"
+    );
+
+    let shut = scratch.0.join("shut");
+    std::fs::create_dir_all(&shut).expect("a directory");
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o000)).expect("shut");
+    std::env::set_var("SAILOR_LEDGER", shut.join("ledger"));
+    let said = why_it_waits("asks", "ttys002");
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).expect("open");
+    assert!(
+        said.is_some(),
+        "a ledger nobody could look for is not a missing one"
     );
 
     let newer = scratch.0.join("newer-ledger");
