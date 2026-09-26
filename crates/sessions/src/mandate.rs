@@ -238,7 +238,7 @@ pub fn archive_in(store: &Path, tty: &str, at: i64) -> PathBuf {
 /// can be read back from.
 pub fn deposit(store: &Path, mandate: &Mandate) -> io::Result<Option<PathBuf>> {
     let path = address_in(store, &mandate.written.tty);
-    under_lock(&path, || {
+    under_lock(&path, queue, || {
         let mut archived = None;
         if let Some(earlier) = read(&path) {
             let aside = archive_in(store, &mandate.written.tty, earlier.written.at);
@@ -292,7 +292,7 @@ pub fn waiting_in(store: &Path, now: i64) -> Vec<Mandate> {
 /// a first one that found nothing, and «found nothing» is how a successor goes
 /// off to find work of its own.
 pub fn consume(path: &Path, by: &str, at: i64) -> io::Result<()> {
-    under_lock(path, || {
+    under_lock(path, queue, || {
         let mut mandate = still_free_for(path, by, at)?;
         mandate.taken = Some(Taken {
             by: by.to_owned(),
@@ -306,7 +306,11 @@ pub fn consume(path: &Path, by: &str, at: i64) -> io::Result<()> {
 /// holds. **ONE SESSION PER MANDATE**: a second one greeted in the same
 /// seconds is refused, not handed the same work.
 pub fn reserve(path: &Path, by: &str, at: i64) -> io::Result<Mandate> {
-    under_lock(path, || {
+    reserve_in_turn(path, by, at, queue)
+}
+
+fn reserve_in_turn(path: &Path, by: &str, at: i64, acquire: Acquire) -> io::Result<Mandate> {
+    under_lock(path, acquire, || {
         let mut mandate = still_free_for(path, by, at)?;
         mandate.reserved = Some(Reserved {
             by: by.to_owned(),
@@ -350,14 +354,25 @@ fn held_at(mandate: &Mandate, at: i64) -> Option<&Reserved> {
         .filter(|held| at - held.at < A_RESERVATION_HOLDS_FOR)
 }
 
+/// How a mandate's lock is taken: every caller queues for it.
+type Acquire = fn(&std::fs::File) -> io::Result<()>;
+
+fn queue(lock: &std::fs::File) -> io::Result<()> {
+    lock.lock()
+}
+
 /// Runs `act` holding the lock of one mandate, so a read and the write that
 /// follows it are one step for every other process.
-fn under_lock<T>(path: &Path, act: impl FnOnce() -> io::Result<T>) -> io::Result<T> {
+fn under_lock<T>(
+    path: &Path,
+    acquire: Acquire,
+    act: impl FnOnce() -> io::Result<T>,
+) -> io::Result<T> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     let lock = std::fs::File::create(path.with_extension("lock"))?;
-    lock.lock()?;
+    acquire(&lock)?;
     act()
 }
 
@@ -367,8 +382,20 @@ fn under_lock<T>(path: &Path, act: impl FnOnce() -> io::Result<T>) -> io::Result
 /// address reads as work still owed. A failing step takes back the earlier ones.
 /// Under the lock a take holds, so it never moves one a session is being handed.
 pub fn pass_on(store: &Path, from: &str, to: &str, at: i64) -> io::Result<PathBuf> {
+    pass_on_in_turn(store, from, to, at, queue)
+}
+
+fn pass_on_in_turn(
+    store: &Path,
+    from: &str,
+    to: &str,
+    at: i64,
+    acquire: Acquire,
+) -> io::Result<PathBuf> {
     let origin = address_in(store, from);
-    under_lock(&origin, || pass_on_held(store, &origin, from, to, at))
+    under_lock(&origin, acquire, || {
+        pass_on_held(store, &origin, from, to, at)
+    })
 }
 
 fn pass_on_held(store: &Path, origin: &Path, from: &str, to: &str, at: i64) -> io::Result<PathBuf> {
@@ -599,7 +626,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&store);
     }
 
-    /// A move waits for a take in flight instead of reading beside it.
+    fn refuse(lock: &std::fs::File) -> io::Result<()> {
+        lock.try_lock().map_err(io::Error::from)
+    }
+
+    /// A move asks for the lock a take in flight holds.
     #[test]
     fn a_mandate_is_passed_on_only_under_the_lock_a_take_holds() {
         let store = scratch("passed-locked");
@@ -608,15 +639,35 @@ mod tests {
         let lock = std::fs::File::create(origin.with_extension("lock")).expect("the lock");
         lock.lock().expect("hold it as a take would");
 
-        let moving = store.clone();
-        let mover = std::thread::spawn(move || pass_on(&moving, "ttys015", "ttys016", 120));
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        assert!(read(&origin).is_some(), "it moved while a take held it");
+        let refused = pass_on_in_turn(&store, "ttys015", "ttys016", 120, refuse);
+        assert!(refused.is_err(), "it moved while a take held it");
+        assert!(read(&origin).is_some());
+        assert_eq!(read(&address_in(&store, "ttys016")), None);
 
         lock.unlock().expect("let go");
-        let moved = mover.join().expect("the mover");
-        moved.expect("it moves once free");
+        pass_on(&store, "ttys015", "ttys016", 120).expect("it moves once free");
         assert_eq!(read(&origin), None);
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// **TWO GREETINGS AT ONCE HAND IT TO ONE SESSION.**
+    #[test]
+    fn a_mandate_is_reserved_only_under_its_lock() {
+        let store = scratch("reserved-locked");
+        deposit(&store, &filled("ttys017")).expect("deposit it");
+        let path = address_in(&store, "ttys017");
+        let lock = std::fs::File::create(path.with_extension("lock")).expect("the lock");
+        lock.lock().expect("hold it as a greeting would");
+
+        let refused = reserve_in_turn(&path, "a-second-greeting", 100, refuse);
+        assert!(
+            refused.is_err(),
+            "held while another greeting held the lock"
+        );
+        assert_eq!(read(&path).and_then(|it| it.reserved), None);
+
+        lock.unlock().expect("let go");
+        reserve(&path, "the-successor", 100).expect("held once free");
         let _ = std::fs::remove_dir_all(&store);
     }
 

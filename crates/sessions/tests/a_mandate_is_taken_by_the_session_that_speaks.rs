@@ -86,36 +86,3 @@ fn a_session_that_never_speaks_lets_the_mandate_go_to_the_next_one() {
     assert!(receive(&path, "the-next-one", 201).expect("reads"));
     assert_eq!(taken_by(&path).as_deref(), Some("the-next-one"));
 }
-
-/// **TWO GREETINGS AT ONCE HAND IT TO ONE SESSION.** Two starts on one
-/// terminal eight seconds apart are in the store; the same instant is the
-/// worst of it, and every round must hand the mandate exactly once.
-#[test]
-fn greetings_racing_on_one_terminal_hand_the_mandate_to_one_session() {
-    const GREETINGS: usize = 16;
-    let scratch = Scratch::new("raced");
-    for round in 0..20 {
-        let path = scratch.left_at(&format!("ttys{round:03}"));
-        let start = std::sync::Barrier::new(GREETINGS);
-        let handed = std::thread::scope(|scope| {
-            let racing: Vec<_> = (0..GREETINGS)
-                .map(|index| {
-                    let (path, start) = (&path, &start);
-                    scope.spawn(move || {
-                        start.wait();
-                        reserve(path, &format!("session-{index}"), 100).is_ok()
-                    })
-                })
-                .collect();
-            racing
-                .into_iter()
-                .map(|greeting| greeting.join().expect("a greeting ends"))
-                .filter(|was_handed| *was_handed)
-                .count()
-        });
-        assert_eq!(
-            handed, 1,
-            "round {round}: {handed} sessions were handed one mandate"
-        );
-    }
-}
