@@ -650,7 +650,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&store);
     }
 
-    /// **TWO GREETINGS AT ONCE HAND IT TO ONE SESSION.**
+    /// A greeting asks for the lock another greeting holds.
     #[test]
     fn a_mandate_is_reserved_only_under_its_lock() {
         let store = scratch("reserved-locked");
@@ -668,6 +668,24 @@ mod tests {
 
         lock.unlock().expect("let go");
         reserve(&path, "the-successor", 100).expect("held once free");
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// **TWO GREETINGS AT ONCE HAND IT TO ONE SESSION**: the lock every caller
+    /// queues for keeps out even a reader.
+    #[test]
+    fn the_lock_every_caller_queues_for_shuts_out_any_other() {
+        let store = scratch("queued-lock");
+        let path = address_in(&store, "ttys018");
+        under_lock(&path, queue, || {
+            let other = std::fs::File::create(path.with_extension("lock"))?;
+            assert!(matches!(
+                other.try_lock_shared(),
+                Err(std::fs::TryLockError::WouldBlock)
+            ));
+            Ok(())
+        })
+        .expect("the lock is taken");
         let _ = std::fs::remove_dir_all(&store);
     }
 
