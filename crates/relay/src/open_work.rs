@@ -161,8 +161,8 @@ pub(crate) fn read(record: impl BufRead, words: &OpenInRecord, now: i64) -> Opti
     let count = queued
         .iter()
         .filter(|(at, _)| {
-            !at.zip(lost_after)
-                .is_some_and(|(at, age)| now - at > age as i64)
+            at.zip(lost_after)
+                .is_none_or(|(at, age)| now - at <= age as i64)
         })
         .count();
     if count > 0 {
