@@ -25,40 +25,92 @@ pub type Waits<'a> = &'a mut dyn FnMut(&str, &str) -> Option<String>;
 ///
 /// A flow declares it in its trigger step's `on`; a flow whose trigger names
 /// another source is not a candidate and leaves no row, because it was never
-/// asked.
+/// asked — unless it hides a copy that was, which [`silenced`] answers for.
 pub fn watchers(sources: &[FlowSource]) -> Vec<(String, String, On)> {
+    ui::gather::load_all_flows(sources)
+        .into_iter()
+        .filter_map(|(name, _, entry)| {
+            let flow = entry.ok()?;
+            let on = watch_of(&flow).ok()?;
+            Some((name, flow.id, on))
+        })
+        .collect()
+}
+
+/// The flows a less specific source ships watching and the copy that runs
+/// does not, each with the reason it stays still. Without it a copy in a
+/// person's home that switched a watcher off wrote nothing at all, and a
+/// flow that no longer starts read exactly like one that was never asked.
+pub fn silenced(sources: &[FlowSource]) -> Vec<(String, String)> {
+    let watching_in: Vec<(&str, Vec<String>)> = sources
+        .iter()
+        .map(|source| {
+            let names = watchers(std::slice::from_ref(source))
+                .into_iter()
+                .map(|(name, _, _)| name)
+                .collect();
+            (source.origin, names)
+        })
+        .collect();
     let mut found = Vec::new();
-    for (name, _, entry) in ui::gather::load_all_flows(sources) {
-        let Ok(flow) = entry else {
-            continue;
-        };
-        let Some(step) = flow
-            .graph
-            .steps()
-            .iter()
-            .find(|step| step.action == trigger::TRIGGER_ACTION)
+    for (name, origin, entry) in ui::gather::load_all_flows(sources) {
+        let Err(why) = entry
+            .map_err(|error| {
+                catalogue::say("cli.arc.does_not_load", &[("error", &error.to_string())])
+            })
+            .and_then(|flow| watch_of(&flow).map(|_| ()))
         else {
             continue;
         };
-        let declared = step
-            .with
-            .as_ref()
-            .or_else(|| flow.inputs.get(&step.id))
-            .cloned()
-            .unwrap_or_default();
-        if declared.get("source").and_then(serde_json::Value::as_str) != Some(SESSION_EVENT) {
-            continue;
-        }
-        let id = flow.id.clone();
-        match declared.get("on").cloned().map(serde_json::from_value) {
-            Some(Ok(on)) => found.push((name, id, on)),
-            // A flow that asks for this source and says nothing about which
-            // event would start on every event of every tree. It is left out
-            // and said so, rather than firing on everything.
-            _ => found.push((name, id, On::default())),
+        let hidden = watching_in
+            .iter()
+            .find(|(other, names)| *other != origin && names.contains(&name));
+        if let Some((hidden, _)) = hidden {
+            found.push((
+                name,
+                catalogue::say(
+                    "cli.arc.not_watching",
+                    &[("origin", origin), ("why", &why), ("hidden", hidden)],
+                ),
+            ));
         }
     }
     found
+}
+
+/// What one flow watches for, or why it does not watch at all.
+fn watch_of(flow: &flow::FlowFile) -> Result<On, String> {
+    let Some(step) = flow
+        .graph
+        .steps()
+        .iter()
+        .find(|step| step.action == trigger::TRIGGER_ACTION)
+    else {
+        return Err(catalogue::say("cli.arc.no_trigger_step", &[]));
+    };
+    let declared = step
+        .with
+        .as_ref()
+        .or_else(|| flow.inputs.get(&step.id))
+        .cloned()
+        .unwrap_or_default();
+    match declared.get("source").and_then(serde_json::Value::as_str) {
+        Some(SESSION_EVENT) => {}
+        Some(other) => {
+            return Err(catalogue::say(
+                "cli.arc.declares_the_source",
+                &[("source", other)],
+            ))
+        }
+        None => return Err(catalogue::say("cli.arc.declares_no_source", &[])),
+    }
+    // A flow that asks for this source and says nothing about which event
+    // would start on every event of every tree: `deferral` refuses it.
+    Ok(declared
+        .get("on")
+        .cloned()
+        .and_then(|on| serde_json::from_value(on).ok())
+        .unwrap_or_default())
 }
 
 /// The id of the shipped source. Written once: a flow declaring it by another
@@ -81,6 +133,9 @@ pub fn evaluate(
     waits: Waits<'_>,
 ) -> Vec<Verdict> {
     let mut written = Vec::new();
+    for (flow, why) in silenced(sources) {
+        written.push(note(store, event_id, &flow, DEFERRED, Some(&why), None, at));
+    }
     for (flow, id, on) in watchers(sources) {
         if let Some(why) = deferral(&on, happened) {
             written.push(note(store, event_id, &flow, DEFERRED, Some(why), None, at));
@@ -164,12 +219,25 @@ pub fn why_it_waits(flow: &str, tty: &str) -> Option<String> {
     parked_for(flow, tty).then(|| ALREADY_PARKED.to_owned())
 }
 
-/// The hold standing on a flow, as a person reads it. A ledger that cannot be
-/// opened answers none, for the reason `parked_for` gives.
+/// The hold standing on a flow, as a person reads it. Where no ledger exists
+/// nothing is held; one nobody could look for, one that will not open, or a
+/// hold that cannot be read waits and says why, as the beat does.
 fn hold_on(flow: &str) -> Option<String> {
-    let store = machine_ledger()?;
-    let hold = store.flow_hold(flow).ok()??;
-    Some(crate::flow_cmd::hold::hold_said(&hold))
+    let directory = ledger::default_directory()?;
+    let hold = match directory.try_exists() {
+        Ok(false) => return None,
+        Ok(true) => ledger::Ledger::open(directory)
+            .and_then(|store| store.flow_hold(flow))
+            .map_err(|why| why.to_string()),
+        Err(why) => Err(why.to_string()),
+    };
+    match hold {
+        Ok(hold) => hold.map(|hold| crate::flow_cmd::hold::hold_said(&hold)),
+        Err(why) => Some(catalogue::say(
+            "cli.flow.hold_could_not_be_read",
+            &[("why", &why)],
+        )),
+    }
 }
 
 /// Whether this flow already has a run parked for this terminal.

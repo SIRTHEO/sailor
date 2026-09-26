@@ -423,11 +423,20 @@ pub fn ask_the_parked_again(
     now: i64,
     resume: Resumer<'_>,
 ) -> (String, usize, usize) {
-    let (Ok(parked), Ok(holds)) = (ledger.runs_to_ask_again(), ledger.flow_holds()) else {
-        return (String::new(), 0, 0);
+    let (mut said, mut woken, mut let_go) = (String::new(), 0, 0);
+    let (parked, holds) = match (ledger.runs_to_ask_again(), ledger.flow_holds()) {
+        (Ok(parked), Ok(holds)) => (parked, holds),
+        (Err(why), _) | (_, Err(why)) => {
+            let why = why.to_string();
+            let _ = writeln!(
+                said,
+                "{}",
+                catalogue::say("cli.flow.parked_could_not_look", &[("why", &why)])
+            );
+            (Vec::new(), BTreeMap::new())
+        }
     };
     let by_itself = flows_that_start_by_themselves(sources);
-    let (mut said, mut woken, mut let_go) = (String::new(), 0, 0);
     for run in parked {
         if by_itself.contains(&run.entity) && !holds.contains_key(&run.entity) {
             woken += 1;
@@ -575,7 +584,9 @@ pub(super) fn due_flows(sources: &[FlowSource]) -> Result<String, String> {
             continue;
         };
         let last_run = last.get(&flow.id).copied();
-        let verdict = if flow::is_due(schedule, last_run, now) {
+        let verdict = if let Some(hold) = glance.holds.get(&flow.id) {
+            super::hold::hold_said(hold)
+        } else if flow::is_due(schedule, last_run, now) {
             due += 1;
             catalogue::say("cli.flow.due", &[])
         } else {
@@ -1067,6 +1078,10 @@ mod tests {
             Ok(String::new())
         });
         assert_eq!(woken, 0, "nothing woken past a hold nobody read: {said}");
+        assert!(
+            said.contains("written_at"),
+            "the beat says what it could not read: {said}"
+        );
         assert!(resumed.is_empty(), "{said}");
         let _ = fs::remove_dir_all(&scratch);
     }

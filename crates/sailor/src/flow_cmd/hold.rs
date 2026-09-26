@@ -48,8 +48,8 @@ pub(super) fn unhold_flow(
     ))
 }
 
-/// Every hold standing on this machine. A ledger that is absent or will not
-/// open holds nothing: the beat that reads this must not stop over a lock.
+/// Every hold standing on this machine, for the list. A ledger that is absent
+/// or will not open holds nothing: a list must not fail over a lock.
 pub(crate) fn standing_holds() -> BTreeMap<String, Hold> {
     default_ledger_dir()
         .ok()

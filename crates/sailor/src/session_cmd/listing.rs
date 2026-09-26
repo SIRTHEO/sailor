@@ -204,6 +204,20 @@ pub(super) fn close_the_gone(request: &Request<'_>, store: &Sessions) -> Result<
                 payload: Some(format!("{{\"noticed_by\":\"{}\"}}", request.tty)),
             })
             .map_err(|error| error.to_string())?;
+        if let Some(left) = super::left_behind(request, &row.tty) {
+            store
+                .record_event(&TerminalEvent {
+                    tty: row.tty.clone(),
+                    session_id: row.session_id.clone(),
+                    worktree: Some(row.worktree.clone()),
+                    ancestor: row.ancestor.clone(),
+                    name: super::HANDOVER_ORPHANED.to_owned(),
+                    transcript_path: row.transcript_path.clone(),
+                    occurred_at: request.at,
+                    payload: Some(left),
+                })
+                .map_err(|error| error.to_string())?;
+        }
         closed.push(row.tty.clone());
     }
     Ok(closed)

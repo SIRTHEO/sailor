@@ -8,6 +8,7 @@ use flow::StepRecord;
 use ledger::{Ledger, RunRecord};
 use sailor::arc_cmd::{why_it_waits, ALREADY_PARKED, SESSION_EVENT};
 use serde_json::json;
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -33,21 +34,34 @@ impl Scratch {
 
     /// The same, in a file named apart from the id it declares.
     fn watching_in(&self, file: &str, id: &str) -> Vec<FlowSource> {
-        let flow = json!({
-            "id": id,
-            "description": "a fixture whose only step is a trigger",
-            "inputs": {},
-            "graph": {"steps": [{
-                "id": "trigger",
-                "deps": [],
-                "action": "trigger",
-                "max_attempts": 1,
-                "when": null,
-                "with": {"source": SESSION_EVENT, "on": {"event": "Stop"}},
-                "input_schema": {"type": "any"},
-                "output_schema": {"type": "any"},
-            }]},
-        });
+        let with = json!({"source": SESSION_EVENT, "on": {"event": "Stop"}});
+        self.written(file, json!({"id": id}), with)
+    }
+
+    /// A flow the beat starts every minute, in a file named apart from its id.
+    fn scheduled_in(&self, file: &str, id: &str) -> Vec<FlowSource> {
+        let head = json!({"id": id, "schedule": {"recurrence": {"kind": "every_seconds", "seconds": 60}, "weight": "light"}});
+        self.written(file, head, json!({"source": "manual"}))
+    }
+
+    fn written(
+        &self,
+        file: &str,
+        mut flow: serde_json::Value,
+        with: serde_json::Value,
+    ) -> Vec<FlowSource> {
+        flow["description"] = json!("a fixture whose only step is a trigger");
+        flow["inputs"] = json!({});
+        flow["graph"] = json!({"steps": [{
+            "id": "trigger",
+            "deps": [],
+            "action": "trigger",
+            "max_attempts": 1,
+            "when": null,
+            "with": with,
+            "input_schema": {"type": "any"},
+            "output_schema": {"type": "any"},
+        }]});
         std::fs::write(
             self.0.join("flows").join(format!("{file}.flow.json")),
             serde_json::to_string_pretty(&flow).expect("a flow serialises"),
@@ -153,6 +167,51 @@ fn the_arc_waits_for_a_parked_run_and_for_a_hold_read_where_the_runs_are() {
         None,
         "off hold, it starts again"
     );
+
+    rusqlite::Connection::open(scratch.0.join("ledger").join("state.db"))
+        .and_then(|store| {
+            store.execute(
+                "INSERT INTO store (collection, key, value, written_by, written_at)
+                 VALUES (?1, 'unread', '{}', 'a person', 'not a time')",
+                [ledger::flow_holds::FLOW_HOLDS],
+            )
+        })
+        .expect("a hold the store cannot read back");
+    let said = why_it_waits("unread", "ttys002").expect("a hold nobody read is not none");
+    assert!(
+        said.contains("written_at"),
+        "it names what it could not read: {said}"
+    );
+
+    std::env::set_var("SAILOR_LEDGER", scratch.0.join("no-ledger-here"));
+    assert_eq!(
+        why_it_waits("asks", "ttys002"),
+        None,
+        "no ledger holds nothing"
+    );
+
+    let shut = scratch.0.join("shut");
+    std::fs::create_dir_all(&shut).expect("a directory");
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o000)).expect("shut");
+    std::env::set_var("SAILOR_LEDGER", shut.join("ledger"));
+    let said = why_it_waits("asks", "ttys002");
+    std::fs::set_permissions(&shut, std::fs::Permissions::from_mode(0o755)).expect("open");
+    assert!(
+        said.is_some(),
+        "a ledger nobody could look for is not a missing one"
+    );
+
+    let newer = scratch.0.join("newer-ledger");
+    std::fs::create_dir_all(&newer).expect("a ledger directory");
+    rusqlite::Connection::open(newer.join("state.db"))
+        .and_then(|store| store.pragma_update(None, "user_version", 9_999))
+        .expect("a ledger written by a newer binary");
+    std::env::set_var("SAILOR_LEDGER", &newer);
+    let said = why_it_waits("asks", "ttys002").expect("a ledger that will not open is not none");
+    assert!(
+        said.contains("9999"),
+        "it names why it could not open: {said}"
+    );
 }
 
 /// **A HELD FLOW'S PARKED RUN IS LET GO, NEVER WOKEN**, and the same run
@@ -202,6 +261,45 @@ fn the_beat_knows_a_parked_run_by_its_flows_id_not_its_file_name() {
     let (said, woken, let_go) =
         sailor::flow_cmd::beat::ask_the_parked_again(&sources, &ledger, 100, &mut resume);
     assert_eq!((woken, let_go), (1, 0), "{said}");
+}
+
+/// The same for a flow that starts on a schedule: its parked run is woken
+/// under the id the run carries, not let go for a file name nobody runs.
+#[test]
+fn the_beat_knows_a_scheduled_flows_parked_run_by_its_id() {
+    let scratch = Scratch::new("scheduled-by-id");
+    let sources = scratch.scheduled_in("a-file-name", "its-id");
+    let ledger = scratch.ledger();
+    let mut resume = |_run_id: &str| Ok(String::new());
+
+    parked(&ledger, "its-id", "free", "ttys001");
+    let (said, woken, let_go) =
+        sailor::flow_cmd::beat::ask_the_parked_again(&sources, &ledger, 100, &mut resume);
+    assert_eq!((woken, let_go), (1, 0), "{said}");
+}
+
+/// **A HELD FLOW IS NOT LISTED AS DUE.** The due list read the schedule and
+/// the last run only, so a flow a person had held still said it was due.
+#[test]
+fn the_due_list_says_a_held_flow_is_held_not_due() {
+    let scratch = Scratch::new("due");
+    scratch.scheduled_in("a-file-name", "its-id");
+    scratch
+        .ledger()
+        .hold_flow("its-id", "held while it is mended", "a person", 1)
+        .expect("the hold is written");
+
+    let (ok, said) = sailor(&scratch, &["due"]);
+    assert!(ok, "{said}");
+    let row = said
+        .lines()
+        .find(|line| line.starts_with("its-id\t"))
+        .unwrap_or_else(|| panic!("the flow has a row: {said}"));
+    assert!(row.contains("held while it is mended"), "{row}");
+    assert!(
+        !row.contains("DUE"),
+        "a held flow is not said to be due: {row}"
+    );
 }
 
 /// A hold with no reason is refused, and taking one off keeps the reason it
