@@ -1,6 +1,11 @@
 {
   "cli.arc.no_binary_of_my_own": "Non so quale binario sono, quindi non posso avviare una corsa: {error}",
   "cli.arc.no_directory_of_my_own": "Non so in quale cartella mi trovo, quindi una corsa avviata qui lavorerebbe da nessuna parte: {error}",
+  "cli.arc.does_not_load": "non si carica ({error})",
+  "cli.arc.not_watching": "non osserva: la copia \"{origin}\" {why}, e nasconde quella \"{hidden}\", che osserva gli eventi di sessione",
+  "cli.arc.no_trigger_step": "non ha un passo di innesco",
+  "cli.arc.declares_the_source": "dichiara la sorgente \"{source}\"",
+  "cli.arc.declares_no_source": "non dichiara alcuna sorgente",
   "cli.session.the_mandate_is_yours": "La sessione prima di te ha lasciato un mandato per questo terminale, e tu l'hai appena preso.\nIl lavoro: {goal}\nCosa le era stato chiesto: {asked}\nLa cosa successiva, quella sola: {next}\nMai: {never}\nTutto il resto — cosa è fatto e verificato, le decisioni prese e chi le ha autorizzate, i vincoli che tengono, cosa è stato provato e non ha funzionato, e le domande ancora aperte — è in {path}. Leggilo prima di toccare qualsiasi cosa.",
   "cli.session.the_mandate_is_waiting": "**Un mandato è depositato per questo terminale e nessuno l'ha preso.** Chi viene dopo di te lo legge prima di ogni altra cosa; niente è stato azzerato, e niente lo sarà.",
   "cli.worktree.adrift_for": "fermo da {days} giorni",

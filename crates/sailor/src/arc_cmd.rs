@@ -55,7 +55,9 @@ pub fn silenced(sources: &[FlowSource]) -> Vec<(String, String)> {
     let mut found = Vec::new();
     for (name, origin, entry) in ui::gather::load_all_flows(sources) {
         let Err(why) = entry
-            .map_err(|error| format!("does not load ({error})"))
+            .map_err(|error| {
+                catalogue::say("cli.arc.does_not_load", &[("error", &error.to_string())])
+            })
             .and_then(|flow| watch_of(&flow).map(|_| ()))
         else {
             continue;
@@ -66,7 +68,10 @@ pub fn silenced(sources: &[FlowSource]) -> Vec<(String, String)> {
         if let Some((hidden, _)) = hidden {
             found.push((
                 name,
-                format!("not watching: the \"{origin}\" copy {why}, and it hides the \"{hidden}\" one, which watches session events"),
+                catalogue::say(
+                    "cli.arc.not_watching",
+                    &[("origin", origin), ("why", &why), ("hidden", hidden)],
+                ),
             ));
         }
     }
@@ -81,7 +86,7 @@ fn watch_of(flow: &flow::FlowFile) -> Result<On, String> {
         .iter()
         .find(|step| step.action == trigger::TRIGGER_ACTION)
     else {
-        return Err("has no trigger step".to_owned());
+        return Err(catalogue::say("cli.arc.no_trigger_step", &[]));
     };
     let declared = step
         .with
@@ -91,8 +96,13 @@ fn watch_of(flow: &flow::FlowFile) -> Result<On, String> {
         .unwrap_or_default();
     match declared.get("source").and_then(serde_json::Value::as_str) {
         Some(SESSION_EVENT) => {}
-        Some(other) => return Err(format!("declares the source \"{other}\"")),
-        None => return Err("declares no source".to_owned()),
+        Some(other) => {
+            return Err(catalogue::say(
+                "cli.arc.declares_the_source",
+                &[("source", other)],
+            ))
+        }
+        None => return Err(catalogue::say("cli.arc.declares_no_source", &[])),
     }
     // A flow that asks for this source and says nothing about which event
     // would start on every event of every tree: `deferral` refuses it.
