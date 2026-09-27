@@ -1,6 +1,7 @@
 {
   "id": "close-the-finished-work",
-  "description": "THE FINISHED WORK OF THIS TREE CLOSES ITSELF. Piece 2 of the lifecycle work: `close-the-work` released one branch's holdings and had no caller, so branches whose pull request merged weeks ago were still standing. This reads which of them are finished \u2014 under the work prefix, carried by the trunk the repository declares, and held by no working tree \u2014 and runs `close-the-work` for each, one at a time. A branch a tree is checked out on is named in `held_by_a_tree` and never offered: taking it down would pull the ground out from under a session that is still working. The mandate is one JSON object naming the repo; the prefix defaults to the work one. Safe to run again: it reads the standing each time, and a run that closes nothing answers with an empty list rather than failing.",
+  "version": 1,
+  "description": "THE FINISHED WORK OF THIS TREE CLOSES ITSELF, WHEN IT BECOMES FINISHED. Piece 2 of the lifecycle work: `close-the-work` released one branch's holdings and had no caller, so branches whose pull request merged weeks ago were still standing. The trigger is a sensor: on every beat `finished_branches` reads, in the project root, which branches are finished — under the work prefix, carried by the trunk the repository declares, and held by no working tree — and when that list changes the flow starts. It reads the list again, since the sensor's reading may be a beat old, and runs `close-the-work` for each branch, one at a time, going on past a branch that will not close: one branch nobody can prove merged must not hold back every finished branch queued behind it. The run still ends failed when one broke, and names every one that did. A branch a tree is checked out on is named in `held_by_a_tree` and never offered: taking it down would pull the ground out from under a session that is still working. Started by hand it does the same, in the root of the tree it is started from, and whatever text it is handed is not read. Safe to run again: it reads the standing each time, and a run that closes nothing answers with an empty list rather than failing.",
   "inputs": {
     "trigger": {
       "text": ""
@@ -15,66 +16,30 @@
         "max_attempts": 1,
         "when": null,
         "with": {
-          "source": "manual"
-        },
-        "input_schema": {
-          "type": "object",
-          "properties": {
-            "source": {
-              "type": "string"
+          "source": "sensor",
+          "sensor": {
+            "action": "finished_branches",
+            "with": {
+              "prefix": "work/"
             },
-            "text": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "source",
-            "text"
-          ],
-          "allow_extra": false
-        },
-        "output_schema": {
-          "type": "any"
-        }
-      },
-      {
-        "id": "the_request",
-        "deps": [
-          "trigger"
-        ],
-        "action": "delivery_request",
-        "max_attempts": 1,
-        "when": null,
-        "with": {
-          "mandate": {
-            "$from": "/text"
-          },
-          "required": [
-            "repo"
-          ],
-          "optional": {
-            "prefix": "work/"
+            "pointer": "/branches"
           }
         },
-        "needs": [
-          "git"
-        ],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
           "type": "object",
           "properties": {
-            "repo": {
+            "text": {
               "type": "string"
             },
-            "prefix": {
+            "source": {
               "type": "string"
             }
           },
           "required": [
-            "repo",
-            "prefix"
+            "text"
           ],
           "allow_extra": true
         }
@@ -82,19 +47,13 @@
       {
         "id": "the_finished",
         "deps": [
-          "trigger",
-          "the_request"
+          "trigger"
         ],
         "action": "finished_branches",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "repo": {
-            "$from": "/the_request/repo"
-          },
-          "prefix": {
-            "$from": "/the_request/prefix"
-          }
+          "prefix": "work/"
         },
         "needs": [
           "git"
@@ -139,7 +98,7 @@
       {
         "id": "each",
         "deps": [
-          "the_request",
+          "trigger",
           "the_finished"
         ],
         "action": "for_each",
@@ -150,7 +109,8 @@
           "items": {
             "$from": "/the_finished/items"
           },
-          "at_once": 1
+          "at_once": 1,
+          "past_a_break": true
         },
         "input_schema": {
           "type": "any"

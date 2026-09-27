@@ -14,11 +14,14 @@ use std::process::Command;
 
 pub const FINISHED_BRANCHES_ACTION: &str = "finished_branches";
 
-const FINISHED_FIELDS: &[&str] = &["repo", "prefix"];
+const FINISHED_FIELDS: &[&str] = &["repo", "workdir", "prefix"];
 
 #[derive(Debug, Deserialize)]
 struct FinishedSpec {
-    repo: PathBuf,
+    repo: Option<PathBuf>,
+    /// The tree a sensor or a step is offered when it names no repo: the
+    /// project root, so the flow that closes finished work names no path.
+    workdir: Option<PathBuf>,
     /// Which branches are the flow's business. Only these are ever named.
     prefix: String,
 }
@@ -103,22 +106,26 @@ impl Action for FinishedBranchesAction {
         let spec: FinishedSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         named_not_flagged("the prefix", &spec.prefix)?;
+        let repo = spec
+            .repo
+            .or(spec.workdir)
+            .ok_or_else(|| not_read("no tree to read: neither a repo nor a workdir is named".to_owned()))?;
         // Which remote and which trunk are the tree's to declare, not the
         // flow's to name (ADR-020): both are read where `sailor policy` reads.
-        let remote = workspace::delivery::policy_on_the_trunk(&spec.repo)
+        let remote = workspace::delivery::policy_on_the_trunk(&repo)
             .map_err(|why| not_read(format!("the tree declares no policy: {why}")))?
             .remote;
-        let base = workspace::declared_trunk(&spec.repo).map_err(not_read)?;
+        let base = workspace::declared_trunk(&repo).map_err(not_read)?;
         named_not_flagged("the remote", &remote)?;
         named_not_flagged("the trunk", &base)?;
-        git(&spec.repo, &["fetch", "-q", "--no-tags", &remote])?;
+        git(&repo, &["fetch", "-q", "--no-tags", &remote])?;
         let on_the_remote = format!("refs/remotes/{remote}/{base}");
-        let trunk = git(&spec.repo, &["rev-parse", &on_the_remote])?
+        let trunk = git(&repo, &["rev-parse", &on_the_remote])?
             .trim()
             .to_owned();
-        let held = branches_trees_hold(&git(&spec.repo, &["worktree", "list", "--porcelain"])?);
+        let held = branches_trees_hold(&git(&repo, &["worktree", "list", "--porcelain"])?);
         let listed = git(
-            &spec.repo,
+            &repo,
             &[
                 "branch",
                 "--merged",
@@ -135,7 +142,7 @@ impl Action for FinishedBranchesAction {
                 kept.push(name);
                 continue;
             }
-            items.push(as_an_item(&spec.repo, &name));
+            items.push(as_an_item(&repo, &name));
             free.push(name);
         }
         Ok(ActionOutcome::Went(json!({

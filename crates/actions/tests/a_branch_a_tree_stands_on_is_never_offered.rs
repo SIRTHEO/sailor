@@ -93,8 +93,8 @@ fn git(at: &Path, args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_owned()
 }
 
-fn a_tree_with_finished_work() -> (Scratch, PathBuf) {
-    let at = std::env::temp_dir().join(format!("finished-{}", std::process::id()));
+fn a_tree_with_finished_work(label: &str) -> (Scratch, PathBuf) {
+    let at = std::env::temp_dir().join(format!("finished-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&at);
     std::fs::create_dir_all(at.join("tree")).expect("the tree's directory");
     let scratch = Scratch(at.clone());
@@ -139,7 +139,7 @@ fn a_tree_with_finished_work() -> (Scratch, PathBuf) {
 /// branches, the policy and the worktrees the way it will on a real tree.
 #[test]
 fn against_a_real_repository_a_held_branch_is_kept_back_and_a_free_one_offered() {
-    let (_scratch, tree) = a_tree_with_finished_work();
+    let (_scratch, tree) = a_tree_with_finished_work("repo");
     let mut registry = flow::ActionRegistry::default();
     actions::finished::register_finished_branches(&mut registry);
     let said = match registry
@@ -170,5 +170,46 @@ fn against_a_real_repository_a_held_branch_is_kept_back_and_a_free_one_offered()
         "finished branch offered",
         1,
         "held by a tree and kept back",
+    );
+}
+
+fn read_finished(declared: serde_json::Value) -> Result<flow::ActionOutcome, flow::ActionError> {
+    let mut registry = flow::ActionRegistry::default();
+    actions::finished::register_finished_branches(&mut registry);
+    let action = registry
+        .get("finished_branches")
+        .expect("the action is registered");
+    assert!(
+        action.unknown_fields(&declared).is_empty(),
+        "the declaration is one the action knows: {declared}"
+    );
+    action.execute(&declared, &flow::SharedState::new())
+}
+
+/// A sensor, and a step with no repository of its own, are offered the
+/// project root as `workdir`: that tree is the one read when no repo is named.
+#[test]
+fn the_tree_it_is_offered_is_read_when_no_repo_is_named() {
+    let (_scratch, tree) = a_tree_with_finished_work("workdir");
+    let said = match read_finished(
+        serde_json::json!({"workdir": tree.to_string_lossy(), "prefix": "work/"}),
+    )
+    .expect("the reading is taken")
+    {
+        flow::ActionOutcome::Went(said) => said,
+        other => panic!("the reading did not go: {other:?}"),
+    };
+    assert_eq!(said["branches"], serde_json::json!(["work/free-to-close"]), "{said}");
+}
+
+/// With neither a repo nor a tree to work in there is nothing to read, and an
+/// empty list would close nothing while looking like a reading.
+#[test]
+fn with_no_tree_at_all_nothing_is_read() {
+    let refused = read_finished(serde_json::json!({"prefix": "work/"}))
+        .expect_err("no tree is no reading");
+    assert!(
+        refused.to_string().contains("no tree"),
+        "the refusal says what is missing: {refused}"
     );
 }
