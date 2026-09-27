@@ -1,0 +1,165 @@
+{
+  "id": "close-the-finished-work",
+  "description": "THE FINISHED WORK OF THIS TREE CLOSES ITSELF. Piece 2 of the lifecycle work: `close-the-work` released one branch's holdings and had no caller, so branches whose pull request merged weeks ago were still standing. This reads which of them are finished \u2014 under the work prefix, carried by the trunk the repository declares, and held by no working tree \u2014 and runs `close-the-work` for each, one at a time. A branch a tree is checked out on is named in `held_by_a_tree` and never offered: taking it down would pull the ground out from under a session that is still working. The mandate is one JSON object naming the repo; the prefix defaults to the work one. Safe to run again: it reads the standing each time, and a run that closes nothing answers with an empty list rather than failing.",
+  "inputs": {
+    "trigger": {
+      "text": ""
+    }
+  },
+  "graph": {
+    "steps": [
+      {
+        "id": "trigger",
+        "deps": [],
+        "action": "trigger",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "source": "manual"
+        },
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "text"
+          ],
+          "allow_extra": false
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "the_request",
+        "deps": [
+          "trigger"
+        ],
+        "action": "delivery_request",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "mandate": {
+            "$from": "/text"
+          },
+          "required": [
+            "repo"
+          ],
+          "optional": {
+            "prefix": "work/"
+          }
+        },
+        "needs": [
+          "git"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "repo": {
+              "type": "string"
+            },
+            "prefix": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "repo",
+            "prefix"
+          ],
+          "allow_extra": true
+        }
+      },
+      {
+        "id": "the_finished",
+        "deps": [
+          "trigger",
+          "the_request"
+        ],
+        "action": "finished_branches",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "repo": {
+            "$from": "/the_request/repo"
+          },
+          "prefix": {
+            "$from": "/the_request/prefix"
+          }
+        },
+        "needs": [
+          "git"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "trunk": {
+              "type": "string"
+            },
+            "branches": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "held_by_a_tree": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "any"
+              }
+            }
+          },
+          "required": [
+            "trunk",
+            "branches",
+            "held_by_a_tree",
+            "items"
+          ],
+          "allow_extra": false
+        }
+      },
+      {
+        "id": "each",
+        "deps": [
+          "the_request",
+          "the_finished"
+        ],
+        "action": "for_each",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "flow": "close-the-work",
+          "items": {
+            "$from": "/the_finished/items"
+          },
+          "at_once": 1
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      }
+    ],
+    "skippable_dependencies": []
+  }
+}

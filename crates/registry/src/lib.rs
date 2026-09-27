@@ -226,6 +226,7 @@ pub fn registry_in(
     actions::review_verdict::register_review_verdict(&mut registry);
     actions::worktree::register_close_the_worktree(&mut registry);
     actions::archive::register_archive_the_head(&mut registry);
+    actions::finished::register_finished_branches(&mut registry);
     actions::presence::register_presence(&mut registry, ledger.clone());
     // The graph a flow deposits proposals and decisions into.
     actions::graph_memory::register_graph_memory(&mut registry, ledger.clone());
