@@ -277,23 +277,19 @@
         }
       },
       {
-        "id": "combined",
+        "id": "the_trunk",
         "deps": [
           "the_request",
-          "the_reviewed",
-          "pull_request"
+          "the_reviewed"
         ],
         "action": "shell_check",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ngit -C \"$REPO\" fetch -q --no-tags \"$REMOTE_NAME\"\ntrunk=$(git -C \"$REPO\" rev-parse --verify \"refs/remotes/$REMOTE_NAME/$BASE^{commit}\")\nshort=$(printf '%s' \"$COMMIT\" | cut -c1-12)\ntree=\"$(dirname \"$REPO\")/$(basename \"$REPO\")-worktrees/integrate-$short\"\nif git -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$trunk\"; then\n    printf '{\"tree\":\"\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":true}' \"$trunk\" \"$trunk\"\n    exit 0\nfi\nif [ -e \"$tree\" ]; then\n    git -C \"$REPO\" worktree unlock \"$tree\" 2>/dev/null || true\n    git -C \"$REPO\" worktree remove --force \"$tree\" >&2\nfi\nmkdir -p \"$(dirname \"$tree\")\"\ngit -C \"$REPO\" worktree add --detach --lock --reason \"integration of $COMMIT\" \"$tree\" \"$trunk\" >&2\ngit -C \"$tree\" merge --no-ff --no-edit -m \"Merge branch '$BRANCH'\" \"$COMMIT\" >&2 || { git -C \"$tree\" merge --abort 2>/dev/null || true; echo \"$BRANCH does not merge cleanly onto $BASE at $trunk\" >&2; exit 1; }\ncandidate=$(git -C \"$tree\" rev-parse HEAD)\nprintf '{\"tree\":\"%s\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":false}' \"$tree\" \"$trunk\" \"$candidate\"\n",
+          "command": "set -eu\ngit -C \"$REPO\" fetch -q --no-tags \"$REMOTE_NAME\"\ntrunk=$(git -C \"$REPO\" rev-parse --verify \"refs/remotes/$REMOTE_NAME/$BASE^{commit}\")\nif git -C \"$REPO\" merge-base --is-ancestor \"$COMMIT\" \"$trunk\"; then already=true; else already=false; fi\nprintf '{\"trunk\":\"%s\",\"already\":%s}' \"$trunk\" \"$already\"\n",
           "env": {
             "REPO": {
               "$from": "/the_request/repo"
-            },
-            "BRANCH": {
-              "$from": "/the_request/branch"
             },
             "BASE": {
               "$from": "/the_request/base"
@@ -303,6 +299,80 @@
             },
             "REMOTE_NAME": {
               "$from": "/the_request/remote"
+            }
+          },
+          "timeout_secs": 300
+        },
+        "needs": [
+          "git"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "take_the_tree",
+        "deps": [
+          "the_request",
+          "the_trunk"
+        ],
+        "action": "take_a_tree",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "repo": {
+            "$from": "/the_request/repo"
+          },
+          "at": {
+            "$from": "/the_trunk/answer/trunk"
+          },
+          "lock": "an integration of this run is working in it"
+        },
+        "needs": [
+          "git"
+        ],
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
+        "id": "combined",
+        "deps": [
+          "the_request",
+          "the_reviewed",
+          "pull_request",
+          "the_trunk",
+          "take_the_tree"
+        ],
+        "action": "shell_check",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "command": "set -eu\nif [ \"$ALREADY\" = \"true\" ]; then\n    printf '{\"tree\":\"%s\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":true}' \"$TREE\" \"$TRUNK\" \"$TRUNK\"\n    exit 0\nfi\ngit -C \"$TREE\" merge --no-ff --no-edit -m \"Merge branch '$BRANCH'\" \"$COMMIT\" >&2 || { git -C \"$TREE\" merge --abort 2>/dev/null || true; echo \"$BRANCH does not merge cleanly onto $BASE at $TRUNK\" >&2; exit 1; }\ncandidate=$(git -C \"$TREE\" rev-parse HEAD)\nprintf '{\"tree\":\"%s\",\"trunk\":\"%s\",\"candidate\":\"%s\",\"already\":false}' \"$TREE\" \"$TRUNK\" \"$candidate\"\n",
+          "env": {
+            "BRANCH": {
+              "$from": "/the_request/branch"
+            },
+            "BASE": {
+              "$from": "/the_request/base"
+            },
+            "COMMIT": {
+              "$from": "/the_reviewed/answer/commit"
+            },
+            "TREE": {
+              "$from": "/take_the_tree/tree"
+            },
+            "TRUNK": {
+              "$from": "/the_trunk/answer/trunk"
+            },
+            "ALREADY": {
+              "$from": "/the_trunk/answer/already"
             }
           },
           "timeout_secs": 300,
@@ -1108,27 +1178,23 @@
         "id": "release_tree",
         "deps": [
           "the_request",
-          "combined",
+          "take_the_tree",
           "merged_on_host"
         ],
-        "action": "shell_check",
+        "action": "give_a_tree_back",
         "max_attempts": 1,
         "even_after_a_break": true,
-        "when": { "kind": "pointer_exists", "pointer": "/combined" },
+        "when": {
+          "kind": "pointer_exists",
+          "pointer": "/take_the_tree/tree"
+        },
         "with": {
-          "command": "set -eu\n[ -n \"$TREE\" ] || exit 0\ngit -C \"$REPO\" worktree unlock \"$TREE\" 2>/dev/null || true\ngit -C \"$REPO\" worktree remove --force \"$TREE\"\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_request/repo"
-            },
-            "TREE": {
-              "$from": "/combined/answer/tree"
-            }
+          "repo": {
+            "$from": "/the_request/repo"
           },
-          "timeout_secs": 120,
-          "accept": [
-            "failed"
-          ]
+          "tree": {
+            "$from": "/take_the_tree/tree"
+          }
         },
         "input_schema": {
           "type": "any"

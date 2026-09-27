@@ -207,36 +207,17 @@
           "the_request",
           "the_pin"
         ],
-        "action": "shell_check",
+        "action": "take_a_tree",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\nshort=$(printf '%s' \"$HEAD_COMMIT\" | cut -c1-12)\ntree=\"$(dirname \"$REPO\")/$(basename \"$REPO\")-worktrees/review-$short\"\nif [ -e \"$tree\" ]; then\n    at=$(git -C \"$tree\" rev-parse HEAD) || { echo \"$tree exists and is not a checkout\" >&2; exit 1; }\n    [ \"$at\" = \"$HEAD_COMMIT\" ] || { echo \"$tree stands at $at, not the pinned $HEAD_COMMIT\" >&2; exit 1; }\n    tree_status=$(git -C \"$tree\" status --porcelain) || { echo \"cannot read the status of $tree\" >&2; exit 2; }\n    [ -z \"$tree_status\" ] || { echo \"$tree carries changes: it is not the pinned commit any more\" >&2; exit 1; }\nelse\n    mkdir -p \"$(dirname \"$tree\")\"\n    git -C \"$REPO\" worktree add --detach --lock --reason \"review of $HEAD_COMMIT\" \"$tree\" \"$HEAD_COMMIT\" >&2\nfi\nat=$(git -C \"$tree\" rev-parse HEAD)\n[ \"$at\" = \"$HEAD_COMMIT\" ] || { echo \"the reviewer tree stands at $at, not $HEAD_COMMIT\" >&2; exit 1; }\nprintf '{\"tree\":\"%s\",\"head\":\"%s\"}' \"$tree\" \"$at\"\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_request/repo"
-            },
-            "HEAD_COMMIT": {
-              "$from": "/the_pin/answer/head"
-            }
+          "repo": {
+            "$from": "/the_request/repo"
           },
-          "timeout_secs": 120,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "tree": {
-                "type": "string"
-              },
-              "head": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "tree",
-              "head"
-            ],
-            "allow_extra": false
-          }
+          "at": {
+            "$from": "/the_pin/answer/head"
+          },
+          "lock": "a review of this run is reading it"
         },
         "input_schema": {
           "type": "any"
@@ -273,7 +254,7 @@
               },
               ". Work only in the checkout ",
               {
-                "$from": "/reviewer_tree/answer/tree"
+                "$from": "/reviewer_tree/tree"
               },
               ", which stands at exactly that commit; never in the author's tree and never from the author's conversation. Read the mandate at ",
               {
@@ -459,24 +440,20 @@
           "reviewer_tree",
           "record"
         ],
-        "action": "shell_check",
+        "action": "give_a_tree_back",
         "max_attempts": 1,
         "even_after_a_break": true,
-        "when": { "kind": "pointer_exists", "pointer": "/reviewer_tree" },
+        "when": {
+          "kind": "pointer_exists",
+          "pointer": "/reviewer_tree/tree"
+        },
         "with": {
-          "command": "set -eu\ngit -C \"$REPO\" worktree unlock \"$TREE\" 2>/dev/null || true\ngit -C \"$REPO\" worktree remove \"$TREE\"\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_request/repo"
-            },
-            "TREE": {
-              "$from": "/reviewer_tree/answer/tree"
-            }
+          "repo": {
+            "$from": "/the_request/repo"
           },
-          "timeout_secs": 60,
-          "accept": [
-            "failed"
-          ]
+          "tree": {
+            "$from": "/reviewer_tree/tree"
+          }
         },
         "input_schema": {
           "type": "any"
