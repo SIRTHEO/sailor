@@ -269,6 +269,20 @@ pub fn tree_for(
     register: &dyn OpenTrees,
     opened_by_born_at: Option<i64>,
 ) -> Result<PathBuf, String> {
+    tree_for_at(repo, run, step, "HEAD", None, register, opened_by_born_at)
+}
+
+/// The same tree, cut where the caller says and locked with its reason. **The
+/// cut is the last thing that can fail here**, or the give-back reads no path.
+pub fn tree_for_at(
+    repo: &Path,
+    run: &str,
+    step: &str,
+    at: &str,
+    lock: Option<&str>,
+    register: &dyn OpenTrees,
+    opened_by_born_at: Option<i64>,
+) -> Result<PathBuf, String> {
     let path = tree_path(repo, &format!("{}/{}", safe(run), safe(step)));
     let opened = OpenTree {
         path: path.to_string_lossy().into_owned(),
@@ -289,7 +303,12 @@ pub fn tree_for(
     }
     let target = path.to_string_lossy().into_owned();
     let held = OneTreeAtATime::over(repo);
-    let cut = git(repo, &["worktree", "add", "--detach", &target, "HEAD"]);
+    let mut cutting = vec!["worktree", "add", "--detach"];
+    if let Some(reason) = lock {
+        cutting.extend(["--lock", "--reason", reason]);
+    }
+    cutting.extend([target.as_str(), at]);
+    let cut = git(repo, &cutting);
     drop(held);
     cut?;
     if let Err(why) = register.tree_opened(&opened) {
@@ -458,6 +477,19 @@ pub fn remove(repo: &Path, name: &str, register: &dyn OpenTrees) -> Result<PathB
     let path = PathBuf::from(&found.path);
     remove_at(repo, &path, register)?;
     Ok(path)
+}
+
+/// Gives back a tree a run took: unlocked, and off the register. Git's refusal
+/// over uncommitted work stands, where a shell used to force past it. ADR-026.
+pub fn give_back_at(repo: &Path, at: &Path, register: &dyn OpenTrees) -> Result<(), String> {
+    let path = at.to_string_lossy().into_owned();
+    let held = OneTreeAtATime::over(repo);
+    let _ = git(repo, &["worktree", "unlock", &path]);
+    let gone = git(repo, &["worktree", "remove", &path]);
+    drop(held);
+    gone?;
+    off_the_register(register, at);
+    Ok(())
 }
 
 /// Taking down and taking off the register are one gesture, the mirror of
