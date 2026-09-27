@@ -763,6 +763,7 @@
   "engine.tree_kept_over_a_commit": "L'albero {tree} resta: sta sul commit {commit}, e nessun ramo di questo repository ha quel commit.",
   "engine.tree_kept_over_work": "L'albero {tree} resta, perché git non ha voluto toglierlo: {said}",
   "flow.for_each.child_died": "il filo che eseguiva l'elemento {index} è morto prima di poter dire com'è finito",
+  "flow.for_each.children_failed": "gli elementi agli indici {indices} di {count} sono falliti; il primo: {why}",
   "flow.for_each.child_failed": "l'elemento all'indice {index} di {count} è fallito: {why}",
   "flow.for_each.child_not_yet": "elemento all'indice {index} di {count}: la corsa {run_id} del flusso {flow} non è ancora finita",
   "flow.for_each.child_waiting": "elemento all'indice {index} di {count}: la corsa {run_id} del flusso {flow} è in attesa",
