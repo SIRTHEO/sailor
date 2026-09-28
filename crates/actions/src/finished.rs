@@ -117,7 +117,6 @@ impl Action for FinishedBranchesAction {
         let base = workspace::declared_trunk(&repo).map_err(not_read)?;
         named_not_flagged("the remote", &remote)?;
         named_not_flagged("the trunk", &base)?;
-        git(&repo, &["fetch", "-q", "--no-tags", &remote])?;
         let on_the_remote = format!("refs/remotes/{remote}/{base}");
         let trunk = git(&repo, &["rev-parse", &on_the_remote])?
             .trim()
@@ -127,6 +126,7 @@ impl Action for FinishedBranchesAction {
             &repo,
             &[
                 "branch",
+                "--no-color",
                 "--merged",
                 &on_the_remote,
                 "--list",
@@ -145,7 +145,9 @@ impl Action for FinishedBranchesAction {
             free.push(name);
         }
         Ok(ActionOutcome::Went(json!({
+            "repo": repo.to_string_lossy(),
             "trunk": trunk,
+            "listed": free.join("\n"),
             "branches": free,
             "held_by_a_tree": kept,
             "items": items,
@@ -163,9 +165,10 @@ impl Action for FinishedBranchesAction {
         }
     }
 
-    /// It fetches and reads refs, and writes nothing a person would miss: the
-    /// flow that closes finished work starts here, so it has to be a reading a
-    /// sensor may take.
+    /// It reads refs and fetches nothing: a sensor reads it on every beat, and a
+    /// fetch there would write refs in a checkout sessions share. The trunk is
+    /// as fresh as the last fetch anyone made; `close-the-work` fetches its own
+    /// before it deletes a thing.
     fn only_reads(&self, _declared: Option<&Value>) -> bool {
         true
     }

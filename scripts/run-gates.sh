@@ -47,7 +47,11 @@ root=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "gates: not inside a
 # comparing a path it built against one the system canonicalised.
 gates_under=${TMPDIR:-/tmp}
 gates_tmp=$(mktemp -d "${gates_under%/}/sailor-gates-XXXXXX") || { echo "gates: no temporary root" >&2; exit 2; }
-trap 'rm -rf "$gates_tmp"' EXIT INT TERM
+trap 'rm -rf "$gates_tmp"' EXIT
+# A trap on a signal replaces the exit it would have caused: without the exit
+# here, Ctrl-C would clear the directory and run the remaining gates without it.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 TMPDIR="$gates_tmp"
 export TMPDIR
 manifest=${manifest:-"$root/docs/gates.md"}
