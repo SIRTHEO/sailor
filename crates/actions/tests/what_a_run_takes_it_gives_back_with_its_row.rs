@@ -75,8 +75,8 @@ fn run(
     shared: &flow::SharedState,
 ) -> Result<serde_json::Value, (String, String)> {
     let mut registry = flow::ActionRegistry::default();
-    actions::worktree::register_take_a_tree(&mut registry);
-    actions::worktree::register_give_a_tree_back(&mut registry);
+    actions::worktree::register_take_a_tree(&mut registry, None);
+    actions::worktree::register_give_a_tree_back(&mut registry, None);
     let action = registry.get(name).expect("registered");
     match action.execute(&input, shared) {
         Ok(flow::ActionOutcome::Went(said)) => Ok(said),
@@ -208,4 +208,53 @@ fn a_tree_is_never_cut_under_no_name() {
     .expect_err("nothing is cut");
     assert_eq!(class, "tree_not_cut", "{said}");
     assert!(rows_open(&primary).is_empty(), "a row was written anyway");
+}
+
+/// A worker leaves work behind on nearly every run, and git refuses to take a
+/// tree down over it. Refusing there would keep every worker's tree standing,
+/// so what the tree holds is written where the repo can reach it first.
+#[test]
+fn work_left_in_a_tree_is_kept_where_the_repo_can_reach_it() {
+    let _turn = one_case_at_a_time();
+    let primary = a_repository("with-work");
+    let said = run(
+        "take_a_tree",
+        json!({ "repo": primary, "lock": "a worker is in it" }),
+        &under("a-run", "execute"),
+    )
+    .expect("the tree is cut");
+    let cut = PathBuf::from(said["tree"].as_str().expect("a path"));
+    std::fs::write(cut.join("what-it-did"), "an answer nobody committed\n").expect("the work");
+
+    run(
+        "give_a_tree_back",
+        json!({ "repo": primary, "tree": cut }),
+        &under("a-run", "release_tree"),
+    )
+    .expect("a tree with work in it is still given back");
+    assert!(!cut.exists(), "{} is still on disk", cut.display());
+
+    let kept = String::from_utf8(
+        Command::new("git")
+            .arg("-C")
+            .arg(&primary)
+            .args(["for-each-ref", "--format=%(refname)", "refs/sailor/kept"])
+            .output()
+            .expect("git runs")
+            .stdout,
+    )
+    .expect("refs in utf-8");
+    let kept = kept.trim();
+    assert!(!kept.is_empty(), "the work was taken down with the tree");
+    let held = String::from_utf8(
+        Command::new("git")
+            .arg("-C")
+            .arg(&primary)
+            .args(["show", &format!("{kept}:what-it-did")])
+            .output()
+            .expect("git runs")
+            .stdout,
+    )
+    .expect("the file in utf-8");
+    assert_eq!(held, "an answer nobody committed\n", "kept as {kept}");
 }

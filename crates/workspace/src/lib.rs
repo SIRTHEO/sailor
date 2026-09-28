@@ -479,10 +479,104 @@ pub fn remove(repo: &Path, name: &str, register: &dyn OpenTrees) -> Result<PathB
     Ok(path)
 }
 
-/// Gives back a tree a run took: unlocked, and off the register. Git's refusal
-/// over uncommitted work stands, where a shell used to force past it. ADR-026.
+/// Where what a tree still held goes when the run that took it gives it back.
+const KEPT: &str = "refs/sailor/kept";
+
+/// Writes what only this tree has -- the work on its disk, and a head no branch
+/// carries -- as a commit under [`KEPT`]. Nothing is dropped. ADR-026.
+pub fn keep_what_it_holds(repo: &Path, at: &Path) -> Result<Option<String>, String> {
+    if !a_tree_a_run_cut(at) {
+        return Err(format!(
+            "{} is a checkout of its own, not a tree a run cut",
+            at.display()
+        ));
+    }
+    let head = git(at, &["rev-parse", "HEAD"])?.trim().to_owned();
+    let on_the_disk = !git(at, &["status", "--porcelain"])?.trim().is_empty();
+    if !on_the_disk && a_commit_no_branch_holds(repo, at).is_none() {
+        return Ok(None);
+    }
+    let commit = if on_the_disk {
+        a_commit_of_what_is_there(at, &head)?
+    } else {
+        head
+    };
+    let name = format!("{KEPT}/{}-{}", where_it_was_cut(at), now());
+    git(at, &["update-ref", &name, &commit])?;
+    Ok(Some(name))
+}
+
+/// Git keeps a cut tree's own directory under the checkout's, and a checkout
+/// is what must never be reset: the two are told apart before anything writes.
+fn a_tree_a_run_cut(at: &Path) -> bool {
+    git(at, &["rev-parse", "--absolute-git-dir"])
+        .is_ok_and(|dir| dir.trim().contains("/worktrees/"))
+}
+
+/// The disk as it stands, committed on an index of its own so the tree's own
+/// index is left as its worker had it. Ignored files stay ignored.
+fn a_commit_of_what_is_there(at: &Path, parent: &str) -> Result<String, String> {
+    let index = std::env::temp_dir().join(format!("sailor-kept-{}.index", std::process::id()));
+    let _ = std::fs::remove_file(&index);
+    let written = (|| {
+        indexing(at, &index, &["add", "-A"])?;
+        let tree = indexing(at, &index, &["write-tree"])?;
+        git(
+            at,
+            &[
+                "-c",
+                "user.name=sailor",
+                "-c",
+                "user.email=sailor@localhost",
+                "commit-tree",
+                tree.trim(),
+                "-p",
+                parent,
+                "-m",
+                "what the tree held when its run gave it back",
+            ],
+        )
+    })();
+    let _ = std::fs::remove_file(&index);
+    Ok(written?.trim().to_owned())
+}
+
+fn indexing(at: &Path, index: &Path, args: &[&str]) -> Result<String, String> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(at)
+        .args(args)
+        .env("GIT_INDEX_FILE", index)
+        .output()
+        .map_err(|error| format!("cannot run git: {error}"))?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_owned());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+fn where_it_was_cut(at: &Path) -> String {
+    let named = |path: Option<&Path>, unknown: &str| {
+        path.and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .map_or_else(|| unknown.to_owned(), safe)
+    };
+    format!(
+        "{}/{}",
+        named(at.parent(), "a-run"),
+        named(Some(at), "a-step")
+    )
+}
+
+/// Gives back a tree a run took: what it held kept, then unlocked, off disk and
+/// off the register. A worker leaves work behind on nearly every run, so a
+/// give-back refusing over it would never take one down. ADR-026.
 pub fn give_back_at(repo: &Path, at: &Path, register: &dyn OpenTrees) -> Result<(), String> {
     let path = at.to_string_lossy().into_owned();
+    if keep_what_it_holds(repo, at)?.is_some() {
+        git(at, &["reset", "--hard", "--quiet"])?;
+        git(at, &["clean", "-qfd"])?;
+    }
     let held = OneTreeAtATime::over(repo);
     let _ = git(repo, &["worktree", "unlock", &path]);
     let gone = git(repo, &["worktree", "remove", &path]);

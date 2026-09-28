@@ -102,6 +102,11 @@ fn who_holds_what() -> Result<WhoHoldsWhat, ActionError> {
     Ok((terminals, processes))
 }
 
+/// The one a step was given, or the machine's own.
+fn which_register(given: &Option<ledger::Ledger>) -> Result<ledger::Ledger, ActionError> {
+    given.clone().map_or_else(the_register, Ok)
+}
+
 /// The trees Sailor wrote down as it cut them: the only ones it takes down.
 fn the_register() -> Result<ledger::Ledger, ActionError> {
     let directory = ledger::default_directory()
@@ -215,8 +220,10 @@ pub const TAKE_A_TREE_ACTION: &str = "take_a_tree";
 
 const TAKE_FIELDS: &[&str] = &["repo", "at", "lock"];
 
-pub fn register_take_a_tree(registry: &mut flow::ActionRegistry) {
-    registry.register(TAKE_A_TREE_ACTION, TakeATreeAction);
+/// The register is handed in, as the store's is: a run that writes its trees
+/// down in one register and looks for them in another finds none.
+pub fn register_take_a_tree(registry: &mut flow::ActionRegistry, register: Option<ledger::Ledger>) {
+    registry.register(TAKE_A_TREE_ACTION, TakeATreeAction(register));
 }
 
 #[derive(Debug, Deserialize)]
@@ -241,7 +248,7 @@ fn here() -> String {
 /// step failed with no output, and the give-back reading the path off it was
 /// skipped. A tree a shell cuts is written down nowhere, and every closer
 /// refuses what the register does not carry. ADR-026.
-struct TakeATreeAction;
+struct TakeATreeAction(Option<ledger::Ledger>);
 
 impl Action for TakeATreeAction {
     fn execute(&self, input: &Value, shared: &SharedState) -> Result<ActionOutcome, ActionError> {
@@ -256,7 +263,7 @@ impl Action for TakeATreeAction {
                  cut a tree under and nothing to write down",
             ));
         }
-        let register = the_register()?;
+        let register = which_register(&self.0)?;
         let at = workspace::tree_for_at(
             &spec.repo,
             run,
@@ -296,8 +303,11 @@ pub const GIVE_A_TREE_BACK_ACTION: &str = "give_a_tree_back";
 
 const GIVE_BACK_FIELDS: &[&str] = &["repo", "tree"];
 
-pub fn register_give_a_tree_back(registry: &mut flow::ActionRegistry) {
-    registry.register(GIVE_A_TREE_BACK_ACTION, GiveATreeBackAction);
+pub fn register_give_a_tree_back(
+    registry: &mut flow::ActionRegistry,
+    register: Option<ledger::Ledger>,
+) {
+    registry.register(GIVE_A_TREE_BACK_ACTION, GiveATreeBackAction(register));
 }
 
 #[derive(Debug, Deserialize)]
@@ -312,13 +322,13 @@ struct GiveBackSpec {
 /// that were gone. Taking down and taking off the register are one gesture, here
 /// as in `sailor worktree remove`. A tree the register does not carry is named
 /// and left to whoever cut it.
-struct GiveATreeBackAction;
+struct GiveATreeBackAction(Option<ledger::Ledger>);
 
 impl Action for GiveATreeBackAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
         let spec: GiveBackSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
-        let register = the_register()?;
+        let register = which_register(&self.0)?;
         let written_down = register
             .trees_left_open()
             .map_err(|why| stays(format!("the register of trees cannot be read: {why}")))?
