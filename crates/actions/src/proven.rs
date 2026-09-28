@@ -65,10 +65,14 @@ pub fn program_for<'a>(forges: &'a [ForgeProgram], forge: &str) -> Option<&'a Fo
     forges.iter().find(|program| program.forge == forge)
 }
 
-/// Why a tree cannot be asked at all: a declaration it lacks.
+/// Why a tree cannot be asked at all: a declaration it lacks, a program not
+/// installed, or no token held for the declared account.
 fn undeclared(repo: &Path, forges: &[ForgeProgram]) -> Result<(ForgeProgram, String), String> {
     let policy = workspace::delivery::policy_on_the_trunk(repo)
         .map_err(|why| format!("the tree declares no delivery policy: {why}"))?;
+    if policy.forge.is_empty() {
+        return Err("the delivery policy declares no forge".to_owned());
+    }
     let program = program_for(forges, &policy.forge)
         .ok_or_else(|| {
             format!(
@@ -89,7 +93,30 @@ fn undeclared(repo: &Path, forges: &[ForgeProgram]) -> Result<(ForgeProgram, Str
     if declared.is_empty() || declared.starts_with('-') {
         return Err("sailor.forgeAs is not declared on this tree: no account to act as".to_owned());
     }
-    Ok((program, declared))
+    let token = run(clean(&program).args(["auth", "token", "--user", &declared]))
+        .map(|token| token.trim().to_owned())
+        .map_err(|refused| {
+            format!(
+                "no forge token for the declared account {declared}: {}",
+                refused.said
+            )
+        })?;
+    if token.is_empty() {
+        return Err(format!(
+            "no forge token for the declared account {declared}"
+        ));
+    }
+    Ok((program, token))
+}
+
+/// The forge's program with nothing inherited that would make it act as
+/// another account or for another repository.
+fn clean(program: &ForgeProgram) -> Command {
+    let mut command = Command::new(&program.program);
+    for variable in &program.never_inherited {
+        command.env_remove(variable);
+    }
+    command
 }
 
 /// Every forge call acts as the account the tree declares, never as whichever
@@ -97,24 +124,10 @@ fn undeclared(repo: &Path, forges: &[ForgeProgram]) -> Result<(ForgeProgram, Str
 fn forge(
     repo: &Path,
     program: &ForgeProgram,
-    account: &str,
+    token: &str,
     arguments: &[&str],
 ) -> Result<String, ActionError> {
-    let clean = || {
-        let mut command = Command::new(&program.program);
-        for variable in &program.never_inherited {
-            command.env_remove(variable);
-        }
-        command
-    };
-    let token = run(clean().args(["auth", "token", "--user", account]))?;
-    let token = token.trim();
-    if token.is_empty() {
-        return Err(not_proven(format!(
-            "no forge token for the declared account {account}"
-        )));
-    }
-    run(clean()
+    run(clean(program)
         .current_dir(repo)
         .args(arguments)
         .env(&program.token_variable, token))
@@ -146,7 +159,7 @@ impl Action for ProvenBranchesAction {
         let repo = spec.repo.or(spec.workdir).ok_or_else(|| {
             not_proven("no tree to read: neither a repo nor a workdir is named".to_owned())
         })?;
-        let (program, account) = match undeclared(&repo, &self.forges) {
+        let (program, token) = match undeclared(&repo, &self.forges) {
             Ok(declared) => declared,
             Err(missing) => {
                 return Ok(ActionOutcome::Went(json!({
@@ -160,7 +173,7 @@ impl Action for ProvenBranchesAction {
         let answered = forge(
             &repo,
             &program,
-            &account,
+            &token,
             &[
                 "pr",
                 "list",

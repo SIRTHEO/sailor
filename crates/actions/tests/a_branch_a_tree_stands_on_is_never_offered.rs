@@ -231,3 +231,66 @@ fn a_finished_branch_with_no_merged_request_of_its_own_is_named_and_never_offere
     );
     assert_eq!(unproven, vec!["work/never-requested".to_owned()]);
 }
+
+fn prove(repo: &Path, forges: Vec<actions::proven::ForgeProgram>) -> serde_json::Value {
+    let mut registry = flow::ActionRegistry::default();
+    actions::proven::register_proven_branches(&mut registry, forges);
+    let action = registry
+        .get("proven_branches")
+        .expect("the action is registered");
+    let declared = serde_json::json!({
+        "repo": repo.to_string_lossy(),
+        "branches": ["work/finished"],
+    });
+    match action.execute(&declared, &flow::SharedState::new()) {
+        Ok(flow::ActionOutcome::Went(value)) => value,
+        other => panic!("a missing declaration completes the run and says why: {other:?}"),
+    }
+}
+
+fn a_forge_nobody_installed() -> actions::proven::ForgeProgram {
+    actions::proven::ForgeProgram {
+        forge: "a-forge".to_owned(),
+        program: "/nowhere/a-forge-program".to_owned(),
+        token_variable: "A_FORGE_TOKEN".to_owned(),
+        never_inherited: vec!["A_FORGE_TOKEN".to_owned()],
+    }
+}
+
+/// A declaration that is missing now is missing on the next beat too: the run
+/// completes offering nothing and names it, rather than failing every cooldown.
+#[test]
+fn a_policy_that_declares_no_forge_offers_nothing_and_says_so() {
+    let (_scratch, tree) = a_tree_with_finished_work("no-forge");
+    let answer = prove(&tree, vec![a_forge_nobody_installed()]);
+    assert_eq!(answer["items"], serde_json::json!([]));
+    assert_eq!(answer["unproven"], serde_json::json!(["work/finished"]));
+    assert!(
+        answer["why"]
+            .as_str()
+            .unwrap_or("")
+            .contains("declares no forge"),
+        "the missing declaration is named: {answer}"
+    );
+}
+
+#[test]
+fn a_forge_program_not_installed_offers_nothing_and_says_so() {
+    let (_scratch, tree) = a_tree_with_finished_work("no-program");
+    std::fs::write(
+        tree.join(".sailor/delivery-policy.json"),
+        r#"{"merge":"ask","push":"ask","release":"ask","remote":"origin","forge":"a-forge"}"#,
+    )
+    .expect("a policy that declares a forge");
+    git(&tree, &["commit", "-q", "-am", "the forge is declared"]);
+    git(&tree, &["config", "sailor.forgeAs", "someone"]);
+    let answer = prove(&tree, vec![a_forge_nobody_installed()]);
+    assert_eq!(answer["items"], serde_json::json!([]));
+    assert!(
+        answer["why"]
+            .as_str()
+            .unwrap_or("")
+            .contains("no forge token for the declared account someone"),
+        "the account with no token is named: {answer}"
+    );
+}
