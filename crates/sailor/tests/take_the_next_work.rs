@@ -238,8 +238,7 @@ fn registry_over(ledger: &Ledger, worker: impl actions::ToolResolver + 'static) 
     trigger::register_default(&mut registry);
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(worker)
-            .recording_to(Some(ledger.clone())),
+        actions::ExternalEngineAction::resolving_with(worker).recording_to(Some(ledger.clone())),
     );
     actions::store::register_store(&mut registry, Some(ledger.clone()));
     registry.register(
