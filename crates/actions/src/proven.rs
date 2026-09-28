@@ -59,6 +59,18 @@ pub fn split_by_proof(
     )
 }
 
+/// The reason as one line: it becomes the text of a fault, and the register
+/// refuses a line break and its own column separator.
+pub fn one_line(reason: &str) -> String {
+    reason
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ")
+        .replace(" | ", " / ")
+}
+
 /// The program that speaks for the forge a policy declares, if a descriptor
 /// declares one.
 pub fn program_for<'a>(forges: &'a [ForgeProgram], forge: &str) -> Option<&'a ForgeProgram> {
@@ -165,7 +177,7 @@ impl Action for ProvenBranchesAction {
                 return Ok(ActionOutcome::Went(json!({
                     "items": [],
                     "unproven": spec.branches,
-                    "why": missing,
+                    "why": one_line(&format!("in {}: {missing}", repo.display())),
                 })))
             }
         };

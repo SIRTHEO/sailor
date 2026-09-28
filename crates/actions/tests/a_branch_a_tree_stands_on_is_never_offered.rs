@@ -294,3 +294,42 @@ fn a_forge_program_not_installed_offers_nothing_and_says_so() {
         "the account with no token is named: {answer}"
     );
 }
+
+/// The fault register refuses a line break, and the reason becomes a fault's
+/// text: a program that explains itself over several lines must still leave
+/// one line, and the tree it happened in.
+#[test]
+fn a_program_that_refuses_over_several_lines_leaves_one_line_naming_the_tree() {
+    let (scratch, tree) = a_tree_with_finished_work("two-lines");
+    std::fs::write(
+        tree.join(".sailor/delivery-policy.json"),
+        r#"{"merge":"ask","push":"ask","release":"ask","remote":"origin","forge":"a-forge"}"#,
+    )
+    .expect("a policy that declares a forge");
+    git(&tree, &["commit", "-q", "-am", "the forge is declared"]);
+    git(&tree, &["config", "sailor.forgeAs", "someone"]);
+    let program = scratch.0.join("a-forge-program");
+    std::fs::write(
+        &program,
+        "#!/bin/sh\necho 'no token here' >&2\necho 'try logging in | again' >&2\nexit 1\n",
+    )
+    .expect("a program that refuses");
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).expect("it can run");
+    let mut forge = a_forge_nobody_installed();
+    forge.program = program.to_string_lossy().into_owned();
+    let answer = prove(&tree, vec![forge]);
+    let why = answer["why"].as_str().unwrap_or("");
+    assert!(
+        !why.contains('\n') && !why.contains(" | "),
+        "one line: {why:?}"
+    );
+    assert!(
+        why.contains("no token here") && why.contains("try logging in"),
+        "{why:?}"
+    );
+    assert!(
+        why.contains(&*tree.to_string_lossy()),
+        "the tree is named: {why:?}"
+    );
+}
