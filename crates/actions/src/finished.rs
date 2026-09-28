@@ -145,9 +145,7 @@ impl Action for FinishedBranchesAction {
             free.push(name);
         }
         Ok(ActionOutcome::Went(json!({
-            "repo": repo.to_string_lossy(),
             "trunk": trunk,
-            "listed": free.join("\n"),
             "branches": free,
             "held_by_a_tree": kept,
             "items": items,

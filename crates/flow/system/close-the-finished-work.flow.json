@@ -1,7 +1,7 @@
 {
   "id": "close-the-finished-work",
   "version": 1,
-  "description": "THE FINISHED WORK OF THIS TREE CLOSES ITSELF, WHEN IT BECOMES FINISHED. Piece 2 of the lifecycle work: `close-the-work` released one branch's holdings and had no caller, so branches whose pull request merged weeks ago were still standing. The trigger is a sensor: on every beat `finished_branches` reads, in the project root, which branches are finished — under the work prefix, carried by the trunk the repository declares, and held by no working tree — and when that list changes the flow starts. It reads the list again, since the sensor's reading may be a beat old, asks the forge once which of them carry a merged pull request, and runs `close-the-work` for each of those, one at a time. A branch with no merged pull request of its own (cut and never committed to, or carried to the trunk by another branch's request) is named in `unproven` and never offered: close-the-work could not prove it, the run would fail, and a failed run leaves the sensor's change unconsumed, so it would start again at every cooldown for as long as the branch stands. The sensor fetches nothing, so the trunk it reads is as fresh as the last fetch anyone made. It goes on past a branch that will not close, so one broken close does not hold back the others queued behind it; the run still ends failed when one broke, and names every one that did. A branch a tree is checked out on is named in `held_by_a_tree` and never offered: taking it down would pull the ground out from under a session that is still working. Started by hand it does the same, in the root of the tree it is started from, and whatever text it is handed is not read. Safe to run again: it reads the standing each time, and a run that closes nothing answers with an empty list rather than failing.",
+  "description": "THE FINISHED WORK OF THIS TREE CLOSES ITSELF, WHEN IT BECOMES FINISHED. Piece 2 of the lifecycle work: `close-the-work` released one branch's holdings and had no caller, so branches whose pull request merged weeks ago were still standing. The trigger is a sensor: on every beat `finished_branches` reads, in the project root, which branches are finished — under the work prefix, carried by the trunk the repository declares, and held by no working tree — and when that list changes the flow starts. It reads the list again, since the sensor's reading may be a beat old, asks the forge once, through `proven_branches`, which of them carry a merged pull request, and runs `close-the-work` for each of those, one at a time. A branch with no merged pull request of its own (cut and never committed to, or carried to the trunk by another branch's request) is named in `unproven` and never offered: close-the-work could not prove it, the run would fail, and a failed run leaves the sensor's change unconsumed, so it would start again at every cooldown for as long as the branch stands. The sensor fetches nothing, so the trunk it reads is as fresh as the last fetch anyone made. It goes on past a branch that will not close, so one broken close does not hold back the others queued behind it; the run still ends failed when one broke, and names every one that did. A branch a tree is checked out on is named in `held_by_a_tree` and never offered: taking it down would pull the ground out from under a session that is still working. Started by hand it does the same, in the root of the tree it is started from, and whatever text it is handed is not read. Safe to run again: it reads the standing each time, and a run that closes nothing answers with an empty list rather than failing.",
   "inputs": {
     "trigger": {
       "text": ""
@@ -84,20 +84,12 @@
               "items": {
                 "type": "any"
               }
-            },
-            "repo": {
-              "type": "string"
-            },
-            "listed": {
-              "type": "string"
             }
           },
           "required": [
             "branches",
             "held_by_a_tree",
             "items",
-            "listed",
-            "repo",
             "trunk"
           ],
           "allow_extra": false
@@ -109,51 +101,42 @@
           "trigger",
           "the_finished"
         ],
-        "action": "shell_check",
+        "action": "proven_branches",
         "max_attempts": 1,
         "when": null,
         "with": {
-          "command": "set -eu\ncd \"$REPO\"\n# An inherited GH_REPO would point a call at another repository: it goes before the first gh call.\nunset GH_REPO\nforge_as=$(git -C \"$REPO\" config --get sailor.forgeAs) || { echo \"sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\n[ -n \"$forge_as\" ] || { echo \"sailor.forgeAs is empty on this tree: refusing to act as the machine's active account\" >&2; exit 1; }\ntoken=$(env -u GH_TOKEN -u GITHUB_TOKEN -u GH_REPO gh auth token --user \"$forge_as\") && [ -n \"$token\" ] || { echo \"no forge token for the declared account $forge_as\" >&2; exit 1; }\n# One question for the whole list, asked only when the list changed: close-the-work\n# proves a branch by its own merged pull request, so a branch without one is named\n# here and never offered, rather than failing every run until a person steps in.\nmerged=$(env -u GITHUB_TOKEN -u GH_ENTERPRISE_TOKEN -u GITHUB_ENTERPRISE_TOKEN -u GH_REPO GH_TOKEN=\"$token\" gh pr list --state merged --limit 1000 --json headRefName --jq '.[].headRefName')\nMERGED=\"$merged\" python3 -c '\nimport json, os\nmerged = set(os.environ[\"MERGED\"].split(\"\\n\"))\nlisted = [name for name in os.environ[\"LISTED\"].split(\"\\n\") if name]\nrepo = os.environ[\"REPO\"]\nitems = [{\"source\": \"manual\", \"text\": json.dumps({\"repo\": repo, \"branch\": name})} for name in listed if name in merged]\nunproven = [name for name in listed if name not in merged]\nprint(json.dumps({\"items\": items, \"unproven\": unproven}))\n'\n",
-          "env": {
-            "REPO": {
-              "$from": "/the_finished/repo"
-            },
-            "LISTED": {
-              "$from": "/the_finished/listed"
-            }
-          },
-          "timeout_secs": 60,
-          "answer_shape": {
-            "type": "object",
-            "properties": {
-              "items": {
-                "type": "array",
-                "items": {
-                  "type": "any"
-                }
-              },
-              "unproven": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              }
-            },
-            "required": [
-              "items",
-              "unproven"
-            ],
-            "allow_extra": false
+          "branches": {
+            "$from": "/the_finished/branches"
           }
         },
         "needs": [
-          "gh"
+          "gh",
+          "git"
         ],
         "input_schema": {
           "type": "any"
         },
         "output_schema": {
-          "type": "any"
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "any"
+              }
+            },
+            "unproven": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "items",
+            "unproven"
+          ],
+          "allow_extra": false
         }
       },
       {

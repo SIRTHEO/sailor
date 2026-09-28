@@ -217,3 +217,17 @@ fn with_no_tree_at_all_nothing_is_read() {
         "the refusal says what is missing: {refused}"
     );
 }
+
+#[test]
+fn a_finished_branch_with_no_merged_request_of_its_own_is_named_and_never_offered() {
+    let repo = std::path::Path::new("/a/tree");
+    let branches = vec!["work/merged".to_owned(), "work/never-requested".to_owned()];
+    let merged: std::collections::BTreeSet<String> =
+        ["work/merged".to_owned(), "work/elsewhere".to_owned()].into();
+    let (items, unproven) = actions::proven::split_by_proof(repo, &branches, &merged);
+    assert_eq!(
+        items,
+        vec![actions::finished::as_an_item(repo, "work/merged")]
+    );
+    assert_eq!(unproven, vec!["work/never-requested".to_owned()]);
+}

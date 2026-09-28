@@ -35,6 +35,7 @@ pub mod dormant_steps;
 pub mod draft;
 pub mod faults;
 pub mod finished;
+pub mod proven;
 pub mod graph_memory;
 pub mod handoff;
 pub mod history;

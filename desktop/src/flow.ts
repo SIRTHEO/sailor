@@ -243,6 +243,7 @@ const ACTION_KIND: Record<string, StepKind> = {
   // The branches whose work is over, read off the remote: it fetches and reads
   // refs and decides nothing, so it is drawn as the check that it is.
   finished_branches: "check",
+  proven_branches: "check",
   candidate_gate: "check",
   review_verdict: "check",
   local_choice: "check",
