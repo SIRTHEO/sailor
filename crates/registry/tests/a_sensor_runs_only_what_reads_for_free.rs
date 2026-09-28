@@ -85,8 +85,8 @@ fn git(at: &std::path::Path, args: &[&str]) {
     );
 }
 
-fn a_root_with_finished_work() -> (Scratch, std::path::PathBuf) {
-    let at = std::env::temp_dir().join(format!("sensed-finished-{}", std::process::id()));
+fn a_root_with_finished_work(label: &str) -> (Scratch, std::path::PathBuf) {
+    let at = std::env::temp_dir().join(format!("sensed-finished-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&at);
     std::fs::create_dir_all(at.join("tree")).expect("the tree's directory");
     let scratch = Scratch(at.clone());
@@ -148,7 +148,7 @@ fn the_shipped_flow_that_closes_finished_work_watches_its_root() {
         .expect("its trigger is a sensor")
         .expect("and a sensor it declares well");
 
-    let (_scratch, root) = a_root_with_finished_work();
+    let (_scratch, root) = a_root_with_finished_work("watched");
     let eyes = trigger::sensor::Eyes {
         registry: std::sync::Arc::new(registry),
         root: Some(root),
@@ -169,5 +169,54 @@ fn the_forge_a_policy_declares_reaches_its_program_through_a_descriptor() {
     assert_eq!(
         actions::proven::program_for(&forges, "a-forge-nobody-declares"),
         None
+    );
+}
+
+/// A tree whose policy declares no forge cannot ask which finished branches
+/// are proven. The run completes closing nothing, and the register says so
+/// once: a second beat finds the fault already open and writes no other.
+#[test]
+fn a_tree_that_cannot_ask_the_forge_says_so_once_in_the_register() {
+    let text = flow::system::FLOWS
+        .iter()
+        .find(|(name, _)| *name == "close-the-finished-work")
+        .map(|(_, text)| *text)
+        .expect("the flow is shipped");
+    let shipped: FlowFile = serde_json::from_str(text).expect("the shipped flow parses");
+    let (scratch, root) = a_root_with_finished_work("undeclared");
+    let house = scratch.0.join("house");
+    let ledger = ledger::Ledger::open(house.join("ledger")).expect("the house's ledger");
+    let registry = registry_in(House::under(&house), Some(ledger.clone()), None);
+    for run in ["the-first-beat", "the-second-beat"] {
+        let request = registry::execution_request(Some(&ledger), &shipped, run, Some(&root), 0);
+        let store = flow::InMemoryRecordStore::default();
+        let execution = flow::Executor::execute(
+            &flow::InProcessExecutor,
+            &shipped.graph,
+            request,
+            &store,
+            &registry,
+            &flow::SystemClock,
+        )
+        .expect("the run goes");
+        assert_eq!(
+            flow::run_status(&execution).0,
+            "complete",
+            "a missing declaration does not fail the run: {:?}",
+            execution.decisions.last()
+        );
+    }
+    let register =
+        faults::Faults::open(house.join("ledger").join(faults::FAULTS_FILE)).expect("the register");
+    let written: Vec<_> = register
+        .all()
+        .expect("the faults")
+        .into_iter()
+        .filter(|fault| fault.what_happened.contains("declares no forge"))
+        .collect();
+    assert_eq!(
+        written.len(),
+        1,
+        "one fault, however many beats: {written:?}"
     );
 }

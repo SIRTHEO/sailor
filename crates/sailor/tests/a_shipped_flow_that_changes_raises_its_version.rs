@@ -24,7 +24,7 @@ const SHIPPED_VERSIONS_TODAY: &[(&str, u32, &str)] = &[
     (
         "close-the-finished-work",
         1,
-        "ff9ba36d143e63442a55b9d3ea9df8bac9b669f186b2df341a6a88117fb5da3d",
+        "78c9414c9e4878699b0c283699b98833d3619842124a6942037c06df05136b6c",
     ),
     (
         "close-the-work",

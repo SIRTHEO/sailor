@@ -1,7 +1,7 @@
 {
   "id": "close-the-finished-work",
   "version": 1,
-  "description": "THE FINISHED WORK OF THIS TREE CLOSES ITSELF, WHEN IT BECOMES FINISHED. Piece 2 of the lifecycle work: `close-the-work` released one branch's holdings and had no caller, so branches whose pull request merged weeks ago were still standing. The trigger is a sensor: on every beat `finished_branches` reads, in the project root, which branches are finished — under the work prefix, carried by the trunk the repository declares, and held by no working tree — and when that list changes the flow starts. It reads the list again, since the sensor's reading may be a beat old, asks the forge once, through `proven_branches` and as the account the tree declares, which of them carry a merged pull request, and runs `close-the-work` for each of those, one at a time. A branch with no merged pull request of its own (cut and never committed to, or carried to the trunk by another branch's request) is named in `unproven` and never offered, and so is every branch of a tree that declares no forge program or no account, with `why` naming the missing declaration: close-the-work could not prove it, the run would fail, and a failed run leaves the sensor's change unconsumed, so it would start again at every cooldown for as long as the branch stands. The sensor fetches nothing, so the trunk it reads is as fresh as the last fetch anyone made. It goes on past a branch that will not close, so one broken close does not hold back the others queued behind it; the run still ends failed when one broke, and names every one that did. A branch a tree is checked out on is named in `held_by_a_tree` and never offered: taking it down would pull the ground out from under a session that is still working. Started by hand it does the same, in the root of the tree it is started from, and whatever text it is handed is not read. Safe to run again: it reads the standing each time, and a run that closes nothing answers with an empty list rather than failing.",
+  "description": "THE FINISHED WORK OF THIS TREE CLOSES ITSELF, WHEN IT BECOMES FINISHED. Piece 2 of the lifecycle work: `close-the-work` released one branch's holdings and had no caller, so branches whose pull request merged weeks ago were still standing. The trigger is a sensor: on every beat `finished_branches` reads, in the project root, which branches are finished — under the work prefix, carried by the trunk the repository declares, and held by no working tree — and when that list changes the flow starts. It reads the list again, since the sensor's reading may be a beat old, asks the forge once, through `proven_branches` and as the account the tree declares, which of them carry a merged pull request, and runs `close-the-work` for each of those, one at a time. A branch with no merged pull request of its own (cut and never committed to, or carried to the trunk by another branch's request) is named in `unproven` and never offered, and so is every branch of a tree that declares no forge program or no account, with `why` naming the missing declaration, which is written once to the fault register so the feature cannot stay switched off unseen: close-the-work could not prove it, the run would fail, and a failed run leaves the sensor's change unconsumed, so it would start again at every cooldown for as long as the branch stands. The sensor fetches nothing, so the trunk it reads is as fresh as the last fetch anyone made. It goes on past a branch that will not close, so one broken close does not hold back the others queued behind it; the run still ends failed when one broke, and names every one that did. A branch a tree is checked out on is named in `held_by_a_tree` and never offered: taking it down would pull the ground out from under a session that is still working. Started by hand it does the same, in the root of the tree it is started from, and whatever text it is handed is not read. Safe to run again: it reads the standing each time, and a run that closes nothing answers with an empty list rather than failing.",
   "inputs": {
     "trigger": {
       "text": ""
@@ -140,6 +140,35 @@
             "why"
           ],
           "allow_extra": false
+        }
+      },
+      {
+        "id": "say_what_is_missing",
+        "deps": [
+          "trigger",
+          "the_proven"
+        ],
+        "action": "fault_record",
+        "max_attempts": 1,
+        "when": {
+          "kind": "pointer_has_value",
+          "pointer": "/the_proven/why"
+        },
+        "with": {
+          "happened_on": "on a beat of the sensor that watches the finished branches",
+          "what_happened": {
+            "$from": "/the_proven/why"
+          },
+          "how_it_showed": "close-the-finished-work completed and closed nothing, because proven_branches could not ask the forge which finished branches carry a merged request",
+          "what_would_prevent": "declare on this tree what the fault names: the forge in the delivery policy, sailor.forgeAs, a descriptor for the forge's program, the program itself and a token for that account; until then no finished branch closes by itself",
+          "status": "**open**",
+          "only_if_not_already_open": true
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
         }
       },
       {
