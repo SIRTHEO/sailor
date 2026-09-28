@@ -513,10 +513,15 @@ fn a_tree_a_run_cut(at: &Path) -> bool {
         .is_ok_and(|dir| dir.trim().contains("/worktrees/"))
 }
 
-/// The disk as it stands, committed on an index of its own so the tree's own
-/// index is left as its worker had it. Ignored files stay ignored.
+/// The disk as it stands, on an index of its own so the worker's index is left
+/// as it was. **Named per call, not per process:** two runs giving their trees
+/// back are two threads, and a name built from the pid alone was one file two
+/// callers wrote at once. Ignored files stay ignored.
 fn a_commit_of_what_is_there(at: &Path, parent: &str) -> Result<String, String> {
-    let index = std::env::temp_dir().join(format!("sailor-kept-{}.index", std::process::id()));
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mine = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let index =
+        std::env::temp_dir().join(format!("sailor-kept-{}-{mine}.index", std::process::id()));
     let _ = std::fs::remove_file(&index);
     let written = (|| {
         indexing(at, &index, &["add", "-A"])?;
@@ -975,6 +980,64 @@ mod tests {
         );
         assert!(work_is_there, "the work was lost");
         assert!(listed.contains(&dirty), "{listed}");
+    }
+
+    /// **AT ONCE, AND EACH KEEPS ITS OWN WORK.** An index named after the pid
+    /// was one file both threads wrote: git refused, or kept the other's work.
+    #[test]
+    fn two_trees_given_back_at_once_each_keep_what_they_held() {
+        let (scratch, repo) = a_repository("at-once");
+        let page = std::sync::Arc::new(APage::default());
+        let mut cut = Vec::new();
+        for run in ["run-at-once-one", "run-at-once-two"] {
+            let tree = tree_for(&repo, run, "execute", page.as_ref(), None).expect("a tree");
+            std::fs::write(tree.join("what-it-did"), format!("{run} was here\n")).expect("work");
+            cut.push((run.to_owned(), tree));
+        }
+
+        let together: Vec<_> = cut
+            .into_iter()
+            .map(|(run, tree)| {
+                let repo = repo.clone();
+                let page = std::sync::Arc::clone(&page);
+                std::thread::spawn(move || {
+                    let went = give_back_at(&repo, &tree, page.as_ref());
+                    (run, went)
+                })
+            })
+            .collect();
+        let went: Vec<_> = together
+            .into_iter()
+            .map(|thread| thread.join().expect("the thread joins"))
+            .collect();
+
+        let kept = String::from_utf8_lossy(
+            &run_git(&repo, &["for-each-ref", "--format=%(refname)", KEPT]).stdout,
+        )
+        .into_owned();
+        let mut held = Vec::new();
+        for name in kept.lines() {
+            held.push(
+                String::from_utf8_lossy(
+                    &run_git(&repo, &["show", &format!("{name}:what-it-did")]).stdout,
+                )
+                .into_owned(),
+            );
+        }
+        let _ = std::fs::remove_dir_all(&scratch);
+
+        for (run, gone) in &went {
+            assert!(gone.is_ok(), "{run}: {gone:?}");
+        }
+        held.sort();
+        assert_eq!(
+            held,
+            vec![
+                "run-at-once-one was here\n".to_owned(),
+                "run-at-once-two was here\n".to_owned()
+            ],
+            "each run keeps what its own tree held, and one kept the other's",
+        );
     }
 
     /// The refusal is the safety property: what overrides it is never written.

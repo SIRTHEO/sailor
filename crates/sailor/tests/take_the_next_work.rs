@@ -436,7 +436,7 @@ fn two_runners_racing_the_same_store_take_each_task_at_most_once() {
 
     let results: Vec<_> = handles.into_iter().map(|handle| handle.join().expect("the thread joins")).collect();
 
-    for (execution, _) in &results {
+    for (execution, store) in &results {
         assert!(
             matches!(
                 execution.decisions.last(),
@@ -448,8 +448,9 @@ fn two_runners_racing_the_same_store_take_each_task_at_most_once() {
             "a lost claim halts on its own `stops_when` (`Promise`); a task the \
              acceptance never passed closes with the requirement unmet and, once \
              parked, waits on its handoff to a person; the winner that finishes \
-             closes complete — but nothing here should break: {:?}",
-            execution.decisions
+             closes complete — but nothing here should break: {:?}, on {}",
+            execution.decisions,
+            what_broke(store)
         );
     }
 

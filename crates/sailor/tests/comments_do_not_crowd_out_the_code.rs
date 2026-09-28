@@ -55,7 +55,7 @@ const COMMENT_PERMILLE_TODAY: &[(&str, usize)] = &[
     ("toolbox", 261),
     ("trigger", 171),
     ("ui", 184),
-    ("workspace", 113),
+    ("workspace", 112),
 ];
 
 /// Words no English sentence uses, which a sentence in this tree's other
