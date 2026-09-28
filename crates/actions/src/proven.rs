@@ -1,8 +1,9 @@
-//! Which finished branches the forge can prove: `close-the-work` closes a
-//! branch only on its own merged pull request, and a branch without one failed
-//! every run. A failed run leaves the sensor's change unconsumed, so it started
-//! again after each cooldown for as long as the branch stood. Such a branch is
-//! named here and never offered.
+//! Which finished branches the forge can prove, so that `close-the-work`,
+//! which closes a branch only on its own merged request, is never offered one
+//! it must fail on: a failed run leaves a sensor's change unconsumed, and the
+//! flow would start again every cooldown. A missing declaration never changes
+//! by itself, so it is named in `why` and the run completes; a forge that does
+//! not answer may answer later, so that fails and the cooldown asks again.
 
 use crate::finished::as_an_item;
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
@@ -15,6 +16,20 @@ use std::process::Command;
 pub const PROVEN_BRANCHES_ACTION: &str = "proven_branches";
 
 const PROVEN_FIELDS: &[&str] = &["repo", "workdir", "branches"];
+
+/// More merged requests than one question reads would leave the oldest
+/// finished branches unproven with nothing saying why, so reaching it refuses.
+const MERGED_READ_AT_ONCE: usize = 10_000;
+
+/// A program a descriptor declares as speaking for a forge (ADR-020): the
+/// product names none, the toolbox hands them in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForgeProgram {
+    pub forge: String,
+    pub program: String,
+    pub token_variable: String,
+    pub never_inherited: Vec<String>,
+}
 
 #[derive(Debug, Deserialize)]
 struct ProvenSpec {
@@ -44,49 +59,65 @@ pub fn split_by_proof(
     )
 }
 
-/// The forge's own program, and every variable through which an inherited
-/// environment would make it answer as another account or for another
-/// repository. Named once, here, for ADR-020's count.
-const FORGE_PROGRAM: &str = "gh";
-const FORGE_TOKEN: &str = "GH_TOKEN";
-const NEVER_INHERITED: &[&str] = &[
-    "GH_TOKEN",
-    "GITHUB_TOKEN",
-    "GH_REPO",
-    "GH_ENTERPRISE_TOKEN",
-    "GITHUB_ENTERPRISE_TOKEN",
-];
+/// The program that speaks for the forge a policy declares, if a descriptor
+/// declares one.
+pub fn program_for<'a>(forges: &'a [ForgeProgram], forge: &str) -> Option<&'a ForgeProgram> {
+    forges.iter().find(|program| program.forge == forge)
+}
 
-fn forge_program() -> Command {
-    let mut command = Command::new(FORGE_PROGRAM);
-    for variable in NEVER_INHERITED {
-        command.env_remove(variable);
+/// Why a tree cannot be asked at all: a declaration it lacks.
+fn undeclared(repo: &Path, forges: &[ForgeProgram]) -> Result<(ForgeProgram, String), String> {
+    let policy = workspace::delivery::policy_on_the_trunk(repo)
+        .map_err(|why| format!("the tree declares no delivery policy: {why}"))?;
+    let program = program_for(forges, &policy.forge)
+        .ok_or_else(|| {
+            format!(
+                "no descriptor declares a program for the forge {:?}",
+                policy.forge
+            )
+        })?
+        .clone();
+    let declared = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["config", "--get", "sailor.forgeAs"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .unwrap_or_default();
+    if declared.is_empty() || declared.starts_with('-') {
+        return Err("sailor.forgeAs is not declared on this tree: no account to act as".to_owned());
     }
-    command
+    Ok((program, declared))
 }
 
 /// Every forge call acts as the account the tree declares, never as whichever
 /// account the machine has active.
-fn forge(repo: &Path, arguments: &[&str]) -> Result<String, ActionError> {
-    let declared = run(Command::new("git").arg("-C").arg(repo).args(["config", "--get", "sailor.forgeAs"]))
-        .map_err(|_| not_proven("sailor.forgeAs is not declared on this tree: refusing to act as the machine's active account".to_owned()))?;
-    let account = declared.trim();
-    if account.is_empty() || account.starts_with('-') {
-        return Err(not_proven(format!(
-            "sailor.forgeAs is not an account: {account:?}"
-        )));
-    }
-    let token = run(forge_program().args(["auth", "token", "--user", account]))?;
+fn forge(
+    repo: &Path,
+    program: &ForgeProgram,
+    account: &str,
+    arguments: &[&str],
+) -> Result<String, ActionError> {
+    let clean = || {
+        let mut command = Command::new(&program.program);
+        for variable in &program.never_inherited {
+            command.env_remove(variable);
+        }
+        command
+    };
+    let token = run(clean().args(["auth", "token", "--user", account]))?;
     let token = token.trim();
     if token.is_empty() {
         return Err(not_proven(format!(
             "no forge token for the declared account {account}"
         )));
     }
-    run(forge_program()
+    run(clean()
         .current_dir(repo)
         .args(arguments)
-        .env(FORGE_TOKEN, token))
+        .env(&program.token_variable, token))
 }
 
 fn run(command: &mut Command) -> Result<String, ActionError> {
@@ -104,7 +135,9 @@ fn run(command: &mut Command) -> Result<String, ActionError> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-struct ProvenBranchesAction;
+struct ProvenBranchesAction {
+    forges: Vec<ForgeProgram>,
+}
 
 impl Action for ProvenBranchesAction {
     fn execute(&self, input: &Value, _shared: &SharedState) -> Result<ActionOutcome, ActionError> {
@@ -113,31 +146,45 @@ impl Action for ProvenBranchesAction {
         let repo = spec.repo.or(spec.workdir).ok_or_else(|| {
             not_proven("no tree to read: neither a repo nor a workdir is named".to_owned())
         })?;
-        // One question for the whole list, and asked only when the list
-        // changed. A branch past the limit reads as unproven: it waits, and
-        // nothing is deleted on a guess.
-        let merged: BTreeSet<String> = forge(
+        let (program, account) = match undeclared(&repo, &self.forges) {
+            Ok(declared) => declared,
+            Err(missing) => {
+                return Ok(ActionOutcome::Went(json!({
+                    "items": [],
+                    "unproven": spec.branches,
+                    "why": missing,
+                })))
+            }
+        };
+        let limit = MERGED_READ_AT_ONCE.to_string();
+        let answered = forge(
             &repo,
+            &program,
+            &account,
             &[
                 "pr",
                 "list",
                 "--state",
                 "merged",
                 "--limit",
-                "1000",
+                &limit,
                 "--json",
                 "headRefName",
                 "--jq",
                 ".[].headRefName",
             ],
-        )?
-        .lines()
-        .map(str::to_owned)
-        .collect();
+        )?;
+        let merged: BTreeSet<String> = answered.lines().map(str::to_owned).collect();
+        if answered.lines().count() >= MERGED_READ_AT_ONCE {
+            return Err(not_proven(format!(
+                "the forge holds {MERGED_READ_AT_ONCE} merged requests or more, and one question reads no further"
+            )));
+        }
         let (items, unproven) = split_by_proof(&repo, &spec.branches, &merged);
         Ok(ActionOutcome::Went(json!({
             "items": items,
             "unproven": unproven,
+            "why": "",
         })))
     }
 
@@ -165,6 +212,6 @@ impl Action for ProvenBranchesAction {
     }
 }
 
-pub fn register_proven_branches(registry: &mut flow::ActionRegistry) {
-    registry.register(PROVEN_BRANCHES_ACTION, ProvenBranchesAction);
+pub fn register_proven_branches(registry: &mut flow::ActionRegistry, forges: Vec<ForgeProgram>) {
+    registry.register(PROVEN_BRANCHES_ACTION, ProvenBranchesAction { forges });
 }

@@ -158,3 +158,16 @@ fn the_shipped_flow_that_closes_finished_work_watches_its_root() {
 
     assert_eq!(reading, json!(["work/free-to-close"]));
 }
+
+#[test]
+fn the_forge_a_policy_declares_reaches_its_program_through_a_descriptor() {
+    let forges = registry::House::empty().tools.forge_programs();
+    let program = actions::proven::program_for(&forges, "github")
+        .expect("a shipped descriptor speaks for the forge this repository declares");
+    assert!(!program.program.is_empty());
+    assert!(program.never_inherited.contains(&program.token_variable));
+    assert_eq!(
+        actions::proven::program_for(&forges, "a-forge-nobody-declares"),
+        None
+    );
+}
