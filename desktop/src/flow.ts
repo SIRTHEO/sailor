@@ -237,6 +237,11 @@ const ACTION_KIND: Record<string, StepKind> = {
   delivery_request: "check",
   sailor_in_service: "check",
   close_the_worktree: "check",
+  // Cutting a tree is a gesture on the machine, and the only thing its step
+  // does: what happens inside the tree is another step, so a failure there
+  // still leaves a path the give-back can read.
+  take_a_tree: "gesture",
+  give_a_tree_back: "gesture",
   // The head of a delivered branch pushed up under its archive tag before the
   // branch is deleted: a gesture on the world, like the patch that is applied.
   archive_the_head: "gesture",

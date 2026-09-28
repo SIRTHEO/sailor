@@ -79,6 +79,16 @@ fn registry(manual_pending: bool) -> ActionRegistry {
         "candidate_gate",
         Answers(json!({"privacy_exit": 0, "ref": "c0ffee"})),
     );
+    // Taking the tree and giving it back are steps of their own now, so the run
+    // reaches the merge through them: a stand-in answers what each one answers.
+    actions.register(
+        "take_a_tree",
+        Answers(json!({"tree": "/repo-worktrees/run/take_the_tree"})),
+    );
+    actions.register(
+        "give_a_tree_back",
+        Answers(json!({"removed": "/repo-worktrees/run/take_the_tree"})),
+    );
     actions
 }
 
