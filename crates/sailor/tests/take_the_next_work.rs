@@ -229,13 +229,16 @@ fn seed(ledger: &Ledger, fixtures: &Path) {
     }
 }
 
-fn registry_over(ledger: &Ledger) -> ActionRegistry {
+/// The worker is all that changes between the cases, so the rest of the registry
+/// is written once: a case that misses the pair taking a tree and giving it back
+/// cannot reach the end of the flow.
+fn registry_over(ledger: &Ledger, worker: impl actions::ToolResolver + 'static) -> ActionRegistry {
     let mut registry = ActionRegistry::default();
     actions::register_default(&mut registry);
     trigger::register_default(&mut registry);
     registry.register(
         actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(FakeCheapWorker)
+        actions::ExternalEngineAction::resolving_with(worker)
             .recording_to(Some(ledger.clone())),
     );
     actions::store::register_store(&mut registry, Some(ledger.clone()));
@@ -243,6 +246,8 @@ fn registry_over(ledger: &Ledger) -> ActionRegistry {
         actions::handoff::HANDED_TO_AGENT_ACTION,
         actions::handoff::HandoffAction::new(),
     );
+    actions::worktree::register_take_a_tree(&mut registry, Some(ledger.clone()));
+    actions::worktree::register_give_a_tree_back(&mut registry, Some(ledger.clone()));
     registry
 }
 
@@ -257,7 +262,7 @@ fn run_once(
     project: &str,
     fixtures: &Path,
 ) -> (Execution, InMemoryRecordStore) {
-    let registry = registry_over(ledger);
+    let registry = registry_over(ledger, FakeCheapWorker);
     let store = InMemoryRecordStore::default();
     let mut shared = SharedState::new();
     shared.insert(
@@ -279,6 +284,24 @@ fn run_once(
         .execute(graph, request, &store, &registry, &SystemClock)
         .expect("the run executes without breaking the engine itself");
     (execution, store)
+}
+
+/// What the run broke on, in the words the step itself gave: a list of phases
+/// says which step stopped, never why.
+fn what_broke(store: &InMemoryRecordStore) -> String {
+    store
+        .all()
+        .iter()
+        .filter(|record| record.outcome == Some(Outcome::Broke))
+        .map(|record| {
+            format!(
+                "{}: {}",
+                record.step_id,
+                record.said.clone().unwrap_or_default()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn ran_execute(store: &InMemoryRecordStore) -> bool {
@@ -332,7 +355,7 @@ fn without_a_claim_two_runners_can_both_declare_the_same_task_done() {
     let fixtures = make_fixtures();
     let ledger = fresh_ledger("red");
     seed(&ledger, &fixtures);
-    let registry = registry_over(&ledger);
+    let registry = registry_over(&ledger, FakeCheapWorker);
     let shared = SharedState::new();
 
     let select = registry
@@ -514,19 +537,7 @@ fn a_worker_that_leaves_the_tree_clean_still_gets_it_read_by_acceptance() {
         })
         .expect("a queue record is written");
 
-    let mut registry = ActionRegistry::default();
-    actions::register_default(&mut registry);
-    trigger::register_default(&mut registry);
-    registry.register(
-        actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(SilentCheapWorker)
-            .recording_to(Some(ledger.clone())),
-    );
-    actions::store::register_store(&mut registry, Some(ledger.clone()));
-    registry.register(
-        actions::handoff::HANDED_TO_AGENT_ACTION,
-        actions::handoff::HandoffAction::new(),
-    );
+    let registry = registry_over(&ledger, SilentCheapWorker);
 
     let graph = full_graph();
     let store = InMemoryRecordStore::default();
@@ -608,19 +619,7 @@ fn a_step_with_a_tree_of_its_own_and_a_repo_cuts_from_that_repo() {
         })
         .expect("a queue record is written");
 
-    let mut registry = ActionRegistry::default();
-    actions::register_default(&mut registry);
-    trigger::register_default(&mut registry);
-    registry.register(
-        actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(FakeCheapWorker)
-            .recording_to(Some(ledger.clone())),
-    );
-    actions::store::register_store(&mut registry, Some(ledger.clone()));
-    registry.register(
-        actions::handoff::HANDED_TO_AGENT_ACTION,
-        actions::handoff::HandoffAction::new(),
-    );
+    let registry = registry_over(&ledger, FakeCheapWorker);
 
     let graph = full_graph();
     let store = InMemoryRecordStore::default();
@@ -709,12 +708,13 @@ fn a_worker_that_acknowledges_the_mandate_finishes_and_its_record_carries_the_di
         .expect("a queue record is written");
 
     let graph = full_graph();
-    let (execution, _store) = run_once(&graph, &ledger, "ack-ok-1", "gamma", &fixtures);
+    let (execution, store) = run_once(&graph, &ledger, "ack-ok-1", "gamma", &fixtures);
 
     assert!(
         matches!(execution.decisions.last(), Some(Decision::Complete)),
-        "{:?}",
-        execution.decisions
+        "{:?}: {}",
+        execution.decisions,
+        what_broke(&store)
     );
 
     let task = ledger
@@ -769,19 +769,7 @@ fn a_worker_that_never_acknowledges_the_mandate_is_parked_before_acceptance_ever
         })
         .expect("a queue record is written");
 
-    let mut registry = ActionRegistry::default();
-    actions::register_default(&mut registry);
-    trigger::register_default(&mut registry);
-    registry.register(
-        actions::EXTERNAL_ENGINE_ACTION,
-        actions::ExternalEngineAction::resolving_with(UnacknowledgingWorker)
-            .recording_to(Some(ledger.clone())),
-    );
-    actions::store::register_store(&mut registry, Some(ledger.clone()));
-    registry.register(
-        actions::handoff::HANDED_TO_AGENT_ACTION,
-        actions::handoff::HandoffAction::new(),
-    );
+    let registry = registry_over(&ledger, UnacknowledgingWorker);
 
     let graph = full_graph();
     let store = InMemoryRecordStore::default();
@@ -832,6 +820,12 @@ fn a_worker_that_never_acknowledges_the_mandate_is_parked_before_acceptance_ever
     );
     assert!(
         step_went(&store, "release_tree"),
-        "a task parked on a person still holds its tree"
+        "a task parked on a person still holds its tree: {}, {:?}",
+        what_broke(&store),
+        store
+            .all()
+            .iter()
+            .map(|record| (record.step_id.clone(), record.outcome))
+            .collect::<Vec<_>>()
     );
 }
