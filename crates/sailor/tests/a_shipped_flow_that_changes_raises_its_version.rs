@@ -63,8 +63,8 @@ const SHIPPED_VERSIONS_TODAY: &[(&str, u32, &str)] = &[
     ),
     (
         "integrate-on-the-trunk",
-        1,
-        "2c52aecd42dea3d60b6bf91281b783bc3b00f0976385b9af0c2c4e642e39103b",
+        2,
+        "b39c102c5fe850f6e2b4a0d2dc4b63318d75ee035940a184958af012694afb7a",
     ),
     (
         "judge-a-change",
@@ -118,8 +118,8 @@ const SHIPPED_VERSIONS_TODAY: &[(&str, u32, &str)] = &[
     ),
     (
         "review-a-pinned-commit",
-        1,
-        "b2ce0486823e87c0dd45d28cc3771c26e20daac2f84d18c42b17cf839da60974",
+        2,
+        "4155a32457ef71a2b9f930a9b5c45dfdddc566015f70448a3f2c0e627e6f5843",
     ),
     (
         "run-one-bench-task",
@@ -138,8 +138,8 @@ const SHIPPED_VERSIONS_TODAY: &[(&str, u32, &str)] = &[
     ),
     (
         "take-the-next-work",
-        1,
-        "2917702461d3ef27a4cc7d92205e0f765439b8c1abe852a30890fe2c29bea591",
+        2,
+        "d5c583dbe72087888200a99f2a796dbfe1cb633dbcc15d841312610a756d978d",
     ),
     (
         "validate-a-bench-task",
