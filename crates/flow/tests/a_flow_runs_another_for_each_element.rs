@@ -422,6 +422,47 @@ fn a_failing_element_fails_the_step_and_is_named_by_its_index() {
     );
 }
 
+/// A step that asks to go past a break still runs every element after a broken
+/// one, and still fails, naming every element that broke: one element nobody
+/// can finish must not keep the rest of the list from being done.
+#[test]
+fn past_a_break_every_element_runs_and_every_broken_one_is_named() {
+    let scratch = Scratch::new("past");
+    scratch.put(LEAF);
+    let bench = Bench::new(scratch.place(), Leaf::new(None));
+    let items = json!([{"n": 0}, {"n": 1, "fail": true}, {"n": 2}, {"n": 3, "fail": true}]);
+    let graph = Graph::new(vec![step(
+        "ripeti",
+        &[],
+        FOR_EACH_ACTION,
+        Some(json!({ "flow": "foglia", "items": items, "at_once": 1, "past_a_break": true })),
+    )])
+    .expect("valid graph");
+
+    let execution = run(&bench, graph, json!({}));
+
+    assert!(
+        matches!(execution.decisions.last(), Some(Decision::Failed(_))),
+        "a broken element still fails the step: {:?}",
+        execution.decisions.last()
+    );
+    assert_eq!(
+        bench.leaf.seen().len(),
+        4,
+        "every element ran, the ones after a break too"
+    );
+    let record = record_of(&bench, "ripeti");
+    assert_eq!(
+        record.failure_class.as_deref(),
+        Some("for_each_child_failed")
+    );
+    let said = record.said.unwrap_or_default();
+    assert!(
+        said.contains("1, 3 of 4"),
+        "the sentence names every element that broke: {said}"
+    );
+}
+
 /// Children open together, as many as the executor's own front width and no
 /// more. Watched by reflection, not by a stopwatch: each child waits to see
 /// the others alive, and the peak of children alive at once is the width.

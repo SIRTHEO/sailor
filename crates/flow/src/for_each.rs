@@ -14,7 +14,7 @@ use std::sync::Arc;
 pub const FOR_EACH_ACTION: &str = "for_each";
 
 /// The fields the step knows. For `flow check`, not for execution.
-const KNOWN_FIELDS: &[&str] = &["flow", "items", "inputs", "at_once"];
+const KNOWN_FIELDS: &[&str] = &["flow", "items", "inputs", "at_once", "past_a_break"];
 
 /// What the step declares. `items` arrives already a list: the executor has
 /// replaced any `$from` before an action reads its input.
@@ -31,6 +31,11 @@ pub struct Repeat {
     /// children each build a whole tree asks for one.
     #[serde(default)]
     pub at_once: Option<usize>,
+    /// The elements after a broken one are still run. The step still breaks,
+    /// naming every element that did: for a list where one element nobody can
+    /// finish would otherwise hold back every one queued behind it.
+    #[serde(default)]
+    pub past_a_break: bool,
 }
 
 /// The step that runs a flow for each element of a list.
@@ -101,18 +106,26 @@ impl Action for ForEachAction {
             for (offset, end) in ends.into_iter().enumerate() {
                 ended[first + offset] = Some(end);
             }
-            if failed {
+            if failed && !call.past_a_break {
                 break;
             }
             first += group.len();
         }
 
-        // The first failure by index names the element; only when nobody
-        // failed does a child still open make the whole step wait.
-        for (nth, end) in ended.iter().enumerate() {
-            if let Some(Err(error)) = end {
-                return Err(child_failed(nth, count, error));
-            }
+        // Every failure is named by its index; only when nobody failed does a
+        // child still open make the whole step wait.
+        let broken: Vec<(usize, &ActionError)> = ended
+            .iter()
+            .enumerate()
+            .filter_map(|(nth, end)| match end {
+                Some(Err(error)) => Some((nth, error)),
+                _ => None,
+            })
+            .collect();
+        match broken.as_slice() {
+            [] => {}
+            [(nth, error)] => return Err(child_failed(*nth, count, error)),
+            [(_, first), ..] => return Err(children_failed(&broken, count, first)),
         }
         for (nth, end) in ended.iter().enumerate() {
             if let Some(Ok(end)) = end {
@@ -169,6 +182,25 @@ fn child_failed(nth: usize, count: usize, error: &ActionError) -> ActionError {
                 ("index", &nth.to_string()),
                 ("count", &count.to_string()),
                 ("why", &error.to_string()),
+            ],
+        ),
+    )
+}
+
+fn children_failed(
+    broken: &[(usize, &ActionError)],
+    count: usize,
+    first: &ActionError,
+) -> ActionError {
+    let indices: Vec<String> = broken.iter().map(|(nth, _)| nth.to_string()).collect();
+    ActionError::new(
+        "for_each_child_failed",
+        catalogue::say(
+            "flow.for_each.children_failed",
+            &[
+                ("indices", &indices.join(", ")),
+                ("count", &count.to_string()),
+                ("why", &first.to_string()),
             ],
         ),
     )

@@ -152,6 +152,9 @@ pub fn registry_in(
     // Detecting what is here is an action like any other, and it detects on
     // the house's machine, read back from the tools the house built on it.
     toolbox::register_default(&mut registry, tools.machine().clone());
+    // Which program speaks for which forge is read before the resolver
+    // takes the tools: a forge is declared, never named here (ADR-020).
+    let forges = tools.forge_programs();
     // "Do these flows run here?" — the missing half, because a list of what
     // exists does not tell anyone what will stop working.
     toolbox::register_needs(&mut registry);
@@ -226,6 +229,8 @@ pub fn registry_in(
     actions::review_verdict::register_review_verdict(&mut registry);
     actions::worktree::register_close_the_worktree(&mut registry);
     actions::archive::register_archive_the_head(&mut registry);
+    actions::finished::register_finished_branches(&mut registry);
+    actions::proven::register_proven_branches(&mut registry, forges);
     actions::presence::register_presence(&mut registry, ledger.clone());
     // The graph a flow deposits proposals and decisions into.
     actions::graph_memory::register_graph_memory(&mut registry, ledger.clone());
@@ -267,7 +272,10 @@ mod tests {
         let house = House::under(&scratch);
         assert_eq!(house.home.as_deref(), Some(scratch.as_path()));
         assert_eq!(house.store_dir, Some(scratch.join("ledger")));
-        assert!(house.tools.declares("claude-code"), "the shipped descriptors are there");
+        assert!(
+            house.tools.declares("claude-code"),
+            "the shipped descriptors are there"
+        );
 
         let empty = House::empty();
         assert_eq!(empty.home, None);
@@ -374,13 +382,7 @@ mod tests {
 
         let store = flow::InMemoryRecordStore::default();
         flow::InProcessExecutor
-            .execute(
-                &flow.graph,
-                request,
-                &store,
-                &registry,
-                &flow::SystemClock,
-            )
+            .execute(&flow.graph, request, &store, &registry, &flow::SystemClock)
             .expect("the run goes");
 
         let shared = seen

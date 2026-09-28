@@ -743,6 +743,11 @@
       "label": "GitHub CLI",
       "detect": { "command": "gh" },
       "version": { "args": ["--version"] },
+      "forge": {
+        "serves": "github",
+        "token_variable": "GH_TOKEN",
+        "never_inherited": ["GH_TOKEN", "GITHUB_TOKEN", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"]
+      },
       "config": ["~/.config/gh/config.yml", "~/.config/gh/hosts.yml"]
     },
     {

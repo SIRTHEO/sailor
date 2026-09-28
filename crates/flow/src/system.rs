@@ -180,6 +180,12 @@ pub const FLOWS: &[(&str, &str)] = &[
         "close-the-work",
         include_str!("../system/close-the-work.flow.json"),
     ),
+    // And its caller: `close-the-work` released one branch and nobody called
+    // it, so work finished weeks ago was still standing.
+    (
+        "close-the-finished-work",
+        include_str!("../system/close-the-finished-work.flow.json"),
+    ),
     // And the second, the only destructive one: it empties a session that has
     // handed on, and only once nobody is being waited for in there.
     (

@@ -792,6 +792,18 @@ pub struct SessionHooks {
     pub extra: BTreeMap<String, Value>,
 }
 
+/// A program that speaks for a forge: the name a delivery policy gives the
+/// forge, the variable the program reads its token from, and every variable an
+/// inherited environment would use to make it act as another account or for
+/// another repository.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Forge {
+    pub serves: String,
+    pub token_variable: String,
+    pub never_inherited: Vec<String>,
+}
+
 /// One line of the list of what to look for.
 ///
 /// **IT DOES NOT REFUSE FIELDS IT DOES NOT KNOW.** `deny_unknown_fields` threw a
@@ -817,6 +829,11 @@ pub struct Descriptor {
     pub enumerate: Option<Enumerate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<VersionProbe>,
+    /// The forge this program speaks for, when it speaks for one: how a
+    /// repository's declared forge (ADR-020) reaches a program nobody names in
+    /// the code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forge: Option<Forge>,
     /// How a one-shot question is put to it, for engines that accept one.
     /// Without this, a step wanting to use it must write the options itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]

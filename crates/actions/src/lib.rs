@@ -34,6 +34,7 @@ pub mod digest;
 pub mod dormant_steps;
 pub mod draft;
 pub mod faults;
+pub mod finished;
 pub mod graph_memory;
 pub mod handoff;
 pub mod history;
@@ -45,6 +46,7 @@ pub mod memory;
 pub mod notes;
 pub mod presence;
 pub mod price_every_call;
+pub mod proven;
 pub mod reserve;
 pub mod review_verdict;
 pub mod search;
@@ -81,8 +83,7 @@ pub use cost::{current_price_list, price_list_from};
 pub use engine::{resolve_role, ExternalEngineAction};
 pub use equipment::{
     equipment_asking_for, equipment_for, equipment_with_keys, equipment_with_keys_and_disk,
-    equipment_with_keys_disk_and_keychain,
-    Equipment,
+    equipment_with_keys_disk_and_keychain, Equipment,
 };
 pub use probe::{
     judge_dry_run, judge_login_status, probe_dry_run, probe_dry_run_with, probe_login_status,

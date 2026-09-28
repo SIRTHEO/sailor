@@ -71,6 +71,31 @@ impl Tools {
             .any(|loaded| loaded.descriptor.id == id)
     }
 
+    /// Every program a descriptor declares as speaking for a forge, with the
+    /// command that starts it.
+    pub fn forge_programs(&self) -> Vec<actions::proven::ForgeProgram> {
+        self.catalog
+            .live()
+            .into_iter()
+            .filter_map(|loaded| {
+                let forge = loaded.descriptor.forge.as_ref()?;
+                let program = loaded
+                    .descriptor
+                    .detect
+                    .as_ref()?
+                    .as_slice()
+                    .iter()
+                    .find_map(|probe| probe.command.clone())?;
+                Some(actions::proven::ForgeProgram {
+                    forge: forge.serves.clone(),
+                    program,
+                    token_variable: forge.token_variable.clone(),
+                    never_inherited: forge.never_inherited.clone(),
+                })
+            })
+            .collect()
+    }
+
     /// How a tool stands against a capability a step asked for.
     ///
     /// **`None` IS NOT "IT DOES NOT HAVE IT".** It is "no descriptor declares
