@@ -311,7 +311,7 @@ fn a_program_that_refuses_over_several_lines_leaves_one_line_naming_the_tree() {
     let program = scratch.0.join("a-forge-program");
     std::fs::write(
         &program,
-        "#!/bin/sh\necho 'no token here' >&2\necho 'try logging in | again' >&2\nexit 1\n",
+        "#!/bin/sh\necho 'no token here' >&2\necho 'try logging in | | again' >&2\nprintf 'a carriage\\rreturn' >&2\nexit 1\n",
     )
     .expect("a program that refuses");
     use std::os::unix::fs::PermissionsExt;
@@ -321,8 +321,8 @@ fn a_program_that_refuses_over_several_lines_leaves_one_line_naming_the_tree() {
     let answer = prove(&tree, vec![forge]);
     let why = answer["why"].as_str().unwrap_or("");
     assert!(
-        !why.contains('\n') && !why.contains(" | "),
-        "one line: {why:?}"
+        !why.contains(['\n', '\r', '|']),
+        "one line, with no separator the register refuses: {why:?}"
     );
     assert!(
         why.contains("no token here") && why.contains("try logging in"),

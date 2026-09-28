@@ -63,12 +63,12 @@ pub fn split_by_proof(
 /// refuses a line break and its own column separator.
 pub fn one_line(reason: &str) -> String {
     reason
-        .lines()
+        .split(['\n', '\r'])
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .collect::<Vec<_>>()
         .join("; ")
-        .replace(" | ", " / ")
+        .replace('|', "/")
 }
 
 /// The program that speaks for the forge a policy declares, if a descriptor
