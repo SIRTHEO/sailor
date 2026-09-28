@@ -106,10 +106,9 @@ impl Action for FinishedBranchesAction {
         let spec: FinishedSpec = serde_json::from_value(input.clone())
             .map_err(|error| ActionError::new("invalid_input", error.to_string()))?;
         named_not_flagged("the prefix", &spec.prefix)?;
-        let repo = spec
-            .repo
-            .or(spec.workdir)
-            .ok_or_else(|| not_read("no tree to read: neither a repo nor a workdir is named".to_owned()))?;
+        let repo = spec.repo.or(spec.workdir).ok_or_else(|| {
+            not_read("no tree to read: neither a repo nor a workdir is named".to_owned())
+        })?;
         // Which remote and which trunk are the tree's to declare, not the
         // flow's to name (ADR-020): both are read where `sailor policy` reads.
         let remote = workspace::delivery::policy_on_the_trunk(&repo)

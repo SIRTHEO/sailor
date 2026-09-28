@@ -82,8 +82,7 @@ pub use cost::{current_price_list, price_list_from};
 pub use engine::{resolve_role, ExternalEngineAction};
 pub use equipment::{
     equipment_asking_for, equipment_for, equipment_with_keys, equipment_with_keys_and_disk,
-    equipment_with_keys_disk_and_keychain,
-    Equipment,
+    equipment_with_keys_disk_and_keychain, Equipment,
 };
 pub use probe::{
     judge_dry_run, judge_login_status, probe_dry_run, probe_dry_run_with, probe_login_status,

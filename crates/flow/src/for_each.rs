@@ -187,7 +187,11 @@ fn child_failed(nth: usize, count: usize, error: &ActionError) -> ActionError {
     )
 }
 
-fn children_failed(broken: &[(usize, &ActionError)], count: usize, first: &ActionError) -> ActionError {
+fn children_failed(
+    broken: &[(usize, &ActionError)],
+    count: usize,
+    first: &ActionError,
+) -> ActionError {
     let indices: Vec<String> = broken.iter().map(|(nth, _)| nth.to_string()).collect();
     ActionError::new(
         "for_each_child_failed",

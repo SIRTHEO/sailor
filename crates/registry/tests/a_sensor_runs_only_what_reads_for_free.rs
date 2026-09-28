@@ -78,7 +78,11 @@ fn git(at: &std::path::Path, args: &[&str]) {
         .args(args)
         .output()
         .expect("git runs");
-    assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 fn a_root_with_finished_work() -> (Scratch, std::path::PathBuf) {
@@ -100,13 +104,30 @@ fn a_root_with_finished_work() -> (Scratch, std::path::PathBuf) {
     .expect("a policy on the trunk");
     git(&tree, &["add", "-A"]);
     git(&tree, &["commit", "-q", "-m", "the work"]);
-    git(&tree, &["remote", "add", "origin", &at.join("origin.git").to_string_lossy()]);
+    git(
+        &tree,
+        &[
+            "remote",
+            "add",
+            "origin",
+            &at.join("origin.git").to_string_lossy(),
+        ],
+    );
     git(&tree, &["push", "-q", "origin", "main"]);
     for branch in ["work/free-to-close", "work/a-tree-stands-on-it"] {
         git(&tree, &["branch", branch, "main"]);
     }
     let second = at.join("second");
-    git(&tree, &["worktree", "add", "-q", &second.to_string_lossy(), "work/a-tree-stands-on-it"]);
+    git(
+        &tree,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            &second.to_string_lossy(),
+            "work/a-tree-stands-on-it",
+        ],
+    );
     (scratch, tree)
 }
 

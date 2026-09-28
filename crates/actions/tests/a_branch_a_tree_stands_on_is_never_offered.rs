@@ -199,15 +199,19 @@ fn the_tree_it_is_offered_is_read_when_no_repo_is_named() {
         flow::ActionOutcome::Went(said) => said,
         other => panic!("the reading did not go: {other:?}"),
     };
-    assert_eq!(said["branches"], serde_json::json!(["work/free-to-close"]), "{said}");
+    assert_eq!(
+        said["branches"],
+        serde_json::json!(["work/free-to-close"]),
+        "{said}"
+    );
 }
 
 /// With neither a repo nor a tree to work in there is nothing to read, and an
 /// empty list would close nothing while looking like a reading.
 #[test]
 fn with_no_tree_at_all_nothing_is_read() {
-    let refused = read_finished(serde_json::json!({"prefix": "work/"}))
-        .expect_err("no tree is no reading");
+    let refused =
+        read_finished(serde_json::json!({"prefix": "work/"})).expect_err("no tree is no reading");
     assert!(
         refused.to_string().contains("no tree"),
         "the refusal says what is missing: {refused}"

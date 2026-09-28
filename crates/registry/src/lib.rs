@@ -268,7 +268,10 @@ mod tests {
         let house = House::under(&scratch);
         assert_eq!(house.home.as_deref(), Some(scratch.as_path()));
         assert_eq!(house.store_dir, Some(scratch.join("ledger")));
-        assert!(house.tools.declares("claude-code"), "the shipped descriptors are there");
+        assert!(
+            house.tools.declares("claude-code"),
+            "the shipped descriptors are there"
+        );
 
         let empty = House::empty();
         assert_eq!(empty.home, None);
@@ -375,13 +378,7 @@ mod tests {
 
         let store = flow::InMemoryRecordStore::default();
         flow::InProcessExecutor
-            .execute(
-                &flow.graph,
-                request,
-                &store,
-                &registry,
-                &flow::SystemClock,
-            )
+            .execute(&flow.graph, request, &store, &registry, &flow::SystemClock)
             .expect("the run goes");
 
         let shared = seen

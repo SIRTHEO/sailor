@@ -446,9 +446,16 @@ fn past_a_break_every_element_runs_and_every_broken_one_is_named() {
         "a broken element still fails the step: {:?}",
         execution.decisions.last()
     );
-    assert_eq!(bench.leaf.seen().len(), 4, "every element ran, the ones after a break too");
+    assert_eq!(
+        bench.leaf.seen().len(),
+        4,
+        "every element ran, the ones after a break too"
+    );
     let record = record_of(&bench, "ripeti");
-    assert_eq!(record.failure_class.as_deref(), Some("for_each_child_failed"));
+    assert_eq!(
+        record.failure_class.as_deref(),
+        Some("for_each_child_failed")
+    );
     let said = record.said.unwrap_or_default();
     assert!(
         said.contains("1, 3 of 4"),
