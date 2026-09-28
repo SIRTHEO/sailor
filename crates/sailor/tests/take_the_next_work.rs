@@ -453,6 +453,42 @@ fn two_runners_racing_the_same_store_take_each_task_at_most_once() {
         );
     }
 
+    // **EACH RUN GIVES BACK THE TREE IT TOOK.** The give-back used to read the
+    // register for the newest row under this repo and step, so two runners at
+    // once could both be handed the same tree: the first gave it back and the
+    // second broke on a tree no register carried any more. A raw shell with
+    // `accept: ["failed"]` hid that, and the flow has a step of its own now.
+    let taken: Vec<String> = results
+        .iter()
+        .filter_map(|(_, store)| {
+            store
+                .all()
+                .iter()
+                .find(|record| record.step_id == "take_the_tree")
+                .and_then(|record| record.output.clone())
+                .and_then(|said| said.get("tree")?.as_str().map(str::to_owned))
+        })
+        .collect();
+    let apart: std::collections::BTreeSet<&String> = taken.iter().collect();
+    assert_eq!(
+        apart.len(),
+        taken.len(),
+        "two runners were handed the same tree: {taken:?}"
+    );
+    for (_, store) in &results {
+        if store
+            .all()
+            .iter()
+            .any(|record| record.step_id == "take_the_tree")
+        {
+            assert!(
+                step_went(store, "release_tree"),
+                "a run that took a tree gives it back: {}",
+                what_broke(store)
+            );
+        }
+    }
+
     let claims = ledger.records_in("work-queue-claims").expect("the claims collection reads");
     assert_eq!(
         claims.len(),

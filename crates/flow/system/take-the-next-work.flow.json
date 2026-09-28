@@ -1,6 +1,6 @@
 {
   "id": "take-the-next-work",
-  "version": 2,
+  "version": 3,
   "description": "One project's queue, taken one task at a time. The trigger carries the project; the store picks its highest-priority queued task, whole. A conditional write claims it — the same key refuses a second writer, so two runners racing the same queue take it at most once. The mandate the worker is about to receive is digested and recorded before it is sent, and the worker's answer must open with that digest acknowledged, or the task is parked without ever running the acceptance command. A cheap worker attempts it; the project's own acceptance command judges the result, required: the run has nothing to close on until that command has run and passed. What it decided is written back to the task's own record, and a task the cheap worker could not finish is hand off to a person instead of retried forever.",
   "graph": {
     "steps": [
@@ -243,23 +243,41 @@
         }
       },
       {
+        "id": "take_the_tree",
+        "deps": [
+          "select",
+          "claim_state"
+        ],
+        "action": "take_a_tree",
+        "max_attempts": 1,
+        "when": null,
+        "with": {
+          "repo": {
+            "$from": "/select/records/0/value/workspace"
+          },
+          "lock": "a worker of this run is in it"
+        },
+        "input_schema": {
+          "type": "any"
+        },
+        "output_schema": {
+          "type": "any"
+        }
+      },
+      {
         "id": "execute",
         "deps": [
           "select",
           "claim_state",
           "mandate_digest",
-          "mandate_recorded"
+          "mandate_recorded",
+          "take_the_tree"
         ],
         "action": "external_engine",
         "max_attempts": 1,
         "when": null,
         "with": {
           "role": "CHEAP_WORKER",
-          "tree": "own",
-          "repo": {
-            "$from": "/select/records/0/value/workspace"
-          },
-          "keep_tree": true,
           "stdin": {
             "$join": [
               "Mandate ",
@@ -277,7 +295,10 @@
               }
             ]
           },
-          "timeout_secs": 600
+          "timeout_secs": 600,
+          "workdir": {
+            "$from": "/take_the_tree/tree"
+          }
         },
         "input_schema": {
           "type": "any"
@@ -327,40 +348,10 @@
         }
       },
       {
-        "id": "worker_tree",
-        "deps": [
-          "select",
-          "execute"
-        ],
-        "action": "store_select",
-        "max_attempts": 1,
-        "when": null,
-        "with": {
-          "collection": "open-worktrees",
-          "where": {
-            "repo": {
-              "$from": "/select/records/0/value/workspace"
-            },
-            "step": "execute"
-          },
-          "order_by": {
-            "field": "opened_at",
-            "direction": "desc"
-          },
-          "limit": 1
-        },
-        "input_schema": {
-          "type": "any"
-        },
-        "output_schema": {
-          "type": "any"
-        }
-      },
-      {
         "id": "acceptance",
         "deps": [
           "select",
-          "worker_tree",
+          "take_the_tree",
           "ack_check"
         ],
         "action": "shell_check",
@@ -373,7 +364,7 @@
         "with": {
           "command": "./check.sh",
           "workdir": {
-            "$from": "/worker_tree/records/0/value/path"
+            "$from": "/take_the_tree/tree"
           },
           "accept": [
             "failed",
@@ -393,21 +384,21 @@
         "id": "release_tree",
         "deps": [
           "select",
-          "worker_tree",
+          "take_the_tree",
           "acceptance"
         ],
         "action": "give_a_tree_back",
         "max_attempts": 1,
         "when": {
           "kind": "pointer_exists",
-          "pointer": "/worker_tree/records/0/value/path"
+          "pointer": "/take_the_tree/tree"
         },
         "with": {
           "repo": {
             "$from": "/select/records/0/value/workspace"
           },
           "tree": {
-            "$from": "/worker_tree/records/0/value/path"
+            "$from": "/take_the_tree/tree"
           }
         },
         "input_schema": {

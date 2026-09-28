@@ -138,8 +138,8 @@ const SHIPPED_VERSIONS_TODAY: &[(&str, u32, &str)] = &[
     ),
     (
         "take-the-next-work",
-        2,
-        "d5c583dbe72087888200a99f2a796dbfe1cb633dbcc15d841312610a756d978d",
+        3,
+        "afd6c2d089f6a84b4e8b9c2f8362fc850bbfab8780eb58f8365a9238c519d1c9",
     ),
     (
         "validate-a-bench-task",
