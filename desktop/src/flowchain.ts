@@ -19,6 +19,8 @@ export interface FlowChain {
   resolved_in: string | null;
   replaced: FlowCandidate[];
   winner: FlowCandidate;
+  /** Set when the winner replaces an older version of the shipped flow. */
+  stale?: { shipped: number; copied: number | null };
 }
 
 /** The chains of every flow the shell sees, read in one call. */
@@ -60,11 +62,19 @@ export function chainMark(read: ChainsRead, name: string): ChainMark | null {
   return chain && text ? { text, title: chainWords(chain) } : null;
 }
 
-/** «replaces built in», or `null` when the flow that runs hides nothing. */
+/**
+ * «replaces built in», and the versions when the shipped flow rose past the
+ * copy; `null` when the flow that runs hides nothing.
+ */
 export function replacesWords(chain: FlowChain | undefined): string | null {
   if (!chain || chain.replaced.length === 0) return null;
-  const origins = [...new Set(chain.replaced.map((one) => one.origin))];
-  return t("window.flow.replaces", { replaced: origins.join(", ") });
+  const replaced = [...new Set(chain.replaced.map((one) => one.origin))].join(", ");
+  const stale = chain.stale;
+  if (!stale) return t("window.flow.replaces", { replaced });
+  const shipped = String(stale.shipped);
+  return stale.copied === null
+    ? t("window.flow.replaces_unsaid", { replaced, shipped })
+    : t("window.flow.replaces_stale", { replaced, copied: String(stale.copied), shipped });
 }
 
 /** The whole chain, one candidate a line, headed by where it was resolved. */

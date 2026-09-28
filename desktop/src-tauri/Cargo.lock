@@ -2781,6 +2781,7 @@ dependencies = [
  "models",
  "profiles",
  "registry",
+ "rusqlite",
  "sailor",
  "serde",
  "serde_json",

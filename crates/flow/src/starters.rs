@@ -301,7 +301,7 @@ pub fn judge(name: &str, text: &str) -> Vec<String> {
     for step in &used.pinned_models {
         say("flow.catalogue.judge.model_pinned", &[("step", step)]);
     }
-    for field in ["id", "from"] {
+    for field in ["id", "from", "version", "replaces"] {
         if entry.flow.get(field).is_some() {
             say("flow.catalogue.judge.carries_identity", &[("field", field)]);
         }

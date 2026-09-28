@@ -85,11 +85,11 @@ cargo test -p sailor -j 1 --test a_flow_never_grows_what_it_sends_in_silence --t
 cargo test -p flow -j 1
 ```
 
-**When `crates/actions` or a brake changes:** `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` — both suites, always both. A first-execution timeout on a fresh temp-file engine is rerun once and said aloud, not silently retried.
+**When `crates/actions` changes:** `cargo test -p actions -j 1 --no-fail-fast` and `cargo test -p flow -j 1` — both suites, always both. A first-execution timeout on a fresh temp-file engine is rerun once and said aloud, not silently retried.
 
-**When `crates/profiles`, the login probe or a launch changes:** `cargo test -p profiles -j 1`, plus one real probe on a real home (the probe test's own name), pasted rather than skipped.
+**When `crates/profiles` or `crates/actions/src/probe.rs` changes:** `cargo test -p profiles -j 1`, plus one real probe on a real home (the probe test's own name), pasted rather than skipped.
 
-**When `desktop/` changes:** `cd desktop && npm test` and `npx tsc --noEmit`, `cargo test --manifest-path desktop/src-tauri/Cargo.toml -j 1`, and — for anything a person would see on screen — a walkthrough of it against the fixture store, with screenshots.
+**When `desktop/` changes:** `cd desktop && npm test` and `npx tsc --noEmit`, `cargo test --manifest-path desktop/src-tauri/Cargo.toml -j 1`, and `cd desktop && npm run walkthrough`, which draws every scene of the window's sample at 375 and 1440 pixels and refuses one it cannot reach, one that scrolls sideways, or one that raised an error.
 
 The full rules behind each of these, and the ones specific to an agent working
 unattended in this tree, live in [`AGENTS.md`](AGENTS.md).

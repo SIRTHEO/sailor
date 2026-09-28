@@ -91,6 +91,11 @@ base64 = "0.22"
 # on the same machine.
 inventory = { path = "../../crates/inventory" }
 
+[dev-dependencies]
+# To write a hold the store cannot read back, which no gesture of the ledger
+# can. Already in the lock file through `ledger`, at this version.
+rusqlite = { version = "0.37", features = ["bundled"] }
+
 # Outside the workspace, on purpose. An empty `[workspace]` detaches this crate
 # from the root one: `sailor release` runs `cargo test --release --workspace`
 # for every target, so as a member this window would pull WebKit and a few

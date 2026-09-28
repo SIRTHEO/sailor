@@ -1,5 +1,6 @@
 {
   "id": "measure-the-baseline",
+  "version": 1,
   "description": "THE FIRST NUMBER OF THE EVALUATION LOOP: the flow under measurement, run on every task of a frozen set a declared number of times, one child at a time, each child judged by the deterministic judge and read from the ledger. The tasks come from `bench_tasks`, a root step whose input names the set, the runs per task, the flow under measurement and the binary that runs it, laid out as one item per task and run; `run-one-bench-task` does the rest for each; the list of child runs lands in the store under `bench-baselines` so the table can be drawn from the ledger afterwards. One child at a time on purpose: each one cuts a tree and runs the whole battery in it, and four together are what this machine's memory guard kills. The trigger carries only the launch; nothing here decides what the flow under measurement does.",
   "graph": {
     "steps": [

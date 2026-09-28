@@ -102,6 +102,7 @@ struct Glance {
     last_started: BTreeMap<String, i64>,
     streaks: Vec<flow::FailureStreak>,
     faults_written: BTreeSet<String>,
+    holds: BTreeMap<String, ledger::flow_holds::Hold>,
     ledger: Option<Ledger>,
 }
 
@@ -110,6 +111,7 @@ fn glance_at(ledger: &Ledger) -> Result<Glance, ledger::LedgerError> {
         last_started: ledger.last_started_at()?,
         streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
         faults_written: ledger.faults_written()?,
+        holds: ledger.flow_holds()?,
         ledger: Some(ledger.clone()),
     })
 }
@@ -194,6 +196,7 @@ fn tick_flows_with(
     let glance = last.read_or_say_it_could_not("cli.flow.beat_could_not_look")?;
     let last = &glance.last_started;
 
+    let holds = &glance.holds;
     let mut report = String::new();
     let mut ran = 0usize;
     let mut held = 0usize;
@@ -211,6 +214,9 @@ fn tick_flows_with(
         // so nobody could tell a working guard from a broken one.
         let reason = match &entry {
             Err(_) => Some(catalogue::say("cli.flow.will_not_load", &[])),
+            Ok(flow) if holds.contains_key(&flow.id) => {
+                Some(super::hold::hold_said(&holds[&flow.id]))
+            }
             Ok(flow) => match flow.schedule.as_ref() {
                 None => Some(catalogue::say("cli.flow.no_schedule_by_hand_only", &[])),
                 Some(schedule) => {
@@ -255,6 +261,16 @@ fn tick_flows_with(
     // failed run is remembered whatever the start came to: a writer that
     // cannot run says so once, instead of being asked again at every beat.
     for fault in flow::faults_due(&glance.streaks, &glance.faults_written) {
+        if let Some(hold) = holds.get(flow::system::FAULT_WRITER) {
+            held += 1;
+            let _ = writeln!(
+                report,
+                "{}\thold\t{}",
+                flow::system::FAULT_WRITER,
+                super::hold::hold_said(hold)
+            );
+            continue;
+        }
         ran += 1;
         let (word, said) = match start(flow::system::FAULT_WRITER, Some(&fault.flow)) {
             Ok(said) => ("ran", said),
@@ -283,6 +299,17 @@ fn tick_flows_with(
                 )
                 .map_err(|error| error.to_string())?;
         }
+    }
+    let (watching, watching_held): (Vec<Watching>, Vec<Watching>) = watching
+        .into_iter()
+        .partition(|(_, id, _)| !holds.contains_key(id));
+    for (name, id, _) in &watching_held {
+        held += 1;
+        let _ = writeln!(
+            report,
+            "{name}\thold\t{}",
+            super::hold::hold_said(&holds[id])
+        );
     }
     let (sensed, sensed_ran, sensed_held) =
         sense_the_watchers(&watching, glance.ledger.as_ref(), now, start);
@@ -384,25 +411,25 @@ fn sense_the_watchers(
     (said, ran, held)
 }
 
-/// What the beat does with the runs parked on a step that answered «not yet».
-///
-/// **A RUN WHOSE FLOW NO LONGER STARTS BY ITSELF IS LET GO, NEVER WOKEN.**
-/// Fifty-six of the fifty-seven parked on this machine belong to a flow that
-/// was switched off by hand after it emptied a live session: waking them would
-/// repeat that harm, and leaving them is the litter fault 163 is about.
+/// Two passes: the runs a step answered «not yet», and the runs whose handover
+/// outlived the deadline its own step declared. **IN THE FIRST, A RUN WHOSE
+/// FLOW NO LONGER STARTS BY ITSELF IS LET GO, NEVER WOKEN** — fifty-six of the
+/// fifty-seven parked belonged to a flow switched off by hand after it emptied
+/// a live session (fault 163). The second ends a wait the flow bounded itself,
+/// and ending a wait starts none of the work that switch was thrown against.
 pub fn ask_the_parked_again(
     sources: &[FlowSource],
     ledger: &Ledger,
     now: i64,
     resume: Resumer<'_>,
 ) -> (String, usize, usize) {
-    let Ok(parked) = ledger.runs_to_ask_again() else {
+    let (Ok(parked), Ok(holds)) = (ledger.runs_to_ask_again(), ledger.flow_holds()) else {
         return (String::new(), 0, 0);
     };
     let by_itself = flows_that_start_by_themselves(sources);
     let (mut said, mut woken, mut let_go) = (String::new(), 0, 0);
     for run in parked {
-        if by_itself.contains(&run.entity) {
+        if by_itself.contains(&run.entity) && !holds.contains_key(&run.entity) {
             woken += 1;
             let (word, how) = match resume(&run.run_id) {
                 Ok(answer) => ("woken", answer),
@@ -426,22 +453,80 @@ pub fn ask_the_parked_again(
             if closed { "released" } else { "parked" }
         );
     }
+    woken += wake_the_lapsed_handovers(ledger, now, resume, &mut said);
     (said, woken, let_go)
 }
 
-/// The flows a parked run can be woken under: the ones that still start
-/// without a person — a schedule, a session event they subscribe to, or a
-/// sensor.
+/// Resumes the runs waiting on a handover whose deadline has passed: the
+/// resume ends the wait, and nobody else ever resumes a run parked on a
+/// person who does not come. A run whose handover is still in time, or was
+/// answered, is left to the person, and a child to its parent.
+fn wake_the_lapsed_handovers(
+    ledger: &Ledger,
+    now: i64,
+    resume: Resumer<'_>,
+    said: &mut String,
+) -> usize {
+    let Ok(waiting) = ledger.waiting_runs() else {
+        return 0;
+    };
+    let mut woken = 0;
+    for run in waiting {
+        let Ok(records) = ledger.steps(&run.run_id) else {
+            continue;
+        };
+        let on_its_own = ledger.run_header(&run.run_id).is_ok_and(|header| {
+            header.is_some_and(|header| crate::step_cmd::resumed_on_its_own(&header))
+        });
+        if !on_its_own || !a_handover_lapsed(&records, now) {
+            continue;
+        }
+        woken += 1;
+        let (word, how) = match resume(&run.run_id) {
+            Ok(answer) => ("lapsed", answer),
+            Err(complaint) => ("broke", complaint),
+        };
+        let _ = writeln!(
+            said,
+            "{}\t{word}\t{}",
+            run.entity,
+            how.lines().next().unwrap_or("")
+        );
+    }
+    woken
+}
+
+/// Whether a step of the run still waits, by its latest attempt, past the
+/// deadline its record declares.
+fn a_handover_lapsed(records: &[flow::StepRecord], now: i64) -> bool {
+    let mut latest: BTreeMap<&str, &flow::StepRecord> = BTreeMap::new();
+    for record in records {
+        let newer = latest
+            .get(record.step_id.as_str())
+            .is_none_or(|seen| (record.attempt, record.epoch) > (seen.attempt, seen.epoch));
+        if newer {
+            latest.insert(&record.step_id, record);
+        }
+    }
+    latest.values().any(|record| {
+        record.outcome == Some(flow::Outcome::Waiting)
+            && actions::handoff::deadline_of(record).is_some_and(|deadline| now >= deadline)
+    })
+}
+
+/// The flows a parked run can be woken under, by the id its runs carry: the
+/// ones that still start without a person — a schedule, a session event they
+/// subscribe to, or a sensor.
 fn flows_that_start_by_themselves(sources: &[FlowSource]) -> BTreeSet<String> {
     let mut found: BTreeSet<String> = crate::arc_cmd::watchers(sources)
         .into_iter()
-        .map(|(name, _)| name)
+        .map(|(_, id, _)| id)
         .collect();
-    for (name, _, entry) in known_flows(sources) {
-        if entry.is_ok_and(|flow| {
-            flow.schedule.is_some() || trigger::sensor::declared_by(&flow).is_some()
-        }) {
-            found.insert(name);
+    for (_, _, entry) in known_flows(sources) {
+        if let Ok(flow) = entry {
+            if flow.schedule.is_some() || trigger::sensor::declared_by(&flow).is_some() {
+                found.insert(flow.id);
+            }
         }
     }
     found
@@ -861,5 +946,128 @@ mod tests {
         );
         let homeless = waiting_report_at(Err("no home to find a ledger in".to_owned()));
         assert!(homeless.ends_with("no home to find a ledger in"), "{homeless}");
+    }
+
+    /// **A HELD SCHEDULE IS NOT STARTED, AND THE BEAT SAYS WHOSE HOLD.** The
+    /// same flow, due and off hold, is started: the hold is the difference.
+    #[test]
+    fn a_held_flow_that_is_due_is_named_and_not_started() {
+        let scratch = std::env::temp_dir().join(format!("sailor-held-due-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(scratch.join("flows")).expect("create the test directory");
+        fs::write(
+            scratch.join("flows").join("every-minute.flow.json"),
+            r#"{"id":"every-minute","description":"a flow on an interval",
+                "schedule":{"recurrence":{"kind":"every_seconds","seconds":60},"weight":"light"},
+                "graph":{"steps":[{"id":"trigger","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual","text":"go"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a scheduled flow");
+        let sources = vec![FlowSource {
+            origin: "test",
+            dir: scratch.join("flows"),
+        }];
+        let ledger = Ledger::open(scratch.join("ledger")).expect("a ledger of its own");
+        let beat = |ledger: &Ledger| {
+            let mut started = Vec::new();
+            let said = tick_flows_with(
+                &sources,
+                LastRuns::Read(glance_at(ledger).expect("the ledger reads")),
+                &mut |name, _| {
+                    started.push(name.to_owned());
+                    Ok(String::new())
+                },
+                &mut never_resumes,
+            )
+            .expect("a beat over one flow works");
+            (said, started)
+        };
+
+        let (said, started) = beat(&ledger);
+        assert_eq!(
+            started,
+            ["every-minute"],
+            "off hold and due, it starts: {said}"
+        );
+
+        ledger
+            .hold_flow(
+                "every-minute",
+                "it spends while nobody reads it",
+                "a person",
+                1,
+            )
+            .expect("the hold is written");
+        let (said, started) = beat(&ledger);
+        assert!(started.is_empty(), "held, nothing starts: {said}");
+        assert!(
+            said.contains("every-minute\thold\tHELD by a person: it spends while nobody reads it"),
+            "{said}"
+        );
+        let _ = fs::remove_dir_all(&scratch);
+    }
+
+    /// **A HOLD THAT CANNOT BE READ IS NOT THE ABSENCE OF ONE.** Read as none,
+    /// the beat started a held flow and woke its parked run whenever the store
+    /// failed to answer; it must say it could not look, as for the runs.
+    #[test]
+    fn a_hold_that_cannot_be_read_stops_the_beat_instead_of_counting_as_none() {
+        let scratch =
+            std::env::temp_dir().join(format!("sailor-hold-unread-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scratch);
+        fs::create_dir_all(scratch.join("flows")).expect("create the test directory");
+        fs::write(
+            scratch.join("flows").join("every-minute.flow.json"),
+            r#"{"id":"every-minute","description":"a flow on an interval",
+                "schedule":{"recurrence":{"kind":"every_seconds","seconds":60},"weight":"light"},
+                "graph":{"steps":[{"id":"trigger","deps":[],"action":"trigger","max_attempts":1,
+                "when":null,"with":{"source":"manual","text":"go"},
+                "input_schema":{"type":"any"},"output_schema":{"type":"any"}}]},"inputs":{}}"#,
+        )
+        .expect("write a scheduled flow");
+        let sources = vec![FlowSource {
+            origin: "test",
+            dir: scratch.join("flows"),
+        }];
+        let ledger = Ledger::open(scratch.join("ledger")).expect("a ledger of its own");
+        ledger
+            .record_run(&ledger::RunRecord {
+                run_id: "parked".to_owned(),
+                kind: "flow".to_owned(),
+                entity: "every-minute".to_owned(),
+                parent_run_id: None,
+                started_by: "a test".to_owned(),
+                status: "not_yet".to_owned(),
+                total_cost_micros: 0,
+                error: None,
+                started_at: 10,
+                ended_at: Some(10),
+                worktree: None,
+                stop_reason: None,
+            })
+            .expect("recording the run");
+        rusqlite::Connection::open(scratch.join("ledger").join("state.db"))
+            .and_then(|store| {
+                store.execute(
+                    "INSERT INTO store (collection, key, value, written_by, written_at)
+                     VALUES (?1, 'every-minute', '{}', 'a person', 'not a time')",
+                    [ledger::flow_holds::FLOW_HOLDS],
+                )
+            })
+            .expect("a hold the store cannot read back");
+
+        assert!(
+            glance_at(&ledger).is_err(),
+            "the glance fails with the holds"
+        );
+        let mut resumed = Vec::new();
+        let (said, woken, _) = ask_the_parked_again(&sources, &ledger, 100, &mut |run_id| {
+            resumed.push(run_id.to_owned());
+            Ok(String::new())
+        });
+        assert_eq!(woken, 0, "nothing woken past a hold nobody read: {said}");
+        assert!(resumed.is_empty(), "{said}");
+        let _ = fs::remove_dir_all(&scratch);
     }
 }

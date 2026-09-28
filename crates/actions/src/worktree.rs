@@ -182,15 +182,8 @@ impl Action for CloseTheWorktreeAction {
             }
             WhatBecomesOfIt::TakeItDown(at) => at,
         };
-        workspace::remove_at(&spec.repo, &at)
+        workspace::remove_at(&spec.repo, &at, &register)
             .map_err(|why| stays(format!("git would not take {} down: {why}", at.display())))?;
-        let taken_down = workspace::standing::canonical(&at);
-        for cut in written_down
-            .iter()
-            .filter(|cut| workspace::standing::canonical(cut) == taken_down)
-        {
-            let _ = register.tree_closed(&cut.to_string_lossy());
-        }
         Ok(ActionOutcome::Went(
             json!({ "removed": at.to_string_lossy() }),
         ))

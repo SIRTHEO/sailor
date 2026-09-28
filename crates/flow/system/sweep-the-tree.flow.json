@@ -1,5 +1,6 @@
 {
   "id": "sweep-the-tree",
+  "version": 1,
   "description": "A mechanical mandate on one file, done by the local model and handed over as a proposal. The trigger carries the mandate in «text» and the file's path, relative to the tree, in «where». The first step reads the file as it is committed, through git, so the proposal is made on what the tree holds and not on an editor's buffer. The second asks the local runner, and only it: the step declares its kind as mechanical, so the strengths table puts the local runner first, and its text as private, so no engine that trains or whose pact is unknown may read it; no paid subscription is in the chain, and a machine without the local runner stops here saying so. The answer is the whole file rewritten, whether anything changed, and the notes. Nothing writes: the last step hands the proposal to whoever is alive in the terminal, with the check that makes it green — cargo test and the ratchets — as their gesture, never the model's word.",
   "graph": {
     "steps": [

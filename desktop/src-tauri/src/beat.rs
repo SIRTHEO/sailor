@@ -11,6 +11,7 @@
 
 use flow::system::FAULT_WRITER;
 use flow::{FailureStreak, FaultToWrite, FlowFile};
+use ledger::flow_holds::Hold;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, TryLockError};
@@ -69,11 +70,13 @@ type Known = (String, &'static str, Result<FlowFile, String>);
 /// Which of `known` are due at `now`, and for each held one the reason.
 ///
 /// `running` names the flows this window has under way: a flow whose last
-/// run is still open is not started a second time on top of itself.
+/// run is still open is not started a second time on top of itself. A flow
+/// in `holds` is not started at all, and says who held it and why.
 pub fn judge(
     known: &[Known],
     last: &BTreeMap<String, i64>,
     running: &[String],
+    holds: &BTreeMap<String, Hold>,
     now: i64,
 ) -> Vec<(String, Option<String>)> {
     known
@@ -81,6 +84,9 @@ pub fn judge(
         .map(|(name, _, entry)| {
             let why = match entry {
                 Err(_) => Some(catalogue::say("cli.flow.will_not_load", &[])),
+                Ok(flow) if holds.contains_key(&flow.id) => {
+                    Some(sailor::flow_cmd::hold::hold_said(&holds[&flow.id]))
+                }
                 Ok(flow) if running.iter().any(|id| id == &flow.id) => {
                     Some(catalogue::say("desktop.beat.still_running", &[]))
                 }
@@ -154,6 +160,7 @@ struct Glance {
     last_started: BTreeMap<String, i64>,
     streaks: Vec<FailureStreak>,
     faults_written: BTreeSet<String>,
+    holds: BTreeMap<String, Hold>,
     ledger: Option<ledger::Ledger>,
     /// Whether a store exists at all, asked without `Ledger::open`'s own
     /// unconditional `create_dir_all` opening one into being.
@@ -182,6 +189,7 @@ fn glance_in(dir: &std::path::Path) -> Result<Glance, String> {
                 last_started: ledger.last_started_at()?,
                 streaks: ledger.failure_streaks(flow::FAILURES_THAT_MAKE_A_FAULT)?,
                 faults_written: ledger.faults_written()?,
+                holds: ledger.flow_holds()?,
                 ledger: Some(ledger),
                 directory_missing: false,
             })
@@ -190,14 +198,15 @@ fn glance_in(dir: &std::path::Path) -> Result<Glance, String> {
 }
 
 /// The faults the beat starts the writer for now: the shared rule, minus the
-/// case only a window has — the writer still busy with an earlier fault, which
-/// is not started on top of itself and is asked again at the next beat.
+/// writer still busy with an earlier fault, which is not started on top of
+/// itself, and the writer held by a person. Either is asked again next beat.
 pub fn faults_to_start(
     streaks: &[FailureStreak],
     faults_written: &BTreeSet<String>,
     running: &[String],
+    holds: &BTreeMap<String, Hold>,
 ) -> Vec<FaultToWrite> {
-    if running.iter().any(|id| id == FAULT_WRITER) {
+    if running.iter().any(|id| id == FAULT_WRITER) || holds.contains_key(FAULT_WRITER) {
         return Vec::new();
     }
     flow::faults_due(streaks, faults_written)
@@ -297,7 +306,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
         }
         Ok(glance) => {
             let running = runs.running_flows();
-            let mut decisions: Vec<Decision> = judge(&known, &glance.last_started, &running, now)
+            let mut decisions: Vec<Decision> = judge(&known, &glance.last_started, &running, &glance.holds, now)
                 .into_iter()
                 .map(|(flow, why)| {
                     let verdict = match why {
@@ -312,7 +321,7 @@ pub fn once(app: &AppHandle) -> Option<Report> {
                     Decision { flow, verdict }
                 })
                 .collect();
-            let faults = faults_to_start(&glance.streaks, &glance.faults_written, &running);
+            let faults = faults_to_start(&glance.streaks, &glance.faults_written, &running, &glance.holds);
             // The writer's line says what it did this beat, not that it has
             // no schedule: the fault decisions take its place.
             if !faults.is_empty() {
@@ -489,7 +498,7 @@ mod tests {
             ("fresh".to_owned(), now - 10),
         ]);
         let judged: BTreeMap<String, Option<String>> =
-            judge(&known, &last, &[], now).into_iter().collect();
+            judge(&known, &last, &[], &BTreeMap::new(), now).into_iter().collect();
         assert_eq!(judged["stale"], None, "two minutes past a one-minute interval is due");
         assert_eq!(judged["never"], None, "a flow that never ran is due");
         assert!(judged["by-hand"].as_deref().is_some_and(|why| why.contains("by hand")));
@@ -504,12 +513,12 @@ mod tests {
         let known = vec![flow_called("long", Some(60))];
         let now = 1_000_000;
         let last = BTreeMap::from([("long".to_owned(), now - 600)]);
-        let judged = judge(&known, &last, &["long".to_owned()], now);
+        let judged = judge(&known, &last, &["long".to_owned()], &BTreeMap::new(), now);
         assert!(
             judged[0].1.as_deref().is_some_and(|why| why.contains("still running")),
             "{judged:?}"
         );
-        let judged = judge(&known, &last, &[], now);
+        let judged = judge(&known, &last, &[], &BTreeMap::new(), now);
         assert_eq!(judged[0].1, None, "with nothing running the same flow is due");
     }
 
@@ -522,11 +531,76 @@ mod tests {
             runs: vec!["relay-3".to_owned(), "relay-2".to_owned(), "relay-1".to_owned()],
         }];
         let nothing_written = BTreeSet::new();
-        let due = faults_to_start(&streaks, &nothing_written, &[]);
+        let nothing_held = BTreeMap::new();
+        let due = faults_to_start(&streaks, &nothing_written, &[], &nothing_held);
         assert_eq!(due.len(), 1, "{due:?}");
         assert_eq!((due[0].flow.as_str(), due[0].run_id.as_str()), ("relay", "relay-3"));
-        assert!(faults_to_start(&streaks, &nothing_written, &[FAULT_WRITER.to_owned()]).is_empty());
-        assert!(faults_to_start(&streaks, &BTreeSet::from(["relay-3".to_owned()]), &[]).is_empty());
+        assert!(faults_to_start(&streaks, &nothing_written, &[FAULT_WRITER.to_owned()], &nothing_held).is_empty());
+        assert!(faults_to_start(&streaks, &BTreeSet::from(["relay-3".to_owned()]), &[], &nothing_held).is_empty());
+    }
+
+    fn held_by_a_person(flow: &str) -> BTreeMap<String, Hold> {
+        BTreeMap::from([(
+            flow.to_owned(),
+            Hold {
+                flow: flow.to_owned(),
+                why: "it spends while nobody reads it".to_owned(),
+                by: "a person".to_owned(),
+                since: 1,
+            },
+        )])
+    }
+
+    /// **THE WINDOW'S BEAT STARTS NO HELD FLOW**, due or not, and says who held
+    /// it; the fault writer held is not started either, whatever is failing.
+    #[test]
+    fn a_held_flow_is_not_started_by_the_window_and_says_who_held_it() {
+        let known = vec![flow_called("stale", Some(60))];
+        let now = 1_000_000;
+        let last = BTreeMap::from([("stale".to_owned(), now - 120)]);
+        let judged = judge(&known, &last, &[], &held_by_a_person("stale"), now);
+        assert!(
+            judged[0]
+                .1
+                .as_deref()
+                .is_some_and(|why| why.contains("HELD by a person")),
+            "{judged:?}"
+        );
+
+        let streaks = vec![FailureStreak {
+            flow: "relay".to_owned(),
+            runs: vec![
+                "relay-3".to_owned(),
+                "relay-2".to_owned(),
+                "relay-1".to_owned(),
+            ],
+        }];
+        let held = held_by_a_person(FAULT_WRITER);
+        assert!(faults_to_start(&streaks, &BTreeSet::new(), &[], &held).is_empty());
+    }
+
+    /// A hold the store cannot read back stops the glance, like a ledger that
+    /// cannot be read: counted as none, it started every held flow.
+    #[test]
+    fn a_hold_that_cannot_be_read_stops_the_glance() {
+        let dir = std::env::temp_dir().join(format!("sailor-beat-hold-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        ledger::Ledger::open(&dir).expect("a ledger of its own");
+        rusqlite::Connection::open(dir.join("state.db"))
+            .and_then(|store| {
+                store.execute(
+                    "INSERT INTO store (collection, key, value, written_by, written_at)
+                     VALUES (?1, 'stale', '{}', 'a person', 'not a time')",
+                    [ledger::flow_holds::FLOW_HOLDS],
+                )
+            })
+            .expect("a hold the store cannot read back");
+
+        assert!(
+            glance_in(&dir).is_err(),
+            "the glance must fail with the holds"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The report the window hears is tagged the way the contract says.

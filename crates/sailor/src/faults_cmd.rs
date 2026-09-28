@@ -118,9 +118,13 @@ fn dispatch(args: &[String]) -> Result<String, String> {
         Some(declared) => PathBuf::from(declared),
         None => Faults::default_path().map_err(|error| error.to_string())?,
     };
-    // Three of these verbs write and three only read, and the reading ones are
-    // what an agent runs from a sandbox that grants no writes.
+    // `list`, `check` and `render` only read the store, so they run where
+    // nothing may be written, except a render of the open faults into a file:
+    // it stamps the page with a moment and opens the store to write, since
+    // only a store that keeps its history lets a later check tell what stood.
+    let stamping = verb == "render" && options.contains_key("open") && options.contains_key("file");
     let opened = match verb {
+        "render" if stamping => Faults::open(&path),
         "list" | "render" | "check" => Faults::open_for_reading(&path),
         _ => Faults::open(&path),
     };
@@ -436,14 +440,21 @@ fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, 
         };
         return Ok(rows.trim_end().to_owned());
     };
-    // **THE FILE IS READ BEFORE IT IS WRITTEN.** A document is not its table:
-    // the rows are replaced where they stand and the prose around them stays.
-    let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
+    // The public page is written whole from the crate's own template, so
+    // nothing the file held can pass for something the store gave.
     if open_only {
-        let on_the_page = faults::on_the_public_page(&all).len();
-        let open = all.iter().filter(|fault| fault.still_open()).count();
-        std::fs::write(file, faults::render_open_into(&document, &all))
-            .map_err(|error| format!("{file}: {error}"))?;
+        let stood = store.stood_now().map_err(|error| error.to_string())?;
+        let then = match store
+            .as_it_stood(&stood)
+            .map_err(|error| error.to_string())?
+        {
+            Some(then) => then,
+            None => all,
+        };
+        let on_the_page = faults::on_the_public_page(&then).len();
+        let open = then.iter().filter(|fault| fault.still_open()).count();
+        let page = faults::the_page(&then, &stood);
+        std::fs::write(file, page).map_err(|error| format!("{file}: {error}"))?;
         return Ok(catalogue::say(
             "cli.faults.written_open",
             &[
@@ -453,6 +464,9 @@ fn render(store: &Faults, options: &BTreeMap<String, String>) -> Result<String, 
             ],
         ));
     }
+    // **THE FILE IS READ BEFORE IT IS WRITTEN.** A document is not its table:
+    // the rows are replaced where they stand and the prose around them stays.
+    let document = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
     std::fs::write(file, faults::render_into(&document, &all))
         .map_err(|error| format!("{file}: {error}"))?;
     Ok(catalogue::say(
@@ -472,6 +486,10 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         return Err(catalogue::say("cli.faults.usage_check", &[]));
     };
     let text = std::fs::read_to_string(file).map_err(|error| format!("{file}: {error}"))?;
+    // A stamped page is held whole, whatever else it holds.
+    if let Some(stood) = faults::stood_in(&text) {
+        return the_page_against_the_store(store, file, &text, &stood);
+    }
     let written: std::collections::BTreeMap<i64, Fault> = faults::parse(&text)
         .into_iter()
         .map(|fault| (fault.number, fault))
@@ -554,6 +572,54 @@ fn check(store: &Faults, loose: &[String]) -> Result<String, String> {
         said.push('\n');
     }
     Err(said.trim_end().to_owned())
+}
+
+/// The public page against a fresh render of the store as it stood when the
+/// page was counted: what opened or closed since is the next render's.
+fn the_page_against_the_store(
+    store: &Faults,
+    file: &str,
+    text: &str,
+    stood: &faults::Stood,
+) -> Result<String, String> {
+    let held = store
+        .hold_the_page(text, stood)
+        .map_err(|error| error.to_string())?;
+    let through = stood.through.to_string();
+    let mut said = vec![
+        ("file", file),
+        ("through", through.as_str()),
+        ("at", stood.at.as_str()),
+    ];
+    match held {
+        faults::Held::Agrees { open_then } => {
+            let open_then = open_then.to_string();
+            let open_now = store
+                .still_open()
+                .map_err(|error| error.to_string())?
+                .to_string();
+            said.extend([("open", open_then.as_str()), ("now", open_now.as_str())]);
+            Ok(catalogue::say("cli.faults.page_agrees", &said))
+        }
+        faults::Held::Differs(difference) => {
+            let line = difference.line.to_string();
+            said.extend([
+                ("line", line.as_str()),
+                ("page", difference.page.as_str()),
+                ("store", difference.store.as_str()),
+            ]);
+            Err(catalogue::say("cli.faults.page_differs", &said))
+        }
+        faults::Held::CannotTell { kept_since, rows } => {
+            let since = match kept_since {
+                Some(at) => catalogue::say("cli.faults.history_kept_since", &[("at", &at)]),
+                None => catalogue::say("cli.faults.history_never_kept", &[]),
+            };
+            let rows = format!("{rows:?}");
+            said.extend([("since", since.as_str()), ("rows", rows.as_str())]);
+            Err(catalogue::say("cli.faults.page_cannot_be_told", &said))
+        }
+    }
 }
 
 /// Brings in a hand-written table. Once, and it says so.
@@ -919,6 +985,101 @@ mod tests {
         let said = check(&store, std::slice::from_ref(&file)).expect_err("an empty public page is not a register");
 
         assert!(said.contains("render --open"), "the empty public page got the generic answer: {said}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The page is held to a render of the store as it stood when it was
+    /// counted: a close written since by plain SQL, as an older binary
+    /// writes it, leaves it agreeing, and a line the store never gave does not.
+    #[test]
+    fn checking_the_public_page_holds_it_to_the_store_as_it_stood() {
+        let (dir, store, number) = a_store_holding("check-stood", &a_fault());
+        store
+            .set_public_summary(number, "The window forgets a flow.")
+            .expect("a summary");
+        let page = dir.join("page.md");
+        let header = format!(
+            "# Faults still open\n\n{}\n|---|---|---|---|\n",
+            faults::PUBLIC_HEADER
+        );
+        std::fs::write(&page, header).expect("a public page");
+        let file = page.display().to_string();
+        let options: BTreeMap<String, String> = [
+            ("file".to_owned(), file.clone()),
+            ("open".to_owned(), "true".to_owned()),
+        ]
+        .into_iter()
+        .collect();
+        render(&store, &options).expect("rendering");
+        store
+            .record(&a_fault())
+            .expect("a fault opened after the count");
+        rusqlite::Connection::open(dir.join("faults.db"))
+            .expect("an older binary")
+            .execute(
+                "UPDATE faults SET standing = 'closed' WHERE number = ?1",
+                [number],
+            )
+            .expect("closed past this crate");
+
+        let agreed = check(&store, std::slice::from_ref(&file))
+            .expect("the page agrees with the store as it stood");
+        assert!(
+            agreed.contains("1 open then") && agreed.contains("1 open now"),
+            "{agreed}"
+        );
+
+        let text = std::fs::read_to_string(&page).expect("the page");
+        let forged = text.replace("The window forgets a flow.", "Invented text nobody wrote.");
+        std::fs::write(&page, forged).expect("a row nobody wrote");
+        let refused = check(&store, std::slice::from_ref(&file)).expect_err("invented text");
+        assert!(refused.contains("Invented text nobody wrote."), "{refused}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Rendering the page opens the store to write, so the history begins
+    /// before the stamp even where only older binaries have written. A stamp
+    /// the history does not reach is answered as unknown, never as agreeing.
+    #[test]
+    fn a_page_is_stamped_from_a_store_that_keeps_its_history() {
+        let (dir, store, number) = a_store_holding("stamp-keeps", &a_fault());
+        store
+            .set_public_summary(number, "The window forgets a flow.")
+            .expect("a summary");
+        drop(store);
+        let db = dir.join("faults.db");
+        rusqlite::Connection::open(&db)
+            .expect("an older binary")
+            .execute_batch("DROP TRIGGER a_fault_is_written; DROP TABLE store_history;")
+            .expect("a store no binary with the history has opened");
+        let page = dir.join("page.md");
+        let header = format!(
+            "# Faults still open\n\n{}\n|---|---|---|---|\n",
+            faults::PUBLIC_HEADER
+        );
+        std::fs::write(&page, header).expect("a public page");
+        let (file, db) = (page.display().to_string(), db.display().to_string());
+        let run = |words: &[&str]| {
+            let mut args: Vec<String> = words.iter().map(|word| word.to_string()).collect();
+            args.extend(["--store".to_owned(), db.clone()]);
+            dispatch(&args)
+        };
+
+        run(&["render", "--open", "--file", &file]).expect("rendering");
+        run(&["check", &file]).expect("a page stamped where the history is kept");
+
+        let text = std::fs::read_to_string(&page).expect("the page");
+        let stood = faults::stood_in(&text).expect("the stamp");
+        let older = text.replace(
+            &faults::stood_line(&stood),
+            &faults::stood_line(&faults::Stood {
+                change: None,
+                ..stood.clone()
+            }),
+        );
+        std::fs::write(&page, older).expect("a stamp with no change of the history");
+        let unknown = run(&["check", &file]).expect_err("a moment the history does not reach");
+        assert!(unknown.contains("cannot tell"), "{unknown}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -232,7 +232,8 @@ pub fn render_open(faults: &[Fault]) -> String {
         let since = as_a_cell(&fault.happened_on);
         let what = as_a_cell(summary);
         let status = public_standing(fault.standing);
-        out.push_str(&format!("| {} | {since} | {what} | {status} |\n", fault.number));
+        out.push_str(&crate::public_row(fault.number, &since, &what, status));
+        out.push('\n');
     }
     out
 }

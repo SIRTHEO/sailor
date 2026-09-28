@@ -79,6 +79,10 @@ export interface FlowFile {
   spend_cap_kind?: "guaranteed" | "stop_threshold" | null;
   /** The catalogue entry this flow was made from, and the digest of its text. */
   from?: { catalogue: string; version: string } | null;
+  /** Which version of itself a shipped flow is: not the digest in `from`. */
+  version?: number | null;
+  /** The version of the shipped flow this copy replaces. */
+  replaces?: number | null;
 }
 
 /**

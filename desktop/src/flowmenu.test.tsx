@@ -5,8 +5,10 @@
  * gesture is gone and the screen looks tidier for it.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { createRef } from "react";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 import App from "./App";
+import { DropdownMenu, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 
 afterEach(cleanup);
 
@@ -39,5 +41,20 @@ describe("the flow's own menu", () => {
 
     fireEvent.pointerDown(more, { button: 0, ctrlKey: false, pointerType: "mouse" });
     expect(screen.getByRole("menuitem", { name: /^(Delete|Discard) flow$/ })).toBeTruthy();
+  });
+
+  // The mark sits under its tooltip, whose trigger hands it a ref. A trigger
+  // that drops the ref leaves the tooltip with no element to stand beside, and
+  // React says so on every board the walkthrough draws.
+  test("THE MENU'S TRIGGER HANDS ON THE REF IT IS GIVEN", () => {
+    const held = createRef<HTMLButtonElement>();
+    render(
+      <DropdownMenu>
+        <DropdownMenuTrigger ref={held} asChild>
+          <button type="button">more</button>
+        </DropdownMenuTrigger>
+      </DropdownMenu>,
+    );
+    expect(held.current).toBe(screen.getByRole("button", { name: "more" }));
   });
 });

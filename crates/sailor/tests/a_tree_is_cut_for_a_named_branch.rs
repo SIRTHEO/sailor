@@ -58,13 +58,14 @@ fn the_trunk_is_cut_like_any_branch_that_follows_the_convention() {
 fn the_gesture_that_cuts_a_tree_asks() {
     let scratch = a_scratch("cutting");
     let repo = a_repository_in(&scratch);
+    let register = ledger::Ledger::open(scratch.join("store")).expect("a register");
 
-    let refused = workspace::create(&repo, "fix-docs", None);
+    let refused = workspace::create(&repo, "fix-docs", None, &register);
     let left_behind = workspace::tree_path(&repo, "fix-docs").exists();
-    let cut = workspace::create(&repo, "work/a-topic-of-its-own", None);
+    let cut = workspace::create(&repo, "work/a-topic-of-its-own", None, &register);
 
     run_git(&repo, &["branch", "fix-docs"]);
-    let already_named = workspace::create(&repo, "fix-docs", None);
+    let already_named = workspace::create(&repo, "fix-docs", None, &register);
 
     let _ = std::fs::remove_dir_all(&scratch);
     let _ = std::fs::remove_dir_all(repo.with_file_name("project-worktrees"));

@@ -1,5 +1,6 @@
 {
   "id": "write-down-what-broke",
+  "version": 1,
   "description": "A run that broke becomes a line in the fault register, with the check that would have caught it. The trigger names the flow to look at in «text». The first step asks the ledger how that flow's last closed run went, step by step, with what each said; the second reads the faults already open, because the register is a shared place and the same defect written twice reads as two. The third asks an engine to write the fault: what happened, how it showed, and above all what would have stopped it — a fault without that is an anecdote. It answers whether the register already holds this one, and the writing step runs only when it does not, so two runs of this flow over the same broken run leave one fault. Nothing here judges its own work: the engine that writes never decides whether the line lands, a condition does.",
   "graph": {
     "steps": [

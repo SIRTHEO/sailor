@@ -392,12 +392,22 @@ pub struct Faults {
     /// A store only ever opened by a binary without `faults link` has no
     /// table for them, and read-only it cannot be given one.
     the_github_issues: bool,
+    the_history: bool,
 }
 
 fn the_public_summaries_are_there(connection: &Connection) -> Result<bool, FaultError> {
     let found: i64 = connection.query_row(
         "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'public_summaries'",
         [],
+        |row| row.get(0),
+    )?;
+    Ok(found == 1)
+}
+
+fn a_table_is_there(connection: &Connection, name: &str) -> Result<bool, FaultError> {
+    let found: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        params![name],
         |row| row.get(0),
     )?;
     Ok(found == 1)
@@ -496,12 +506,14 @@ impl Faults {
         let the_reading_columns = the_reading_columns_are_there(&connection)?;
         let the_public_summaries = the_public_summaries_are_there(&connection)?;
         let the_github_issues = the_github_issues_are_there(&connection)?;
+        let the_history = a_table_is_there(&connection, stood::HISTORY)?;
         Ok(Faults {
             connection,
             path,
             the_reading_columns,
             the_public_summaries,
             the_github_issues,
+            the_history,
         })
     }
 
@@ -549,6 +561,9 @@ impl Faults {
                  issue_url TEXT NOT NULL
              );",
         )?;
+        // Kept by triggers, so a binary that predates them is written down too
+        // once any newer one has opened the store (see `stood`).
+        stood::keep_the_history(&connection)?;
         connection.pragma_update(None, "user_version", FAULTS_SCHEMA_VERSION)?;
         Ok(Faults {
             connection,
@@ -556,6 +571,7 @@ impl Faults {
             the_reading_columns: true,
             the_public_summaries: true,
             the_github_issues: true,
+            the_history: true,
         })
     }
 
@@ -824,5 +840,9 @@ impl Faults {
 }
 
 mod document;
+mod page;
+mod stood;
 
 pub use document::*;
+pub use page::*;
+pub use stood::*;

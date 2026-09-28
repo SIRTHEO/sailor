@@ -18,16 +18,20 @@ function DropdownMenuPortal({
   )
 }
 
-function DropdownMenuTrigger({
-  ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
+// A tooltip's trigger wraps this one and hands it a ref: on React 18 a plain
+// function drops it, and the tooltip is left with nothing to stand beside.
+const DropdownMenuTrigger = React.forwardRef<
+  React.ComponentRef<typeof DropdownMenuPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
+>(function DropdownMenuTrigger(props, ref) {
   return (
     <DropdownMenuPrimitive.Trigger
+      ref={ref}
       data-slot="dropdown-menu-trigger"
       {...props}
     />
   )
-}
+})
 
 function DropdownMenuContent({
   className,

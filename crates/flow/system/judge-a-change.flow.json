@@ -1,5 +1,6 @@
 {
   "id": "judge-a-change",
+  "version": 1,
   "description": "A change made against a benchmark task is accepted or rejected by code, never by a model. The launch is one JSON text in the trigger: «tree», the worktree holding the change; «task_file», the task it was made against; «run_status», what the flow that made it reported, if any. The judge reads the diff against the task's base, applies the hidden tests the change never saw, runs them, and takes them out again so the tree is left as found. Accepted means: it compiles, the hidden tests pass, and no test file or test attribute was touched. Size against the gold patch, lint noise and where the change landed are recorded as debt beside the verdict and decide nothing; a run that said complete and is rejected is recorded as a false done. The last step is red exactly when the change is rejected, so the run's colour is the verdict and the judge's whole reading stays in the ledger.",
   "graph": {
     "steps": [

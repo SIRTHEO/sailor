@@ -1,5 +1,6 @@
 {
   "id": "recall-a-decision",
+  "version": 1,
   "description": "THE FIRST FLOW WHOSE OWN BEHAVIOUR CHANGES WITH WHAT THE GRAPH HOLDS. `memory_write`/`memory_query` were proved at the action level, alone; nothing had yet proved a FLOW reads the graph automatically and answers differently because of it — the exact gap two consultations named the same day. THREE CASES, LIVE-TESTED, NOT ASSUMED: nothing written for a node answers `found: false`; a node written once answers with its own title; a node written twice for the same `node_id` answers with the SECOND title, never the first — the superseded revision stays in the store, and this flow still never sees it. THE MANDATE NAMES WHAT TO RECALL, NOT WHAT WAS DECIDED: `workspace_id` and `node_id` are the only two things asked of whoever calls this — everything else comes from the graph or does not come at all.",
   "graph": {
     "steps": [

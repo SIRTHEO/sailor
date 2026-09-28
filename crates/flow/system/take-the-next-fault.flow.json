@@ -1,5 +1,6 @@
 {
   "id": "take-the-next-fault",
+  "version": 1,
   "description": "DEVELOPMENT TAKES ITS NEXT MANDATE FROM THE REGISTER, NOT FROM A PERSON. One reading, no engine: the oldest fault still open, whole. One engine call, kind «implementation», and only when a fault came back: it reads the fault as its whole mandate, reproduces it with a test that is red on the tree as it is, changes the code until the test is green, and answers with what it measured — reproduced or not, fixed or not, which test, what changed, what stays open. When nothing is open the engine is never started: a condition on the reading decides, not the engine. The command that judges the repair is given at launch, in the trigger's text, and never by the engine: the warrant runs it from the root of the tree and the round closes only if it exits zero. Nothing here closes the fault: a person reads the answer and closes it in the register.",
   "graph": {
     "steps": [

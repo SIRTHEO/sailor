@@ -151,4 +151,12 @@ describe("the chain, as it is read and said", () => {
     expect(chainWords({ ...REPLACING, resolved_in: null })).toContain(t("window.flow.chain_unknown_directory"));
     expect(replacesWords(ALONE)).toBeNull();
   });
+
+  test("A COPY OF AN OLDER VERSION SAYS WHICH, AND WHICH IS SHIPPED NOW", () => {
+    const stale = replacesWords({ ...REPLACING, stale: { shipped: 3, copied: 2 } });
+    expect(stale).toBe(t("window.flow.replaces_stale", { replaced: "built in", copied: "2", shipped: "3" }));
+    expect(stale).not.toBe(replacesWords(REPLACING));
+    const unsaid = replacesWords({ ...REPLACING, stale: { shipped: 3, copied: null } });
+    expect(unsaid).toBe(t("window.flow.replaces_unsaid", { replaced: "built in", shipped: "3" }));
+  });
 });

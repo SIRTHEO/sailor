@@ -310,6 +310,8 @@ fn a_broken_flow_keeps_its_place_in_the_registry_with_its_reason() {
             max_turns: None,
             self_care: false,
             from: None,
+            version: None,
+            replaces: None,
         }),
     );
     flows.insert("broken".into(), Err("error: cycle in the graph".into()));

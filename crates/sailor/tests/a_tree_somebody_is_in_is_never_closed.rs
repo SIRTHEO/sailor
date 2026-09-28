@@ -64,7 +64,7 @@ fn a_tree_ready_to_close(label: &str) -> AClose {
     let scratch = a_scratch(label);
     let repo = a_repository_in(&scratch);
     let store = ledger::Ledger::open(scratch.join("store")).expect("a store");
-    let tree = workspace::create(&repo, "work/done", None).expect("a merged tree");
+    let tree = workspace::create(&repo, "work/done", None, &store).expect("a merged tree");
     let tending = IndexTending::of(&repo);
     AClose {
         scratch,

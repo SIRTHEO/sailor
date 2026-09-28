@@ -113,6 +113,41 @@ impl Scratch {
         self
     }
 
+    /// The session in there stands at oblige and left a mandate nobody took:
+    /// what the emptying reads before it types.
+    fn handing_on(&self, tty: &str) -> &Self {
+        let transcript = self.0.join(format!("{tty}.jsonl"));
+        std::fs::write(
+            &transcript,
+            r#"{"message":{"usage":{"input_tokens":260000}}}"#,
+        )
+        .expect("the transcript is written");
+        sessions::Sessions::open(self.0.join(sessions::SESSIONS_FILE))
+            .expect("a register of this test's own")
+            .open_terminal(&sessions::Arrival {
+                anchor: sessions::Anchor {
+                    tty: tty.to_owned(),
+                    worktree: "/a/tree".to_owned(),
+                    ancestor: None,
+                },
+                session_id: Some("the-one-in-there".to_owned()),
+                transcript_path: Some(transcript.display().to_string()),
+                at: 1_000,
+            })
+            .expect("the session is written");
+        let mandate = sessions::mandate::Mandate {
+            written: sessions::mandate::Written {
+                tty: tty.to_owned(),
+                session: "the-one-in-there".to_owned(),
+                engine: "a-command-line".to_owned(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        sessions::mandate::deposit(&self.0, &mandate).expect("the mandate is written");
+        self
+    }
+
     fn asking(&self, action: &str, tty: &str) -> Result<ActionOutcome, flow::ActionError> {
         let mut registry = flow::ActionRegistry::default();
         relay::register_relay(&mut registry);
@@ -205,7 +240,10 @@ fn the_line_that_empties_a_session_goes_through_its_keeper() {
         "type.sh",
         &format!("printf '%s %s' \"$1\" \"$2\" > {landed}"),
     );
-    scratch.declaring(&reads, &types).kept("ttys004");
+    scratch
+        .declaring(&reads, &types)
+        .kept("ttys004")
+        .handing_on("ttys004");
 
     let outcome = scratch
         .asking(relay::EMPTY_TERMINAL_ACTION, "ttys004")
@@ -250,7 +288,8 @@ fn the_handle_is_looked_up_where_the_keeper_calls_it_something_else() {
     let types = scratch.script("type.sh", &format!("printf '%s' \"$1\" > {landed}"));
     scratch
         .declaring_a_list(&reads, &types, &lists)
-        .kept_as("ttys006", "pane:7");
+        .kept_as("ttys006", "pane:7")
+        .handing_on("ttys006");
 
     scratch
         .asking(relay::EMPTY_TERMINAL_ACTION, "ttys006")

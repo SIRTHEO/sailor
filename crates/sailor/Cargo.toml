@@ -49,3 +49,6 @@ libc = "0.2"
 sha2 = "0.10"
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+[dev-dependencies]
+rusqlite = { version = "0.37", features = ["bundled"] }
