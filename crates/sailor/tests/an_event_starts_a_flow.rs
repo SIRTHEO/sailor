@@ -23,11 +23,15 @@ impl Scratch {
 
     /// One flow whose only step is a trigger, declaring what it watches for.
     fn holding(&self, id: &str, with: serde_json::Value) -> &Self {
-        self.holding_in(id, id, with)
+        self.holding_at("flows", id, id, with)
     }
 
     /// The same, in a file named apart from the id it declares.
     fn holding_in(&self, file: &str, id: &str, with: serde_json::Value) -> &Self {
+        self.holding_at("flows", file, id, with)
+    }
+
+    fn holding_at(&self, folder: &str, file: &str, id: &str, with: serde_json::Value) -> &Self {
         let flow = json!({
             "id": id,
             "description": "a fixture whose only step is a trigger",
@@ -43,8 +47,9 @@ impl Scratch {
                 "output_schema": {"type": "object", "properties": {}, "required": [], "allow_extra": true},
             }]},
         });
+        std::fs::create_dir_all(self.0.join(folder)).expect("a place for flows");
         std::fs::write(
-            self.0.join("flows").join(format!("{file}.flow.json")),
+            self.0.join(folder).join(format!("{file}.flow.json")),
             serde_json::to_string_pretty(&flow).expect("a flow serialises"),
         )
         .expect("the flow file is written");
@@ -138,6 +143,60 @@ fn the_arc_asks_whether_a_flow_waits_by_its_id_not_its_file_name() {
     );
 
     assert_eq!(waited_on, ["its-id"]);
+}
+
+/// **A COPY THAT SWITCHES A WATCHER OFF LEAVES A ROW SAYING SO.** A person's
+/// copy declaring `manual` hid a shipped watcher for three days, and the arc
+/// wrote nothing: «it did not start» read as silence. The control is the same
+/// person's copy of a flow nobody shipped watching, which stays unasked.
+#[test]
+fn a_copy_that_hides_a_watcher_leaves_a_row_that_says_why_it_did_not_start() {
+    let scratch = Scratch::new("silenced");
+    scratch
+        .holding_at("shipped", "relay", "relay", watching("Stop"))
+        .holding("relay", json!({"source": "manual", "text": "anything"}))
+        .holding("by-hand", json!({"source": "manual", "text": "anything"}));
+    let sources = vec![
+        FlowSource {
+            origin: "built in",
+            dir: scratch.0.join("shipped"),
+        },
+        FlowSource {
+            origin: "yours",
+            dir: scratch.0.join("flows"),
+        },
+    ];
+    let store = scratch.store();
+
+    let mut asked = Vec::new();
+    let verdicts = evaluate(
+        &store,
+        21,
+        &happened(),
+        &sources,
+        100,
+        &mut watching_starter(&mut asked),
+        &mut never_parked,
+    );
+
+    assert!(asked.is_empty(), "nothing was started: {asked:?}");
+    assert_eq!(
+        verdicts.len(),
+        1,
+        "one row, and none for the flow nobody shipped watching: {verdicts:?}"
+    );
+    assert_eq!(verdicts[0].flow, "relay");
+    assert_eq!(verdicts[0].verdict, DEFERRED);
+    assert_eq!(
+        verdicts[0].why.as_deref(),
+        Some("not watching: the \"yours\" copy declares the source \"manual\", and it hides the \"built in\" one, which watches session events")
+    );
+    assert!(
+        store
+            .already_judged(21, "relay")
+            .expect("the store answers"),
+        "the row is in the store"
+    );
 }
 
 /// **A FLOW ALREADY PARKED ON THIS TERMINAL IS NOT STARTED AGAIN.** Fault 163:

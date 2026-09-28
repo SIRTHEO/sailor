@@ -5,6 +5,7 @@
 
 mod consent;
 pub mod keeper;
+mod open_work;
 
 use flow::{Action, ActionError, ActionOutcome, SharedState};
 use serde::Deserialize;

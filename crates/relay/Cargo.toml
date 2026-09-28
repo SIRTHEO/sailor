@@ -19,6 +19,8 @@ publish.workspace = true
 actions = { path = "../actions" }
 flow = { path = "../flow" }
 ledger = { path = "../ledger" }
+# Only to read the instant a session's record stamps on each row.
+models = { path = "../models" }
 # The letterbox, the count and the mandate of a live terminal.
 terminal = { path = "../terminal" }
 # The estimate that turns bytes into how full a context is.

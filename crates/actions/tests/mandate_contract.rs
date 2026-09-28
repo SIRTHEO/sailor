@@ -430,3 +430,27 @@ fn a_mandate_another_session_took_names_who_is_there_to_start() {
 
     assert_eq!(answer["taken_by"], json!("the-successor"), "{answer}");
 }
+
+/// **A GREETING HOLDS IT, AND THAT IS ENOUGH TO START THE SUCCESSOR.** The
+/// session takes the mandate at its first turn, and its first turn is the line
+/// the relay types next: waiting for the take would wait for itself.
+#[test]
+fn a_mandate_a_greeting_holds_names_who_is_there_to_start() {
+    let scratch = Scratch::new("successor-greeted");
+    deposit(&scratch, work()).expect("the deposit goes");
+    let path = sessions::mandate::address_in(Path::new(&scratch.store()), "ttys001");
+    sessions::mandate::reserve(&path, "the-successor", sessions::now())
+        .expect("the greeting holds it");
+
+    let answer = went(
+        actions::mandate::MANDATE_TAKEN_ACTION,
+        json!({
+            "tty": "ttys001",
+            "not_by": "the-predecessor",
+            "within_seconds": 0,
+            "store": scratch.store(),
+        }),
+    );
+
+    assert_eq!(answer["taken_by"], json!("the-successor"), "{answer}");
+}

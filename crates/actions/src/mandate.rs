@@ -173,6 +173,7 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
         },
         work: spec.work,
         taken: None,
+        reserved: None,
         passed: None,
     };
     let blank = mandate::blank_fields(&mandate);
@@ -340,6 +341,14 @@ impl Action for TakenAction {
     }
 }
 
+/// Taken, or handed to a session at its start: the relay's own wake line is
+/// what makes that session speak and take it, so waiting for the take alone
+/// would wait for what only the next step does.
 fn taken_by_another(path: &Path, not_by: &str) -> Option<Taken> {
-    mandate::read(path)?.taken.filter(|taken| taken.by != not_by)
+    let held = mandate::read(path)?;
+    let reserved = held.reserved.map(|held| Taken {
+        by: held.by,
+        at: held.at,
+    });
+    held.taken.or(reserved).filter(|taken| taken.by != not_by)
 }

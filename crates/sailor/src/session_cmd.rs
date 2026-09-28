@@ -110,7 +110,10 @@ pub const REFUSED: i32 = 3;
 mod handover;
 mod listing;
 
-use handover::{filed_what_was_dropped, handed_on, kept_by, the_ask_still_standing};
+use handover::{
+    filed_what_was_dropped, handed_on, kept_by, left_behind, received, the_ask_still_standing,
+    HANDOVER_ORPHANED,
+};
 use listing::{also_saying, close_the_gone, list_terminals, standing_of, Standing};
 
 pub fn run(args: &[String]) -> i32 {
@@ -288,8 +291,6 @@ const NEEDS_THE_STORE: &[&str] = &["open", "event", "close", "list", "detach", "
 /// The forms that announce this terminal to the other agents, or stop.
 const NEEDS_THE_DEPOSIT: &[&str] = &["open", "event", "close", "detach"];
 
-
-
 /// How one of our hooks is told from anyone else's: by the fact that it invokes
 /// **this** command. Not by a name written beside it, which can be changed
 /// without changing what it does.
@@ -316,10 +317,6 @@ const MARKS: &[&str] = &[MARK, WHAT_WE_ARE];
 fn ours(text: &str) -> bool {
     MARKS.iter().all(|mark| text.contains(mark))
 }
-
-
-
-
 
 /// The same inverse, with the list and the machine handed over, for the same
 /// reason [`grafting`] has it: a check must be able to ask about a command line
@@ -485,13 +482,6 @@ fn took_the_two_commands_out(directory: &std::path::Path) -> Result<String, Stri
     Ok(said)
 }
 
-
-
-
-
-
-
-
 /// Which of a line's two addresses was grafted, and what that leaves open.
 ///
 /// A file whose place moves with a variable has two homes, and the one a
@@ -514,9 +504,6 @@ fn which_home(
     }
 }
 
-
-
-
 fn act(request: &Request<'_>) -> Result<Report, String> {
     match request.verb {
         "open" => open_terminal(request),
@@ -535,8 +522,6 @@ fn act(request: &Request<'_>) -> Result<Report, String> {
 fn anchor_of(request: &Request<'_>) -> Anchor {
     anchor_from(request.payload, request.tty.to_owned(), request.census)
 }
-
-
 
 fn open_terminal(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
@@ -593,8 +578,6 @@ fn rules_in(worktree: &std::path::Path) -> Vec<flow::workspace::Rule> {
     flow::workspace::rules_of(&root)
 }
 
-
-
 /// A neighbour by name, and **where they are when it is not where you are**:
 /// the same repository is reached from several directories, and «ttys010»
 /// alone would send a reader to look in their own.
@@ -604,7 +587,6 @@ fn named(row: &sessions::TerminalRow, here: &str) -> String {
     }
     format!("{} ({})", row.tty, row.worktree)
 }
-
 
 /// What the ledger holds open that nothing picks up on its own, in **two lists
 /// and not one**: a run `waiting` was handed to a person, one stopped on «not
@@ -621,6 +603,8 @@ struct StillOpen {
     page_unseen: Option<PageUnseen>,
     /// This terminal's own record of handovers owed and not made.
     handover: Option<ledger::HandoverMissed>,
+    /// Mandates nobody took on other terminals, open or long closed.
+    waiting_elsewhere: Vec<sessions::mandate::Mandate>,
 }
 
 /// The page of memories as it sits on disk: its address.
@@ -645,10 +629,7 @@ struct Started<'a> {
 
 /// The engine the hook named, under the profile in force for it.
 fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
-    let engine = request
-        .options
-        .get("cli")
-        .and_then(|id| engine_named(id));
+    let engine = request.options.get("cli").and_then(|id| engine_named(id));
     let profile_home = engine.and_then(profile_home_of);
     Started {
         engine,
@@ -662,10 +643,16 @@ fn started(request: &Request<'_>, arrival: &Arrival) -> Started<'static> {
 /// and the profiles say `claude`: the executable the descriptor detects joins them.
 fn engine_named(id: &str) -> Option<&'static profiles::KnownCli> {
     let machine = toolbox::Machine::current();
-    engine_in(&toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine)), id)
+    engine_in(
+        &toolbox::descriptor::Catalog::load(&toolbox::default_sources(&machine)),
+        id,
+    )
 }
 
-fn engine_in(catalog: &toolbox::descriptor::Catalog, id: &str) -> Option<&'static profiles::KnownCli> {
+fn engine_in(
+    catalog: &toolbox::descriptor::Catalog,
+    id: &str,
+) -> Option<&'static profiles::KnownCli> {
     profiles::find_cli(id).ok().or_else(|| {
         catalog
             .descriptors
@@ -694,18 +681,6 @@ fn profile_home_from(session_env: Option<&str>) -> Option<PathBuf> {
     session_env.filter(|dir| !dir.is_empty()).map(PathBuf::from)
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 fn record_event(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
     let arrival = arrival_of(request);
@@ -716,6 +691,11 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     let event_id = store
         .record_event(&happened)
         .map_err(|error| error.to_string())?;
+    received(
+        request,
+        &happened.tty,
+        happened.session_id.as_deref().unwrap_or_default(),
+    );
     let started = what_this_event_starts(request, store, event_id, &happened);
     // The announcement is renewed here and nowhere else: a lease that only the
     // opening renewed would expire on a terminal that has been working all day.
@@ -760,16 +740,24 @@ fn record_event(request: &Request<'_>) -> Result<Report, String> {
     Ok(Report::spoken(also_saying(said, announced)))
 }
 
-
-
 fn close_terminal(request: &Request<'_>) -> Result<Report, String> {
     let store = request.store()?;
     let closed = store
         .close_terminal(request.tty, request.at)
         .map_err(|error| error.to_string())?;
+    let closing = event_named(request, "close");
     store
-        .record_event(&event_named(request, "close"))
+        .record_event(&closing)
         .map_err(|error| error.to_string())?;
+    if let Some(left) = left_behind(request, request.tty) {
+        store
+            .record_event(&TerminalEvent {
+                name: HANDOVER_ORPHANED.to_owned(),
+                payload: Some(left),
+                ..closing
+            })
+            .map_err(|error| error.to_string())?;
+    }
     let stopped = stop_announcing(request, &arrival_of(request));
     let key = if closed {
         "cli.session.closed"
@@ -940,7 +928,11 @@ mod tests {
     #[test]
     fn a_hook_that_names_its_tool_finds_the_command_line_behind_it() {
         let catalog = toolbox::descriptor::Catalog::load(&[toolbox::descriptor::Source::Builtin]);
-        for (tool, line) in [("claude-code", "claude"), ("codex", "codex"), ("gemini-cli", "gemini")] {
+        for (tool, line) in [
+            ("claude-code", "claude"),
+            ("codex", "codex"),
+            ("gemini-cli", "gemini"),
+        ] {
             assert_eq!(
                 engine_in(&catalog, tool).map(|engine| engine.id.as_str()),
                 Some(line),
@@ -956,7 +948,8 @@ mod tests {
     /// goes red.
     #[test]
     fn a_sessions_own_config_dir_outranks_the_store_switched_active_profile() {
-        let engine = profiles::find_cli("claude").expect("a known command line moves its home by a variable");
+        let engine = profiles::find_cli("claude")
+            .expect("a known command line moves its home by a variable");
         let moves_by_a_variable = matches!(engine.home, profiles::HomeMechanism::EnvVar(_));
         assert!(
             moves_by_a_variable,
@@ -1611,6 +1604,182 @@ mod tests {
         assert_eq!(keys[0], "terminal#ttys004", "{keys:?}");
     }
 
+    /// **A MANDATE IS TAKEN BY THE SESSION THAT SPEAKS, NOT BY THE GREETING.**
+    /// A session that starts and is gone before its first turn has received
+    /// nothing, so the take waits for that session's next event, and another
+    /// session's event takes nothing.
+    #[test]
+    fn the_first_event_of_the_session_handed_a_mandate_takes_it() {
+        let scratch = Scratch::new("mandate-received");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        let path = sessions::mandate::address_in(deposit.directory(), "ttys004");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys004".to_owned();
+        mandate.written.session = "the-one-that-filled-up".to_owned();
+        sessions::mandate::deposit(deposit.directory(), &mandate)
+            .expect("the mandate is deposited");
+        sessions::mandate::reserve(&path, "the-successor", now()).expect("the greeting holds it");
+
+        for session in ["somebody-else", "the-successor"] {
+            asking(
+                "event",
+                &format!(r#"{{"session_id":"{session}","cwd":"/un-albero"}}"#),
+                &store,
+                &TheDeposit::Open(&deposit),
+                &one_terminal(),
+                &named_line(),
+            )
+            .expect("the event goes through");
+            let taken = sessions::mandate::read(&path).expect("still on disk").taken;
+            match session {
+                "somebody-else" => assert_eq!(taken, None, "another session took it"),
+                _ => assert_eq!(
+                    taken.map(|taken| taken.by).as_deref(),
+                    Some("the-successor")
+                ),
+            }
+        }
+    }
+
+    /// A mandate left at `tty`, taken by `taken_by` when one is named.
+    fn a_mandate_at(store: &std::path::Path, tty: &str, taken_by: Option<&str>) {
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = tty.to_owned();
+        mandate.written.tree = format!("/the/tree/of/{tty}");
+        mandate.written.session = "the-one-that-filled-up".to_owned();
+        mandate.work.goal = format!("the work left at {tty}");
+        sessions::mandate::deposit(store, &mandate).expect("the mandate is deposited");
+        if let Some(by) = taken_by {
+            let path = sessions::mandate::address_in(store, tty);
+            sessions::mandate::consume(&path, by, now()).expect("it is taken");
+        }
+    }
+
+    fn orphaned_on(store: &Sessions, tty: &str) -> Vec<String> {
+        store
+            .events_on(tty)
+            .expect("its events")
+            .into_iter()
+            .filter(|event| event.name == HANDOVER_ORPHANED)
+            .map(|event| event.payload.unwrap_or_default())
+            .collect()
+    }
+
+    /// **A TERMINAL CLOSED ON A MANDATE NOBODY TOOK SAYS SO.** The close
+    /// recorded nothing, and the mandate waited at an address no session
+    /// would open again. One taken leaves nothing to say.
+    #[test]
+    fn closing_a_terminal_on_a_mandate_nobody_took_leaves_a_record() {
+        let scratch = Scratch::new("closed-on-a-mandate");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        for taken_by in [Some("the-successor"), None] {
+            a_mandate_at(deposit.directory(), "ttys004", taken_by);
+            asking(
+                "close",
+                r#"{"session_id":"una-conversazione","cwd":"/un-albero"}"#,
+                &store,
+                &TheDeposit::Open(&deposit),
+                &one_terminal(),
+                &named_line(),
+            )
+            .expect("the close goes through");
+        }
+
+        let orphaned = orphaned_on(&store, "ttys004");
+        assert_eq!(
+            orphaned.len(),
+            1,
+            "one record, for the untaken one: {orphaned:?}"
+        );
+        assert!(
+            orphaned[0].contains("the work left at ttys004"),
+            "{orphaned:?}"
+        );
+    }
+
+    /// The same when nobody closes it and the census finds the terminal gone.
+    #[test]
+    fn a_terminal_found_gone_on_a_mandate_nobody_took_leaves_a_record() {
+        let scratch = Scratch::new("gone-on-a-mandate");
+        let store = scratch.store();
+        let deposit = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        let two = Census::Terminals(
+            ["ttys004", "ttys009"]
+                .map(|tty| Terminal {
+                    tty: tty.to_owned(),
+                    ancestor: Some("Whatever".to_owned()),
+                    inhabitants: vec![],
+                })
+                .to_vec(),
+        );
+        for tty in ["ttys009", "ttys004"] {
+            let payload = Payload::parse(r#"{"session_id":"xyz","cwd":"/there"}"#).expect("parses");
+            act(&Request {
+                verb: "open",
+                options: &no_options(),
+                payload: &payload,
+                raw: "{}",
+                store: Some(&store),
+                deposit: &TheDeposit::NobodyNeedsItHere,
+                census: &two,
+                tty,
+                at: 900,
+            })
+            .expect("the terminal checks in");
+        }
+        a_mandate_at(deposit.directory(), "ttys009", None);
+
+        asking(
+            "event",
+            r#"{"session_id":"abc","cwd":"/here"}"#,
+            &store,
+            &TheDeposit::Open(&deposit),
+            &one_terminal(),
+            &named_line(),
+        )
+        .expect("an event on the terminal that stayed");
+
+        let orphaned = orphaned_on(&store, "ttys009");
+        assert_eq!(orphaned.len(), 1, "{orphaned:?}");
+        assert!(
+            orphaned[0].contains("the work left at ttys009"),
+            "{orphaned:?}"
+        );
+    }
+
+    /// **WHAT WAITS ON ANOTHER TERMINAL IS SAID ON THIS ONE.** The only
+    /// reading across terminals counted relay runs, and froze with the relay.
+    /// This terminal's own mandate and one already taken are not listed.
+    #[test]
+    fn the_greeting_names_the_mandates_waiting_on_other_terminals() {
+        let scratch = Scratch::new("waiting-elsewhere");
+        let ledger = ledger::Ledger::open(scratch.directory.join("deposito")).expect("the ledger");
+        a_mandate_at(ledger.directory(), "ttys019", None);
+        a_mandate_at(ledger.directory(), "ttys020", Some("the-successor"));
+        a_mandate_at(ledger.directory(), "ttysTEST", None);
+        let started = Started {
+            engine: None,
+            profile_home: None,
+            worktree: scratch.directory.clone(),
+            home: None,
+        };
+
+        let found = still_open_in(&ledger, None, &started, "ttysTEST").expect("open");
+        let said = what_is_still_open(&found).expect("something to say");
+
+        assert!(said.contains("ttys019 (/the/tree/of/ttys019)"), "{said}");
+        assert!(
+            !said.contains("ttys020"),
+            "a taken one is not waiting: {said}"
+        );
+        assert!(
+            !said.contains("ttysTEST"),
+            "this terminal's own is not elsewhere: {said}"
+        );
+    }
+
     /// A terminal that closes stops holding the tree: whoever reads the survey
     /// afterwards must not be told somebody is working there.
     #[test]
@@ -2216,7 +2385,8 @@ mod tests {
         };
 
         let here = still_open_in(&ledger, None, &started_in(&deep), "ttysTEST").expect("open");
-        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory), "ttysTEST").expect("open");
+        let outside = still_open_in(&ledger, None, &started_in(&scratch.directory), "ttysTEST")
+            .expect("open");
         let labels = |found: &StillOpen| {
             found
                 .remembered
@@ -2894,7 +3064,8 @@ mod tests {
             worktree: PathBuf::new(),
             home: None,
         };
-        let found = still_open_in(&deposit, None, &nobody, "ttysTEST").expect("reading the two lists");
+        let found =
+            still_open_in(&deposit, None, &nobody, "ttysTEST").expect("reading the two lists");
 
         assert_eq!(
             found

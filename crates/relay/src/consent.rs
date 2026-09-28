@@ -5,7 +5,7 @@
 //! long: the session in there may have been replaced since. So the emptying
 //! mints its own consent, and a line that empties is typed only through it.
 
-use crate::{freedom_now, reset_line_of, typed_into, Freedom};
+use crate::{freedom_now, freedom_of, reset_line_of, typed_into, Freedom};
 use flow::ActionError;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -35,7 +35,8 @@ pub(crate) fn asked_now(
         return Ok(Asked::NotYet(why));
     }
     // Read after the screen, which may take seconds, so it is the last word.
-    if let Err(why) = handed_on_by_whoever_is_there(root, tty, cli) {
+    let words = freedom_of(catalog, cli)?.and_leaves_nothing_open_in_its_record;
+    if let Err(why) = handed_on_by_whoever_is_there(root, tty, cli, words.as_ref()) {
         return Ok(Asked::NotYet(why));
     }
     Ok(Asked::Given(Consent {
@@ -56,9 +57,15 @@ impl Consent {
     }
 }
 
-/// The session in that terminal now left a mandate nobody has taken, and its
-/// own context stands at oblige. Every reading that cannot be taken is a no.
-fn handed_on_by_whoever_is_there(root: &Path, tty: &str, cli: &str) -> Result<(), String> {
+/// The session in that terminal now left a mandate nobody has taken, its own
+/// context stands at oblige, and its record leaves nothing open. Every reading
+/// that cannot be taken is a no.
+fn handed_on_by_whoever_is_there(
+    root: &Path,
+    tty: &str,
+    cli: &str,
+    words: Option<&toolbox::descriptor::OpenInRecord>,
+) -> Result<(), String> {
     let register = root.join(sessions::SESSIONS_FILE);
     if !register.exists() {
         return Err(format!(
@@ -106,12 +113,35 @@ fn handed_on_by_whoever_is_there(root: &Path, tty: &str, cli: &str) -> Result<()
         .filter(|path| !path.is_empty())
         .ok_or_else(|| format!("{tty}: «{there}» names no transcript to measure"))?;
     match actions::session_fill::stands_at_oblige(&transcript) {
-        Some(true) => Ok(()),
-        Some(false) => Err(format!(
-            "{tty}: «{there}» does not stand at oblige now, so it is not finished"
+        Some(true) => {}
+        Some(false) => {
+            return Err(format!(
+                "{tty}: «{there}» does not stand at oblige now, so it is not finished"
+            ))
+        }
+        None => {
+            return Err(format!(
+                "{tty}: the context of «{there}» cannot be measured, and unmeasured is not full"
+            ))
+        }
+    }
+    let Some(words) = words else {
+        return Ok(());
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64);
+    match crate::open_work::open_in(&transcript, words, now) {
+        Some(open) if open.is_empty() => Ok(()),
+        Some(open) => Err(format!(
+            "{tty}: «{there}» still waits on {}, and emptying it now would lose it",
+            open.iter()
+                .map(crate::open_work::Open::said)
+                .collect::<Vec<_>>()
+                .join(", ")
         )),
         None => Err(format!(
-            "{tty}: the context of «{there}» cannot be measured, and unmeasured is not full"
+            "{tty}: the record of «{there}» cannot be read, and unread is not finished"
         )),
     }
 }

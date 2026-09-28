@@ -390,6 +390,7 @@ dependencies = [
  "actions",
  "flow",
  "ledger",
+ "models",
  "serde",
  "serde_json",
  "sessions",

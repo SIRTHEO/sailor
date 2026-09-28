@@ -699,6 +699,38 @@ pub struct FreeWhen {
     /// EMPTY SESSION**. Absent asks the machine nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub and_holds_no_process_but: Option<Vec<String>>,
+    /// What the session's record says it still waits on. Absent reads nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub and_leaves_nothing_open_in_its_record: Option<OpenInRecord>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
+}
+
+/// The words a line's record uses for what it launched and what came back.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct OpenInRecord {
+    /// Carried by the answer to a call that went on in the background, and
+    /// written in it just before the name of the task it started.
+    pub a_background_launch_answers: String,
+    pub the_task_is_named_after: String,
+    /// The call that stops a task, and the field of its input naming it.
+    pub a_stop_is_the_call: String,
+    pub a_stop_names_the_task_in: String,
+    /// Carried by a report on a launch, with the tags around the call's id.
+    pub a_report_carries: String,
+    pub a_report_names_the_call_between: [String; 2],
+    pub a_queue_row_is: String,
+    pub the_queue_grows_on: Vec<String>,
+    pub and_shrinks_on: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub and_empties_on: Vec<String>,
+    /// Past this, a launch that never reported is lost, not in flight.
+    pub a_launch_is_lost_after_seconds: u64,
+    /// Past this, a queued message nothing took is lost; absent, never.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub a_queued_message_is_lost_after_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub note: String,
     #[serde(flatten)]
