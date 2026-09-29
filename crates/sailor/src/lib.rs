@@ -380,7 +380,9 @@ impl Route<'_> {
 fn route(args: &[String]) -> Route<'_> {
     match args.get(1).map(String::as_str) {
         None | Some("--help") | Some("-h") => Route::Help,
-        Some(name) => match COMMANDS.iter().find(|command| command.name == name) {
+        Some(name) => match COMMANDS.iter().find(|command| {
+            command.name == if matches!(name, "--version" | "-V") { "version" } else { name }
+        }) {
             Some(known) => Route::Known(known),
             None => Route::Unknown(name),
         },
@@ -613,6 +615,17 @@ mod tests {
             route(&args(&["sailor", "release", "sailor", "--dry-run"])).reached(),
             Some("release")
         );
+    }
+
+    #[test]
+    fn the_flags_every_command_line_answers_to_reach_the_version_command() {
+        for flag in ["--version", "-V"] {
+            assert_eq!(
+                route(&args(&["sailor", flag])).reached(),
+                Some("version"),
+                "{flag}"
+            );
+        }
     }
 
     #[test]
