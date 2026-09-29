@@ -120,6 +120,13 @@ pub struct Reserved {
 /// that never spoke is taken for gone and the mandate is offered again.
 pub const A_RESERVATION_HOLDS_FOR: i64 = 60;
 
+/// How long a mandate nobody took is still handed to whoever opens its
+/// terminal. Measured 29/09/2026 over the 105 taken on this machine: the
+/// median waited 42 minutes and the longest 78 hours, so a week is past every
+/// one of them. Past it the file stays where it is, and nobody is told it is
+/// theirs.
+pub const A_MANDATE_IS_HANDED_FOR: i64 = 7 * 24 * 3600;
+
 /// Where a mandate was sent on to, and when: the mark its original keeps aside.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Passed {
