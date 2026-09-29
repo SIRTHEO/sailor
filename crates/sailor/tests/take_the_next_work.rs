@@ -186,6 +186,93 @@ fn the_journeys_worker_is_declared_whole_and_its_line_is_sound() {
     );
 }
 
+/// Run from a git hook, git exports GIT_DIR, and a fixture script that writes
+/// its identity with `git config` writes it into the repository the hook runs
+/// for: every later commit there was authored by the fixture. The test's own
+/// git commands run without those variables, so it holds under a hook too.
+#[test]
+fn the_fixtures_write_no_identity_into_the_repository_a_hook_runs_for() {
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn git_outside_a_hook(outer: &Path) -> std::process::Command {
+        let mut git = std::process::Command::new("git");
+        git.env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .current_dir(outer);
+        git
+    }
+    let _held = FIXTURES_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let outer =
+        Scratch(std::env::temp_dir().join(format!("queue-flow-outer-{}", std::process::id())));
+    let _ = std::fs::remove_dir_all(&outer.0);
+    std::fs::create_dir_all(&outer.0).expect("a scratch directory");
+    let init = git_outside_a_hook(&outer.0).args(["init", "-q"]).status();
+    assert!(init.is_ok_and(|status| status.success()), "git init");
+    let script = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../flows/tests/make-fixtures.sh"
+    ));
+
+    let output = std::process::Command::new("sh")
+        .arg(script)
+        .env("GIT_DIR", outer.0.join(".git"))
+        .output()
+        .expect("make-fixtures.sh runs");
+
+    let config = std::fs::read_to_string(outer.0.join(".git/config")).expect("the outer config");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!config.contains("queue-flow-fixture"), "{config}");
+    let commits = git_outside_a_hook(&outer.0)
+        .args(["rev-list", "--all"])
+        .output()
+        .expect("git rev-list runs");
+    assert!(
+        commits.stdout.is_empty(),
+        "the fixtures committed into the outer repository"
+    );
+}
+
+/// A configuration handed to git through the environment reaches every command
+/// the script runs. Signing every commit with a program that does not exist
+/// makes each one fail, so the script only builds its fixtures if it drops it.
+#[test]
+fn a_configuration_handed_through_the_environment_does_not_reach_the_fixtures() {
+    let _held = FIXTURES_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let script = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../flows/tests/make-fixtures.sh"
+    ));
+
+    let output = std::process::Command::new("sh")
+        .arg(script)
+        .env("GIT_CONFIG_COUNT", "2")
+        .env("GIT_CONFIG_KEY_0", "commit.gpgsign")
+        .env("GIT_CONFIG_VALUE_0", "true")
+        .env("GIT_CONFIG_KEY_1", "gpg.program")
+        .env("GIT_CONFIG_VALUE_1", "/nonexistent/signer")
+        .output()
+        .expect("make-fixtures.sh runs");
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn fresh_ledger(tag: &str) -> Ledger {
     let dir = std::env::temp_dir().join(format!(
         "queue-flow-{tag}-{}-{}",
