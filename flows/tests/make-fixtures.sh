@@ -6,9 +6,6 @@ set -eu
 # repository the hook runs for instead of the fixture's own.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
 unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
-for variable in $(env | sed -n 's/^\(GIT_CONFIG_\(KEY\|VALUE\)_[0-9]*\)=.*/\1/p'); do
-  unset "$variable"
-done
 export GIT_AUTHOR_NAME=queue-flow-fixture GIT_AUTHOR_EMAIL=queue-flow-fixture@example
 export GIT_COMMITTER_NAME=queue-flow-fixture GIT_COMMITTER_EMAIL=queue-flow-fixture@example
 

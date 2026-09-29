@@ -243,6 +243,36 @@ fn the_fixtures_write_no_identity_into_the_repository_a_hook_runs_for() {
     );
 }
 
+/// A configuration handed to git through the environment reaches every command
+/// the script runs. Signing every commit with a program that does not exist
+/// makes each one fail, so the script only builds its fixtures if it drops it.
+#[test]
+fn a_configuration_handed_through_the_environment_does_not_reach_the_fixtures() {
+    let _held = FIXTURES_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let script = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../flows/tests/make-fixtures.sh"
+    ));
+
+    let output = std::process::Command::new("sh")
+        .arg(script)
+        .env("GIT_CONFIG_COUNT", "2")
+        .env("GIT_CONFIG_KEY_0", "commit.gpgsign")
+        .env("GIT_CONFIG_VALUE_0", "true")
+        .env("GIT_CONFIG_KEY_1", "gpg.program")
+        .env("GIT_CONFIG_VALUE_1", "/nonexistent/signer")
+        .output()
+        .expect("make-fixtures.sh runs");
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn fresh_ledger(tag: &str) -> Ledger {
     let dir = std::env::temp_dir().join(format!(
         "queue-flow-{tag}-{}-{}",
