@@ -19,8 +19,8 @@ where it is written with its real author and date, not copied here by hand:
 
 ## [0.1.1] - 2026-09-29
 
-The relay that hands a full session's work to the next one is now safe to run
-when nobody is watching. Nothing else moved since 0.1.0.
+The relay that hands a full session's work to the next one no longer acts on
+what it cannot read. It is the only change since 0.1.0.
 
 ### Fixed
 
