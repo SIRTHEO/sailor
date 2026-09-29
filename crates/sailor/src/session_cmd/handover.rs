@@ -694,11 +694,8 @@ mod tests {
         assert!(kept_from(&shipped(), &env_of(&[("PATH", "/usr/bin")]), "ttys004").is_none());
     }
 
-    /// **AN ADDRESS IS REUSED, AND A WEEK-OLD MANDATE IS NOT FOR WHOEVER OPENS
-    /// IT.** Of 105 mandates taken on this machine none waited longer than 78
-    /// hours; one left for a week describes work its author's successor
-    /// stopped expecting, and telling a stranger «you have just taken it» sends
-    /// them off to do it. It stays on disk, untouched, and is not handed on.
+    /// **A WEEK-OLD MANDATE IS NOT FOR WHOEVER OPENS THE TERMINAL.** It stays on
+    /// disk, untouched, and is not handed on.
     #[test]
     fn a_mandate_a_week_old_is_not_handed_to_whoever_opens_the_terminal() {
         let directory = std::env::temp_dir().join(format!("sailor-aged-{}", std::process::id()));
