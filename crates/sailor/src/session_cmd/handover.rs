@@ -887,6 +887,32 @@ mod tests {
     }
 
     /// **THE ASK STANDS UNTIL IT IS ANSWERED, AND THE ANSWER IS THE MANDATE.**
+    /// **A SESSION ASKED TO HAND ON MUST ALSO BE TOLD TO STOP.** Between the
+    /// deposit and the emptying the session keeps its turns; work started in
+    /// that gap is work the successor is never handed.
+    #[test]
+    fn the_ask_tells_the_session_to_start_nothing_new() {
+        let directory = std::env::temp_dir().join(format!("sailor-ask-stop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ASKS.to_owned(),
+                key: "ttys001".to_owned(),
+                value: serde_json::json!({"state": OBLIGE, "tokens": 260_000u64}),
+                written_by: "a-run".to_owned(),
+                written_at: 100,
+            })
+            .expect("the ask is written");
+        let asked = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "", None)
+            .expect("unanswered, it is asked");
+        assert!(
+            asked.contains("start nothing new"),
+            "the ask must say to start no new work once the mandate is deposited: {asked}"
+        );
+    }
+
     /// A request repeated after the mandate was written is a request nobody can
     /// satisfy: whoever reads it has already done the thing.
     #[test]
