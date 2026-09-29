@@ -451,7 +451,7 @@ pub fn still_holding(
     let mut seen: std::collections::BTreeSet<u32> = here
         .iter()
         .filter(|row| frontier.contains(&row.parent))
-        .filter(|row| resident.iter().any(|server| row.command == *server))
+        .filter(|row| resident.contains(&row.command))
         .map(|row| row.pid)
         .collect();
     let mut held = Vec::new();
