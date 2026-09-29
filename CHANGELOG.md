@@ -19,18 +19,21 @@ where it is written with its real author and date, not copied here by hand:
 
 ## [0.1.1] - 2026-09-29
 
-The relay that hands a full session's work to the next one no longer acts on
-what it cannot read. It is the only change since 0.1.0.
+The relay that hands a full session's work to the next one now checks what a
+session still has open before it acts. It is the only change since 0.1.0.
+
+### Added
+
+- A queued message counts as open work while it has no age or is under two
+  hours old, so a session is not emptied over a line still waiting to be read,
+  and one nobody read for two hours stops holding it back.
 
 ### Fixed
 
-- A queued message no longer counts as open work forever: it is open while it
-  has no age or its age is under two hours, so a session is not kept waiting on
-  a line nobody will read.
 - A mandate is reserved and taken under a lock of its own, so two callers cannot
   take the same one, and a hand-on refuses a mandate a live caller has reserved.
-- An unreadable hold makes the relay wait instead of guessing, and the reasons a
-  watcher stays still are read from the catalogue like every other sentence.
+- A flow whose hold cannot be read is not started, and the reasons a watcher
+  stays still are said from the catalogue like every other sentence.
 
 ## [0.1.0] - 2026-09-19
 
