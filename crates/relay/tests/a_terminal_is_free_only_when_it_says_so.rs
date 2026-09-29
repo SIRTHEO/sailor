@@ -335,10 +335,9 @@ fn what_another_terminal_runs_does_not_hold_this_one() {
     assert!(held.is_empty(), "nothing on ttys015 is running: {held:?}");
 }
 
-/// **A SERVER THE LINE STARTS FOR ITSELF IS NOT WORK.** Measured 29/09/2026 in
-/// the ledger: a session past its line waited 28 minutes to be emptied, once a
-/// minute, and was compacted instead, because the server it starts at its own
-/// start and keeps until it ends was read as work in flight.
+/// **A SERVER THE LINE STARTS FOR ITSELF IS NOT WORK.** A session past its
+/// line waited 28 minutes to be emptied, once a minute, and was compacted
+/// instead: the server it keeps until it ends was read as work in flight.
 #[test]
 fn a_declared_resident_server_and_what_it_runs_do_not_hold_the_terminal() {
     let resident = ["npm exec a-server".to_owned()];
