@@ -700,8 +700,8 @@ pub struct FreeWhen {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub and_holds_no_process_but: Option<Vec<String>>,
     /// The whole command of a server this line starts at its own start and
-    /// keeps until it ends. Only a direct child of the line, spelled exactly
-    /// so, is exempt, and so is everything under it; the same words anywhere
+    /// keeps until it ends. Only a direct child of the line whose whole command
+    /// is exactly this is exempt, and so is everything under it; the same words anywhere
     /// else are work. Absent exempts nothing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub and_resident_servers: Vec<String>,

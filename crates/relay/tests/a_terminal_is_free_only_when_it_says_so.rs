@@ -357,30 +357,23 @@ fn a_declared_resident_server_and_what_it_runs_do_not_hold_the_terminal() {
     );
 }
 
-/// The exception is narrow: only a direct child of the line, spelled exactly as
-/// declared. The same words under a shell are a tool somebody ran, and a
-/// declared server does not hide the work standing beside it.
+/// The exception is narrow, and each edge of it is pinned by a row of its own.
+/// The same command under a shell is a tool somebody ran, not the line's server.
 #[test]
-fn a_resident_server_hides_no_work_standing_beside_it_or_spelled_like_it() {
-    let resident = ["npm exec a-server".to_owned()];
+fn a_resident_command_under_a_shell_is_a_tool_and_holds_the_terminal() {
     let mut table = the_table_of_a_session_at_work();
+    table.retain(|row| !row.command.contains("a-server"));
+    table.push(relay::OnTheMachine {
+        pid: 30010,
+        parent: 27719,
+        tty: "ttys015".to_owned(),
+        command: "/bin/zsh -c run-a-tool".to_owned(),
+    });
     table.push(relay::OnTheMachine {
         pid: 30001,
-        parent: 21405,
+        parent: 30010,
         tty: "ttys015".to_owned(),
-        command: "npm exec a-server --then-do-something".to_owned(),
-    });
-    table.push(relay::OnTheMachine {
-        pid: 30002,
-        parent: 27719,
-        tty: "ttys015".to_owned(),
-        command: "sleep 600".to_owned(),
-    });
-    table.push(relay::OnTheMachine {
-        pid: 30003,
-        parent: 27719,
-        tty: "ttys015".to_owned(),
-        command: "npm exec a-server-but-another".to_owned(),
+        command: "npm exec a-server".to_owned(),
     });
 
     let held = relay::still_holding(
@@ -388,8 +381,58 @@ fn a_resident_server_hides_no_work_standing_beside_it_or_spelled_like_it() {
         "ttys015",
         "a-command-line",
         &["caffeinate".to_owned()],
-        &resident,
+        &["npm exec a-server".to_owned()],
     );
 
-    assert_eq!(held, vec!["npm".to_owned(), "sleep".to_owned()], "{held:?}");
+    assert_eq!(
+        held,
+        vec!["npm".to_owned(), "zsh".to_owned()],
+        "only a direct child of the line is its server: {held:?}"
+    );
+}
+
+/// Under the line itself the command must be exactly the declared one: the same
+/// package asked to do something else is a tool.
+#[test]
+fn a_resident_command_with_other_arguments_is_work_even_under_the_line() {
+    let mut table = the_table_of_a_session_at_work();
+    table.retain(|row| !row.command.contains("a-server"));
+    table.push(relay::OnTheMachine {
+        pid: 30002,
+        parent: 27719,
+        tty: "ttys015".to_owned(),
+        command: "npm exec a-server --then-do-something".to_owned(),
+    });
+
+    let held = relay::still_holding(
+        &table,
+        "ttys015",
+        "a-command-line",
+        &["caffeinate".to_owned()],
+        &["npm exec a-server".to_owned()],
+    );
+
+    assert_eq!(held, vec!["npm".to_owned()], "{held:?}");
+}
+
+/// A declared server hides no work standing beside it.
+#[test]
+fn a_declared_resident_server_hides_no_work_standing_beside_it() {
+    let mut table = the_table_of_a_session_at_work();
+    table.push(relay::OnTheMachine {
+        pid: 30003,
+        parent: 27719,
+        tty: "ttys015".to_owned(),
+        command: "sleep 600".to_owned(),
+    });
+
+    let held = relay::still_holding(
+        &table,
+        "ttys015",
+        "a-command-line",
+        &["caffeinate".to_owned()],
+        &["npm exec a-server".to_owned()],
+    );
+
+    assert_eq!(held, vec!["sleep".to_owned()], "{held:?}");
 }
