@@ -321,3 +321,55 @@ fn a_terminal_the_keeper_has_forgotten_refuses_by_name() {
     assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
     assert!(refusal.said.contains("pane:9"), "{}", refusal.said);
 }
+
+/// **A KEEPER THAT STUMBLES ONCE IS ASKED AGAIN.** Reading changes nothing, so a
+/// question that got no answer is put a second time before the terminal counts
+/// as unreachable.
+#[test]
+fn a_keeper_that_stumbles_once_is_asked_again() {
+    let scratch = Scratch::new("stumble");
+    let marker = scratch.at("stumbled");
+    let reads = scratch.script(
+        "read.sh",
+        &format!("[ -e {marker} ] || {{ : > {marker}; exit 1; }}; printf '%s' '│ > '"),
+    );
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys005");
+
+    let outcome = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys005")
+        .expect("the second question is answered");
+
+    match outcome {
+        ActionOutcome::Went(said) => assert_eq!(said["free"], json!(true), "{said}"),
+        other => panic!("it should have gone: {other:?}"),
+    }
+}
+
+/// **A LINE IS TYPED AT MOST ONCE.** A keeper that fails after the line arrived
+/// would type it twice if asked again, so the typing is never repeated.
+#[test]
+fn a_line_that_got_no_answer_is_not_typed_twice() {
+    let scratch = Scratch::new("once");
+    let reads = scratch.script("read.sh", "printf '%s' '│ > '");
+    let landed = scratch.at("landed");
+    let types = scratch.script("type.sh", &format!("echo \"$2\" >> {landed}; exit 1"));
+    scratch
+        .declaring(&reads, &types)
+        .kept("ttys006")
+        .handing_on("ttys006");
+
+    let refusal = scratch
+        .asking(relay::EMPTY_TERMINAL_ACTION, "ttys006")
+        .expect_err("the typing did not answer");
+
+    assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
+    assert_eq!(
+        std::fs::read_to_string(&landed)
+            .expect("the keeper was asked")
+            .lines()
+            .count(),
+        1,
+        "the line reached the keeper once"
+    );
+}

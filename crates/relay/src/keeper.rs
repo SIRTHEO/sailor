@@ -14,6 +14,12 @@ use toolbox::descriptor::{InTheList, KeepsTerminals};
 /// How long a keeper has to answer before it counts as unreachable.
 const LONG_ENOUGH: Duration = Duration::from_secs(10);
 
+/// How many times a question that changes nothing is put before it counts as
+/// unanswered. A line to type is put once: a failure after it arrived would
+/// type it twice.
+const TRIES_TO_READ: u32 = 2;
+const BETWEEN_TRIES: Duration = Duration::from_millis(500);
+
 /// A terminal, whoever keeps it, and how they are asked about it.
 pub struct Keeper {
     pub id: String,
@@ -44,12 +50,12 @@ pub fn of(catalog: &toolbox::Catalog, root: &Path, tty: &str) -> Option<Keeper> 
 impl Keeper {
     /// The last of what that terminal showed, as its keeper prints it.
     pub fn reads_the_screen(&self) -> Result<Vec<u8>, ActionError> {
-        self.asked(&self.keeps.reads_the_screen, None)
+        self.asked(&self.keeps.reads_the_screen, None, TRIES_TO_READ)
     }
 
     /// One line typed into that terminal, by its keeper.
     pub fn types_a_line(&self, line: &str) -> Result<(), ActionError> {
-        self.asked(&self.keeps.types_a_line, Some(line)).map(|_| ())
+        self.asked(&self.keeps.types_a_line, Some(line), 1).map(|_| ())
     }
 
     /// The name this terminal goes by to its keeper's own commands.
@@ -63,7 +69,7 @@ impl Keeper {
         }
         let found = match (&self.keeps.lists_them, &self.keeps.in_the_list) {
             (listing, Some(how)) if !listing.is_empty() => {
-                let printed = self.ran(&listing.clone(), None)?;
+                let printed = self.ran_up_to(TRIES_TO_READ, &listing.clone(), None)?;
                 self.found_in(&printed, how)?
             }
             _ => self.named.clone(),
@@ -117,9 +123,31 @@ impl Keeper {
         )))
     }
 
-    fn asked(&self, argv: &[String], line: Option<&str>) -> Result<Vec<u8>, ActionError> {
+    fn asked(
+        &self,
+        argv: &[String],
+        line: Option<&str>,
+        tries: u32,
+    ) -> Result<Vec<u8>, ActionError> {
         let handle = self.handle()?.to_owned();
-        self.ran(argv, Some((&handle, line.unwrap_or_default())))
+        self.ran_up_to(tries, argv, Some((&handle, line.unwrap_or_default())))
+    }
+
+    fn ran_up_to(
+        &self,
+        tries: u32,
+        argv: &[String],
+        filling: Option<(&str, &str)>,
+    ) -> Result<Vec<u8>, ActionError> {
+        let mut answer = self.ran(argv, filling);
+        for _ in 1..tries {
+            if answer.is_ok() {
+                break;
+            }
+            std::thread::sleep(BETWEEN_TRIES);
+            answer = self.ran(argv, filling);
+        }
+        answer
     }
 
     fn ran(&self, argv: &[String], filling: Option<(&str, &str)>) -> Result<Vec<u8>, ActionError> {
