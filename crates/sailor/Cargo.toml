@@ -1,6 +1,6 @@
 [package]
 name = "sailor"
-version = "0.1.0"
+version = "0.1.1"
 description = "The command line of Sailor: flows, engines, profiles, quota and the ledger, from one binary."
 edition.workspace = true
 rust-version.workspace = true
