@@ -2,6 +2,11 @@
 # Builds alpha (passes once TASK_OK exists) and beta (never passes: the
 # fixture the flow is meant to park) under target/fixtures, remade on every call.
 set -eu
+# A git hook exports these, and they would send every command below to the
+# repository the hook runs for instead of the fixture's own.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY
+export GIT_AUTHOR_NAME=queue-flow-fixture GIT_AUTHOR_EMAIL=queue-flow-fixture@example
+export GIT_COMMITTER_NAME=queue-flow-fixture GIT_COMMITTER_EMAIL=queue-flow-fixture@example
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 fixtures="$root/target/fixtures"
@@ -14,8 +19,6 @@ make_project() {
   dir="$fixtures/$name"
   mkdir -p "$dir"
   git -C "$dir" init -q
-  git -C "$dir" config user.email "queue-flow-fixture@example"
-  git -C "$dir" config user.name "queue-flow-fixture"
   printf '%s\n' "$check_body" > "$dir/check.sh"
   chmod +x "$dir/check.sh"
   git -C "$dir" add check.sh
