@@ -512,9 +512,6 @@ fn painted_now(
     )))
 }
 
-/// **A SINGLE MOVEMENT IS NOT WORK, AND AN ENDLESS ONE IS.** The comparisons
-/// of a keeper's screen a stillness apart that may be spent before the answer
-/// is «at work»: a last repaint or a clock passes, a spinner does not.
 const QUIET_READINGS: u32 = 3;
 
 /// What this command line says a free session of it looks like, or the refusal.
