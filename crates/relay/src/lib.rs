@@ -497,16 +497,25 @@ fn painted_now(
              nothing to read"
         )));
     };
-    let first = keeper.reads_the_screen()?;
-    std::thread::sleep(std::time::Duration::from_secs(still_for));
-    let again = keeper.reads_the_screen()?;
-    if first != again {
-        return Ok(Painted::NotYet(format!(
-            "{tty}: the screen changed inside {still_for}s, so this is a session at work"
-        )));
+    let mut last = keeper.reads_the_screen()?;
+    for _ in 0..QUIET_READINGS {
+        std::thread::sleep(std::time::Duration::from_secs(still_for));
+        let again = keeper.reads_the_screen()?;
+        if last == again {
+            return Ok(Painted::Bytes(again));
+        }
+        last = again;
     }
-    Ok(Painted::Bytes(again))
+    Ok(Painted::NotYet(format!(
+        "{tty}: the screen changed in each of {QUIET_READINGS} readings {still_for}s apart, so \
+         this is a session at work"
+    )))
 }
+
+/// **A SINGLE MOVEMENT IS NOT WORK, AND AN ENDLESS ONE IS.** The comparisons
+/// of a keeper's screen a stillness apart that may be spent before the answer
+/// is «at work»: a last repaint or a clock passes, a spinner does not.
+const QUIET_READINGS: u32 = 3;
 
 /// What this command line says a free session of it looks like, or the refusal.
 /// Never a mark written here: one guessed would call a session free on every
