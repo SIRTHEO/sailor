@@ -293,6 +293,7 @@ fn a_session_holding_a_tool_is_not_free_however_still_its_screen_is() {
         "ttys015",
         "a-command-line",
         &["caffeinate".to_owned()],
+        &[],
     );
 
     assert_eq!(
@@ -309,7 +310,13 @@ fn what_the_line_declares_it_holds_while_idle_frees_the_terminal() {
     let mut table = the_table_of_a_session_at_work();
     table.retain(|row| !row.command.contains("a-server"));
 
-    let held = relay::still_holding(&table, "ttys015", "a-command-line", &["caffeinate".to_owned()]);
+    let held = relay::still_holding(
+        &table,
+        "ttys015",
+        "a-command-line",
+        &["caffeinate".to_owned()],
+        &[],
+    );
 
     assert!(held.is_empty(), "only the idle companion is left: {held:?}");
 }
@@ -323,7 +330,66 @@ fn what_another_terminal_runs_does_not_hold_this_one() {
         row.tty = "ttys002".to_owned();
     }
 
-    let held = relay::still_holding(&table, "ttys015", "a-command-line", &[]);
+    let held = relay::still_holding(&table, "ttys015", "a-command-line", &[], &[]);
 
     assert!(held.is_empty(), "nothing on ttys015 is running: {held:?}");
+}
+
+/// **A SERVER THE LINE STARTS FOR ITSELF IS NOT WORK.** Measured 29/09/2026 in
+/// the ledger: a session past its line waited 28 minutes to be emptied, once a
+/// minute, and was compacted instead, because the server it starts at its own
+/// start and keeps until it ends was read as work in flight.
+#[test]
+fn a_declared_resident_server_and_what_it_runs_do_not_hold_the_terminal() {
+    let resident = ["npm exec a-server".to_owned()];
+
+    let held = relay::still_holding(
+        &the_table_of_a_session_at_work(),
+        "ttys015",
+        "a-command-line",
+        &["caffeinate".to_owned()],
+        &resident,
+    );
+
+    assert!(
+        held.is_empty(),
+        "the server and its node are the line's own: {held:?}"
+    );
+}
+
+/// The exception is narrow: only a direct child of the line, spelled exactly as
+/// declared. The same words under a shell are a tool somebody ran, and a
+/// declared server does not hide the work standing beside it.
+#[test]
+fn a_resident_server_hides_no_work_standing_beside_it_or_spelled_like_it() {
+    let resident = ["npm exec a-server".to_owned()];
+    let mut table = the_table_of_a_session_at_work();
+    table.push(relay::OnTheMachine {
+        pid: 30001,
+        parent: 21405,
+        tty: "ttys015".to_owned(),
+        command: "npm exec a-server --then-do-something".to_owned(),
+    });
+    table.push(relay::OnTheMachine {
+        pid: 30002,
+        parent: 27719,
+        tty: "ttys015".to_owned(),
+        command: "sleep 600".to_owned(),
+    });
+    table.push(relay::OnTheMachine {
+        pid: 30003,
+        parent: 27719,
+        tty: "ttys015".to_owned(),
+        command: "npm exec a-server-but-another".to_owned(),
+    });
+
+    let held = relay::still_holding(
+        &table,
+        "ttys015",
+        "a-command-line",
+        &["caffeinate".to_owned()],
+        &resident,
+    );
+
+    assert_eq!(held, vec!["npm".to_owned(), "sleep".to_owned()], "{held:?}");
 }
