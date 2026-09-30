@@ -996,7 +996,7 @@ mod tests {
 
         assert_eq!(
             outcome,
-            Err("role «reviewer» has no row in roles".to_owned()),
+            Err(catalogue::say("cli.role.missing", &[("role", "reviewer")])),
             "the role refusal is still the reason the flow is refused"
         );
         assert!(

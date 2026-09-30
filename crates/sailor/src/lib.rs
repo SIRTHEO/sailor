@@ -44,6 +44,7 @@ mod release_candidate;
 pub mod release_cmd;
 pub mod remaining_cmd;
 pub mod remember_cmd;
+pub mod role_cmd;
 pub mod repeats_cmd;
 mod stuck_cmd;
 pub mod retire_index;
@@ -169,6 +170,12 @@ pub const COMMANDS: &[Command] = &[
         description_key: "cli.command.remember",
         usage: remember_cmd::USAGE,
         run: remember_cmd::run,
+    },
+    Command {
+        name: "role",
+        description_key: "cli.command.role",
+        usage: role_cmd::USAGE,
+        run: role_cmd::run,
     },
     Command {
         name: "search",
