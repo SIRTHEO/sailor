@@ -406,7 +406,12 @@ fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
             held = Some(row.to_owned());
             below = 0;
         } else {
-            below += raw.chars().filter(|c| !c.is_whitespace()).count();
+            below += raw
+                .chars()
+                .filter(|c| {
+                    !c.is_whitespace() && !('\u{2500}'..='\u{257f}').contains(c) && *c != '|'
+                })
+                .count();
         }
     }
     held.filter(|_| below <= BURIED_UNDER)

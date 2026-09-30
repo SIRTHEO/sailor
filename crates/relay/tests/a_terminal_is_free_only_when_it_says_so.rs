@@ -540,9 +540,11 @@ fn padding_under_a_menu_does_not_bury_it_and_a_lone_return_does_not_hide_it() {
         "❯ 1. Yes\r\n{}❯ ",
         format!("│ x{}│\r\n", " ".repeat(200)).repeat(20)
     );
+    let ruled = format!("❯ 1. Yes\r\n  2. No\r\n{}\r\n❯ ", "─".repeat(4000));
     for (name, screen) in [
         ("padded", padded.as_str()),
         ("return", "foo\r❯ 1. Yes\r  2. No\r❯ "),
+        ("rules", ruled.as_str()),
     ] {
         let scratch = Scratch::new(name);
         scratch
