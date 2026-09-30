@@ -2,13 +2,13 @@
 // version in service; the project root. A missing store is said, not zeroed.
 
 import { useAsk } from "./ask";
-import { sizeWords, whatSailorKeeps } from "./keeps";
+import { sizeWords, whatSailorKeeps, whenWords } from "./keeps";
 
 const KEEPS_EVERY_MS = 30000;
 
 function when(seconds: number | null): string {
   if (seconds === null) return "unknown";
-  return new Date(seconds * 1000).toLocaleString("en-GB", { hour12: false });
+  return whenWords(seconds);
 }
 
 export function KeepsScreen({ native }: { native: boolean }) {

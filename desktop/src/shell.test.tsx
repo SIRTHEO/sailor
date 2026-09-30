@@ -64,13 +64,14 @@ function pretendShell(answers: Record<string, unknown | ((args?: Record<string, 
 
 /** Picks the row ⌘K draws with exactly this label: the accessible name of an
  *  option carries the hint too, and «Runs» is a place and a view inside it. */
-/* A SECTION IS A DYNAMIC IMPORT AWAY. It is fetched when the place asks for
-   it, so a query fired in the same tick as the gesture finds the gap the
-   fallback leaves and concludes the section is not there. */
+/* A SECTION IS A DYNAMIC IMPORT AWAY, and the default 1000 ms is that fetch's
+   budget rather than the machine's: a query fired in the same tick as the
+   gesture finds the gap the fallback leaves, and on a loaded runner so does
+   one fired a second later. */
 async function theSectionArrives(): Promise<void> {
   await waitFor(() => {
     expect(document.querySelector(".section:not([hidden])")).toBeTruthy();
-  });
+  }, { timeout: 5000 });
 }
 
 async function typeInThePalette(label: string): Promise<void> {

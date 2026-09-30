@@ -188,7 +188,32 @@ function carriesColor(property: string, value: string): boolean {
   return /(^|-)(color|background|fill|stroke)$/.test(property);
 }
 
-function specificityOf(selector: string): number {
+/**
+ * **`:where()` WEIGHS NOTHING**, which is why a sheet reaches for it. Counted
+ * as a pseudo-class it would outweigh a class, and this model would hand the
+ * win to the rule a browser rejects.
+ */
+function withoutWhere(selector: string): string {
+  let out = selector;
+  let at = out.indexOf(":where(");
+  while (at >= 0) {
+    let depth = 0;
+    let end = at + ":where".length;
+    for (; end < out.length; end += 1) {
+      if (out[end] === "(") depth += 1;
+      if (out[end] === ")") {
+        depth -= 1;
+        if (depth === 0) break;
+      }
+    }
+    out = out.slice(0, at) + out.slice(end + 1);
+    at = out.indexOf(":where(");
+  }
+  return out;
+}
+
+function specificityOf(unweighed: string): number {
+  const selector = withoutWhere(unweighed);
   const ids = selector.match(/#[\w-]+/g)?.length ?? 0;
   const classes = selector.match(/\.[\w-]+|\[[^\]]*\]|:[\w-]+(\([^)]*\))?/g)?.length ?? 0;
   const types = selector.match(/(^|[\s>+~])[a-z][\w-]*/gi)?.length ?? 0;

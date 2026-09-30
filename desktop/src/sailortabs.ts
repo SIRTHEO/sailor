@@ -13,7 +13,8 @@ export type SailorTab =
   | "models"
   | "equipment"
   | "commands"
-  | "look";
+  | "look"
+  | "window";
 
 export const SAILOR_TABS: { id: SailorTab; name: string; about: string; group: string }[] = [
   { id: "running", name: "What it is running", about: "what sailor lit on this machine and never saw end", group: "itself" },
@@ -25,4 +26,5 @@ export const SAILOR_TABS: { id: SailorTab; name: string; about: string; group: s
   { id: "equipment", name: "Equipment", about: "tools, skills and rules on this machine", group: "setup" },
   { id: "commands", name: "Commands", about: "every verb sailor answers to", group: "setup" },
   { id: "look", name: "Appearance", about: "night, day, or whatever this machine says", group: "setup" },
+  { id: "window", name: "The window", about: "the three columns, while they are being built", group: "itself" },
 ];

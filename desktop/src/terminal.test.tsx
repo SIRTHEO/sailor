@@ -5,7 +5,7 @@ import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { Terminal as Emulator } from "@xterm/xterm";
 import stylesheetSource from "./styles.css?raw";
 import App from "./App";
-import { belowThreshold, contrastPairs, inOtherScheme, parseStylesheet, type Stylesheet } from "./contrast";
+import { belowThreshold, contrastPairs, inOtherScheme, parseStylesheet, styleTree, type Stylesheet } from "./contrast";
 import { ANOTHER_PATH, placesOf, shortestTails, Terminals, WORKSPACE_HINT } from "./Terminals";
 import {
   BLOCKED_MARK,
@@ -1613,6 +1613,30 @@ describe("the three signals in the panes' borders", () => {
         container.querySelector(".session-work .session-context"),
         "the detail went back to sitting beside the terminal",
       ).toBeNull();
+    } finally {
+      shell.stop();
+    }
+  });
+});
+
+describe("the head of a pane", () => {
+  /** Three items pushed right split the slack three ways, and the bar reads as
+   *  four islands. One seam packs the facts left of it and the controls right. */
+  test("HAS ONE SEAM, AND THE STATE IS AT IT", async () => {
+    const shell = pretendShell({ terminal_list: TWO });
+    try {
+      render(
+        <div className="app">
+          <Terminals native />
+        </div>,
+      );
+      await screen.findByRole("tab", { name: /packages/ });
+      const head = document.querySelector(".pane__head") as HTMLElement;
+      const styles = styleTree(head, sheet);
+      const pushed = Array.from(head.children).filter(
+        (child) => styles.get(child)?.declarations.get("margin-left") === "auto",
+      );
+      expect(pushed.map((child) => child.className)).toEqual(["pane__state"]);
     } finally {
       shell.stop();
     }

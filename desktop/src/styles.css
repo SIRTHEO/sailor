@@ -64,9 +64,9 @@
        gets a say: at 375px the rail and the inspector came to 520 and the
        canvas — the surface this window exists for — was zero pixels wide. */
 
-/* 12. The ground is never pure black, and never neutral: the greys carry a
-       plum undertone so that the ANSI green and red the terminal prints read
-       as the only pure hues on the screen. */
+/* 12. The ground is never pure black, and never a brand: the greys are paper,
+       warm and unsaturated, and every hue on the screen was put there by a
+       machine saying what it is doing. Selection and focus are the ink. */
 
 /* HOW THESE PROHIBITIONS TURN RED. `stylesheet.test.ts` reads this sheet and
    rejects a font, a radius, a shadow or a colour that skips a role;
@@ -77,20 +77,21 @@
 
 :root {
   /* --- THREE GROUNDS, named for their distance from the floor. --- */
-  --surface-0: #19171d;  /* the terminal and the canvas: the floor */
-  --surface-1: #211e26;  /* the rail and the chrome around the work */
-  --surface-2: #2b2731;  /* hover, menus, nodes: what lifts off the chrome */
-  --border: #423a4b;     /* a 1px thread, never a carrier of state on its own */
+  --surface-0: #17181a;  /* the terminal and the canvas: the floor */
+  --surface-1: #1d1f22;  /* the rail and the chrome around the work */
+  --surface-2: #232629;  /* hover, menus, nodes: what lifts off the chrome */
+  --border: #3a3e43;     /* a 1px thread, never a carrier of state on its own */
 
   /* --- THREE TEXT LEVELS. Lowest pair on any ground, 5.5:1. --- */
-  --text-1: #f1edf3;
-  --text-2: #c4bdcc;
-  --text-3: #a49bab;
+  --text-1: #ddd9d1;
+  --text-2: #a3a29c;
+  --text-3: #8e8d88;
 
-  /* --- SELECTION AND FOCUS, AND NOTHING ELSE. Violet because the terminal
-         under it prints ANSI green and red all day. --- */
-  --accent: #ac9af2;
-  --on-accent: #19171d;
+  /* --- SELECTION AND FOCUS, AND NOTHING ELSE. Graphite: what is selected is
+         said with the ink itself, so the only hues on the screen are the ones
+         a machine put there. --- */
+  --accent: #d8d3ca;
+  --on-accent: #17181a;
 
   /* --- MACHINE STATE, on an icon and the word, never on a whole row. --- */
   --running: #87b5ed;
@@ -107,7 +108,7 @@
   --line: var(--border);
   /* The veil under a lane: the panel is visible, and it moves no contrast
      pair. */
-  --band-fill: rgb(241 237 243 / 3.5%);
+  --band-fill: rgb(221 217 209 / 3.5%);
 
   --ink: var(--text-1);
   --muted: var(--text-2);
@@ -148,6 +149,10 @@
   --text-large: 18px;
   --text-micro: var(--text-small);
   --text-display: var(--text-large);
+  /* The face is loaded without its optical axis, so the text cut is set at
+     every size and reads loose at the top of the scale: Inter's own dynamic
+     metrics give -0.014em at 18px and about zero at 12 and 13. */
+  --tracking-large: -0.014em;
 
   /* --- SPACE. A 4px grid, seven steps. Nothing outside it. --- */
   --space-1: 4px;
@@ -194,8 +199,8 @@
   --optional: var(--text-3);
   /* Graph paper at two pitches, both under 1.5:1 on --bg: a grid that reads
      competes with the nodes, and the nodes are the figure. */
-  --grid-fine: #1d1b22;
-  --grid-coarse: #232029;
+  --grid-fine: #1c1d20;
+  --grid-coarse: #212327;
 
   /* One tint per flow lane, generated rather than picked: hues evenly spaced,
      lightness solved so each clears 3:1 on both grounds, closest pair 0.070
@@ -255,18 +260,18 @@
    values in place. Day, for whoever works by a window. */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
-    --surface-0: #f7f4f8;
-    --surface-1: #eeebf1;
-    --surface-2: #ffffff;
-    --border: #d5cdd9;
-    --band-fill: rgb(41 35 47 / 3.5%);
+    --surface-0: #f4f2ed;
+    --surface-1: #ebe8e2;
+    --surface-2: #faf9f6;
+    --border: #cdc9c1;
+    --band-fill: rgb(51 48 43 / 3.5%);
 
-    --text-1: #29232f;
-    --text-2: #514958;
-    --text-3: #706676;
+    --text-1: #33302b;
+    --text-2: #5c5a54;
+    --text-3: #676460;
 
-    --accent: #6750a4;
-    --on-accent: #ffffff;
+    --accent: #33302b;
+    --on-accent: #faf9f6;
 
     --running: #245c96;
     --needs-human: #805b15;
@@ -278,11 +283,11 @@
     --warn-soft: #f4e7d0;
     --danger-soft: #f7dfe3;
 
-    --shadow: 0 8px 24px rgb(41 35 47 / 10%);
-    --scrim: rgb(41 35 47 / 40%);
+    --shadow: 0 8px 24px rgb(51 48 43 / 10%);
+    --scrim: rgb(51 48 43 / 40%);
 
-    --grid-fine: #efebf1;
-    --grid-coarse: #e6e1e9;
+    --grid-fine: #efede8;
+    --grid-coarse: #e6e3dd;
 
     --lane-1: #d26b71;
     --lane-2: #c87436;
@@ -304,18 +309,18 @@
    compares the two declaration by declaration. Night needs no twin — it is the
    ground, and the `:not()` above is what steps aside for it. */
 :root[data-theme="light"] {
-  --surface-0: #f7f4f8;
-  --surface-1: #eeebf1;
-  --surface-2: #ffffff;
-  --border: #d5cdd9;
-  --band-fill: rgb(41 35 47 / 3.5%);
+  --surface-0: #f4f2ed;
+  --surface-1: #ebe8e2;
+  --surface-2: #faf9f6;
+  --border: #cdc9c1;
+  --band-fill: rgb(51 48 43 / 3.5%);
 
-  --text-1: #29232f;
-  --text-2: #514958;
-  --text-3: #706676;
+  --text-1: #33302b;
+  --text-2: #5c5a54;
+  --text-3: #676460;
 
-  --accent: #6750a4;
-  --on-accent: #ffffff;
+  --accent: #33302b;
+  --on-accent: #faf9f6;
 
   --running: #245c96;
   --needs-human: #805b15;
@@ -327,11 +332,11 @@
   --warn-soft: #f4e7d0;
   --danger-soft: #f7dfe3;
 
-  --shadow: 0 8px 24px rgb(41 35 47 / 10%);
-  --scrim: rgb(41 35 47 / 40%);
+  --shadow: 0 8px 24px rgb(51 48 43 / 10%);
+  --scrim: rgb(51 48 43 / 40%);
 
-  --grid-fine: #efebf1;
-  --grid-coarse: #e6e1e9;
+  --grid-fine: #efede8;
+  --grid-coarse: #e6e3dd;
 
   --lane-1: #d26b71;
   --lane-2: #c87436;
@@ -387,7 +392,9 @@ body {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* Dynamic, not the static viewport: a webview whose chrome moves leaves a
+     strip of ground below the window, and the field scrolls under it. */
+  height: 100dvh;
 }
 
 .bar {
@@ -666,11 +673,13 @@ button.is-danger {
   background: var(--danger-soft);
 }
 
-/* IT STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF. This sheet is unlayered
-   and Tailwind's utilities are not, so unlayered wins whatever the
-   specificity: without the `:not`, a shadcn button renders as a hand-rolled
-   one and the component is a dependency paid for and inert. */
-button:not([data-slot]) {
+/* IT STEPS ASIDE FOR A COMPONENT THAT PAINTS ITSELF, and for a class. This
+   sheet is unlayered and Tailwind's is not, so a bare `button` rule repaints a
+   shadcn button; and the guard against that costs weight, which is why it sits
+   inside `:where()`. Written `:not([data-slot])` it outweighed every class
+   here and was painting thirty of the window's thirty-two buttons as this box.
+   `aclasswins.test.tsx` measures that on the drawn DOM. */
+button:where(:not([data-slot])) {
   font: inherit;
   font-family: var(--font-prose);
   font-size: var(--text-small);
@@ -683,7 +692,7 @@ button:not([data-slot]) {
   transition: border-color var(--motion-fast) var(--ease), background var(--motion-fast) var(--ease);
 }
 
-button:not([data-slot]):hover:not(:disabled) {
+button:where(:not([data-slot])):hover:not(:disabled) {
   border-color: var(--ink);
 }
 
@@ -693,7 +702,7 @@ button:not([data-slot]):hover:not(:disabled) {
  * the viewer has to be able to read it. `opacity` over the browser's own
  * grey lands at 1.30:1; `--muted` on `--bg` is 4.80:1.
  */
-button:not([data-slot]):disabled {
+button:where(:not([data-slot])):disabled {
   color: var(--muted);
   background: var(--bg);
   border-style: dashed;
@@ -1413,6 +1422,7 @@ button.is-primary {
 .keeps__title {
   font-family: var(--font-display);
   font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
   margin: 0 0 var(--space-2);
 }
 
@@ -2366,6 +2376,7 @@ tr[data-followable]:hover {
 
 .blank__card h2 {
   font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
   margin: 0 0 10px;
 }
 
@@ -2504,6 +2515,7 @@ tr[data-followable]:hover {
 
 .broken h2 {
   font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
   margin: 0 0 10px;
 }
 
@@ -4082,6 +4094,9 @@ tr[data-followable]:hover {
   white-space: nowrap;
 }
 
+/* THE ONE SEAM OF THE HEAD: the facts pack left of it, the state and the
+   controls right. A second `margin-left: auto` among these children divides
+   the slack instead of collecting it. */
 .pane__state {
   margin-left: auto;
   font-size: var(--text-small);
@@ -4592,7 +4607,6 @@ tr[data-followable]:hover {
 }
 
 .pane__close {
-  margin-left: auto;
   font-size: var(--text-small);
   color: var(--muted);
   padding: 0 var(--space-2);
@@ -5158,10 +5172,6 @@ tr[data-followable]:hover {
 .pane__keys {
   font-size: var(--text-small);
   color: var(--ink);
-}
-
-.pane__keys {
-  margin-left: auto;
 }
 
 .pane__mode {
@@ -6963,6 +6973,7 @@ tr[data-followable]:hover {
 .waiting__title {
   font-family: var(--font-display);
   font-size: var(--text-display);
+  letter-spacing: var(--tracking-large);
   font-weight: 600;
   color: var(--ink);
 }
@@ -7212,6 +7223,7 @@ tr[data-followable]:hover {
 .demo__title {
   font-family: var(--font-display);
   font-size: var(--text-display);
+  letter-spacing: var(--tracking-large);
   font-weight: 600;
   color: var(--ink);
   margin: 0;
@@ -7440,4 +7452,316 @@ tr[data-followable]:hover {
 .flows__troubles {
   margin: 0;
   padding-left: var(--space-4);
+}
+
+/* ===========================================================================
+   THE WINDOW — the column picks which list, the panel picks which thing, the
+   field holds what is open. Every screen is these three filled differently,
+   which is why none of them carries a navigation of its own.
+   =========================================================================== */
+
+.window-shell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-0);
+  color: var(--ink);
+}
+
+/* The two rigid columns come to 350px, so at 900px — the narrowest this window
+   opens, held by `minWidth` in tauri.conf.json — the field, which is the thing
+   this window is for, still has 550px. They give way by narrowing and never by
+   leaving the row. The rule below 700px is reached by no window and stands for
+   a browser. Prohibition 11. */
+.window-shell__columns {
+  display: grid;
+  grid-template-columns: 58px 292px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.window-shell__footing {
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.window-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding-top: 12px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--line);
+}
+
+/* The icons carry no state: a mark meaning «something waits» belongs to the row
+   it happened on, and the column is also the only way to four other lists. */
+.window-rail__button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+}
+
+.window-rail__button:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.window-rail__button[aria-current] {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.window-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.window-panel__head {
+  padding: 20px 20px 12px;
+}
+
+.window-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.window-panel__name {
+  margin: 0;
+  font-size: var(--text-large);
+  letter-spacing: var(--tracking-large);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.window-panel__list {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.window-field {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface-0);
+}
+
+.window-field__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-body);
+}
+
+.window-field__name {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.window-field__note {
+  color: var(--muted);
+}
+
+.window-field__actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.window-field__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* THE TERMINAL IS THE FIELD, not a card inside it: it takes the whole body
+   and the body's own edges are its frame. */
+.window-field__body:has(> .pane) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.window-field__body > .pane {
+  border: 0;
+  border-radius: 0;
+}
+
+.window-field__trouble {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-small);
+  color: var(--danger);
+}
+
+.window-panel__empty {
+  margin: 0;
+  padding: 4px 20px 16px;
+  font-size: var(--text-small);
+  line-height: 1.5;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* NOTHING OPEN IS NOT A THING CALLED «NOTHING OPEN». The field carries no head
+   until something is in it, and says in one line what fills it. */
+.window-field__empty {
+  margin: auto;
+  max-width: 34ch;
+  padding: var(--space-6);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--muted);
+  text-align: center;
+  /* Centred and short: the browser's own break leaves a one-word last line,
+     which reads as a mistake rather than as a sentence. */
+  text-wrap: balance;
+}
+
+/* A NAME RESOLVES SOMEWHERE, and the heading is where. Scanned, not read, so
+   it carries the panel's own weight and never a row's. */
+.window-rows__group + .window-rows__group {
+  margin-top: 16px;
+}
+
+.window-rows__head {
+  margin: 0;
+  padding: 0 20px 4px;
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.window-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.window-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 20px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  font-size: var(--text-body);
+  color: var(--muted);
+}
+
+.window-row:hover {
+  background: var(--surface-2);
+}
+
+/* A row is as wide as the column that scrolls it, so a ring outside the row is
+   a ring outside the clip: the left and right edges vanish and what is left
+   reads as a divider. Drawn inside, it keeps all four. */
+.window-row:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The mark is a bar and a weight, never a tint: the tint on this window means
+   a machine is doing something. It lands on the press, not on the release. */
+.window-row[aria-current],
+.window-row:active {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--ink);
+}
+
+/* Not on `:active`: a weight that changes under the finger reflows the row's
+   text while it is being pressed. */
+.window-row[aria-current] .window-row__name {
+  font-weight: 600;
+}
+
+.window-row__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+}
+
+.window-row__since {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  color: var(--muted);
+}
+
+.window-row__gone {
+  font-size: var(--text-small);
+  color: var(--state-broke);
+}
+
+.window-facts {
+  margin: 0;
+  padding: 16px 20px;
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 8px 16px;
+  font-size: var(--text-body);
+}
+
+/* A state line answers for the whole declaration, so it takes the row: left to
+   auto-placement it lands in the 140px label column, which is where the reason
+   a declaration could not be read would be squeezed. */
+.window-facts__state {
+  grid-column: 1 / -1;
+}
+
+.window-facts dt {
+  color: var(--muted);
+}
+
+.window-facts dd {
+  margin: 0;
+  color: var(--ink);
+}
+
+.window-facts__path {
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+/* «None declared» is a fact the workspace stated; an empty cell is not. */
+.window-facts__absent {
+  color: var(--muted);
+}
+
+/* The files a name beat, one a line: a run of paths joined by commas is read
+   as one path by anyone scanning. */
+.window-facts__chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+/* A narrow window narrows the panel and never hides it: the panel is the
+   only way to choose what the field holds. */
+@media (width <= 700px) {
+  .window-shell__columns {
+    grid-template-columns: 58px 200px minmax(0, 1fr);
+  }
 }

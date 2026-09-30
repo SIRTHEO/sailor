@@ -1422,6 +1422,12 @@ export default function App() {
     return [...go, ...ground, ...machine, ...open, ...run, ...demo];
   }, [flows, handleRun, goToMachine]);
 
+  /* THE WINDOW IS THE THREE COLUMNS, AND NOTHING DRAWS AROUND THEM. The bar
+     and the column of this shell are two navigations the design does not have,
+     and drawn around the three they make five. `⌘K` is bound to the window
+     rather than to the bar, so there is still a way out. */
+  const whole = place === "sailor" && sailorTab === "window";
+
   return (
     <TooltipProvider>
     <div className="app">
@@ -1431,7 +1437,7 @@ export default function App() {
           <Demo open={demoOpen} onClose={() => setDemoOpen(false)} />
         </Suspense>
       )}
-      <TopBar
+      {!whole && <TopBar
         crumbs={crumbs}
         chips={
           <>
@@ -1449,11 +1455,11 @@ export default function App() {
             <BeatChip native={NATIVE} now={now} />
           </>
         }
-      />
+      />}
 
       {/* The places, in a column, divided by what you are doing. */}
       <div className="app__body">
-      <World
+      {!whole && <World
         native={NATIVE}
         source={source}
         here={place}
@@ -1500,7 +1506,7 @@ export default function App() {
           </button>
           </>
         }
-      />
+      />}
       <div className="stage">
 
       {/* THE BOARD'S HEAD, AND EVERY CONTROL THE BAR USED TO HOLD FOR IT.
@@ -1657,6 +1663,7 @@ export default function App() {
         <SailorScreen
           native={NATIVE}
           tab={sailorTab}
+          ceiling={ceilingOf(flows)}
           onTerminalOpened={() => {
             setPlace("terminals");
             setTerminalsTab("live");

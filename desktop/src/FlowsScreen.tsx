@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { chainWords, replacesWords } from "./flowchain";
+import { groupWords } from "./flowgroups";
 import {
   flowsByWorkspace,
   flowsHere,
@@ -37,13 +38,6 @@ export interface FlowsViewProps {
 }
 
 export type Mode = "here" | "all";
-
-const GROUP_WORDS: Record<string, string> = {
-  workspace: "window.flows.group.workspace",
-  declared: "window.flows.group.declared",
-  yours: "window.flows.group.yours",
-  "built in": "window.flows.group.built_in",
-};
 
 /** The keys of the two modes, as a map the catalogue judge can read. */
 const MODE_WORDS: Record<Mode, string> = {
@@ -309,7 +303,7 @@ export function FlowsView({ here: hereAsk, all: allAsk, onMode, onOpen, onRun }:
           {groupsHere(reading).map((group) => (
             <tbody key={group.key}>
               <tr className="flows__group">
-                <th colSpan={4}>{GROUP_WORDS[group.key] ? t(GROUP_WORDS[group.key]) : group.key}</th>
+                <th colSpan={4}>{groupWords(group.key)}</th>
               </tr>
               {group.rows.map((row) => rowOf(row, standing))}
             </tbody>
