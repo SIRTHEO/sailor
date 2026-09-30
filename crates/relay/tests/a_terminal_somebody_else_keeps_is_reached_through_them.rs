@@ -212,6 +212,33 @@ fn a_kept_screen_that_changes_between_two_reads_is_a_session_at_work() {
     assert!(why.contains("session at work"), "{why}");
 }
 
+/// **ONE MOVEMENT IS NOT A SESSION AT WORK.** A screen that changed once (a
+/// clock, a last repaint after the turn ended) and then stands still is read
+/// again, a bounded number of times; a screen that never settles is still
+/// refused.
+#[test]
+fn a_kept_screen_that_settles_after_one_movement_is_free() {
+    let scratch = Scratch::new("settling");
+    let counter = scratch.at("times");
+    let reads = scratch.script(
+        "read.sh",
+        &format!(
+            "printf 'x' >> {counter}; n=$(wc -c < {counter}); [ \"$n\" -gt 2 ] && n=2; printf '│ > %s' \"$n\""
+        ),
+    );
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys004");
+
+    let outcome = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys004")
+        .expect("it does not break");
+
+    match outcome {
+        ActionOutcome::Went(said) => assert_eq!(said["free"], json!(true), "{said}"),
+        other => panic!("it settled, so it should have gone: {other:?}"),
+    }
+}
+
 /// **A KEEPER NOBODY CAN REACH IS NOT A TERMINAL THAT IS FREE.** The program
 /// that owns the session can be shut: that is a refusal with a name, never a
 /// quiet yes.
