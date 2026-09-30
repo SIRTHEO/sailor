@@ -60,7 +60,7 @@ fn a_short_note_stays_whole_and_points_nowhere() {
     let text = page(&[memory("reference", "short", "One line. And a second.")], "any");
     let line = line_of(&text, "short");
     assert!(line.contains("One line. And a second."), "{line}");
-    assert!(!line.contains("sailor search"), "{line}");
+    assert!(!line.contains("memory show"), "{line}");
 }
 
 #[test]
@@ -108,4 +108,46 @@ fn the_whole_note_is_found_by_its_label() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].value, body);
     assert!(whole(&held, "unknown").is_empty());
+}
+
+#[test]
+fn a_full_stop_is_a_sentence_end_only_before_a_capital() {
+    for first in [
+        "Use v1. 2 of the tool only when the door is closed.",
+        "Ask Dr. Smith about the door when it is closed.",
+        "Ask the owner (e.g. Bob) about the door when it is closed.",
+        "Read section 3. 4 of the note about the door when closed.",
+    ] {
+        let text = page(&[memory("project", "the-door", &long_body(first))], "any");
+        let line = line_of(&text, "the-door");
+        assert!(line.contains("when"), "cut inside «{first}»: {line}");
+        assert!(!line.contains("A later sentence"), "{line}");
+    }
+}
+
+#[test]
+fn a_sentence_that_ends_in_no_is_cut_there() {
+    let text = page(&[memory("project", "the-answer", &long_body("The answer is no. Then the rest."))], "any");
+    let line = line_of(&text, "the-answer");
+    assert!(line.contains("The answer is no. …"), "{line}");
+}
+
+#[test]
+fn a_note_with_windows_line_ends_is_cut_like_any_other() {
+    let body = format!("Line one.\r\nline two. {}", "x ".repeat(200));
+    let text = page(&[memory("reference", "crlf", &body)], "any");
+    let line = line_of(&text, "crlf");
+    assert!(!line.contains('\r'), "{line:?}");
+    assert!(line.contains("Line one.") && line.contains("…"), "{line}");
+}
+
+#[test]
+fn the_pointer_is_the_key_and_the_key_finds_the_note() {
+    let body = long_body("A summary.");
+    let held = [memory("reference", "Lab Port", &body)];
+    let text = page(&held, "any");
+    let line = line_of(&text, "Lab Port");
+    assert!(line.contains("`sailor memory show lab-port`"), "{line}");
+    assert_eq!(whole(&held, "lab-port").len(), 1);
+    assert_eq!(whole(&held, "Lab Port").len(), 1);
 }

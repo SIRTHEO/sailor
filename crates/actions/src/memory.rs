@@ -266,9 +266,9 @@ const A_SUMMARY_IS_AT_MOST: usize = 200;
 
 /// A rule is read as it is written. A `reference` or `project` note past a
 /// line's length is cut at its first sentence, or on a character boundary when
-/// it has none, and names the search that returns the rest.
+/// it has none, and names the command that prints the rest.
 fn on_the_page(memory: &Memory) -> String {
-    let body = memory.value.replace('\n', " ");
+    let body = memory.value.replace("\r\n", " ").replace(['\n', '\r'], " ");
     let indexed = matches!(memory.kind.as_str(), "reference" | "project");
     if !indexed || body.len() <= A_NOTE_IS_CARRIED_WHOLE_UP_TO {
         return body;
@@ -282,24 +282,28 @@ fn on_the_page(memory: &Memory) -> String {
         Some(at) => &head[..=at],
         None => head,
     };
-    format!("{summary} … (`sailor memory show {}`)", memory.label)
+    format!("{summary} … (`sailor memory show {}`)", label_key(&memory.label))
 }
 
 /// Words that end in a full stop without ending a sentence.
-const ABBREVIATIONS: &[&str] = &["e.g", "i.e", "etc", "vs", "cf", "no", "approx"];
+const ABBREVIATIONS: &[&str] = &["e.g", "i.e", "etc", "vs", "cf", "approx", "dr", "mr", "mrs", "ms", "prof", "st", "sig"];
 
 /// The index of the full stop that closes the first sentence: one followed by a
-/// space, not after an abbreviation and not after a lone letter or digit.
+/// space and a capital, not after an abbreviation and not after a lone letter or
+/// digit.
 fn first_sentence_end(text: &str) -> Option<usize> {
     text.match_indices(". ").map(|(at, _)| at).find(|&at| {
-        let word = text[..at].rsplit(' ').next().unwrap_or("").to_lowercase();
-        word.chars().count() > 1 && !ABBREVIATIONS.contains(&word.as_str())
+        let word = text[..at].rsplit(' ').next().unwrap_or("").trim_start_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        let capital_follows = text[at + 2..].chars().next().is_none_or(char::is_uppercase);
+        capital_follows && word.chars().count() > 1 && !ABBREVIATIONS.contains(&word.as_str())
     })
 }
 
 /// Every memory valid now under this label, whole: what the page only points at.
+/// The label is matched as the key it is filed under, which the page prints.
 pub fn whole<'a>(memories: &'a [Memory], label: &str) -> Vec<&'a Memory> {
-    memories.iter().filter(|memory| memory.label == label).collect()
+    let key = label_key(label);
+    memories.iter().filter(|memory| label_key(&memory.label) == key).collect()
 }
 
 fn render(groups: &[(Option<&str>, Vec<&Memory>)]) -> String {
