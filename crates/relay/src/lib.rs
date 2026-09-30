@@ -370,6 +370,11 @@ fn freedom_now(
             "{tty}: a selection is open at «{row}», so somebody is being asked to choose"
         )));
     }
+    if let Some(draft) = a_draft_at_the_prompt(&seen, &free_when.the_prompt_shows) {
+        return Ok(Freedom::NotYet(format!(
+            "{tty}: «{draft}» is typed at the prompt, so somebody is not done"
+        )));
+    }
     match free_when
         .the_prompt_shows
         .iter()
@@ -415,6 +420,23 @@ fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
         }
     }
     held.filter(|_| below <= BURIED_UNDER)
+}
+
+/// **A DRAFT IS NOT AN EMPTY PROMPT.** Text after the last prompt mark is
+/// what a person has typed and not sent.
+fn a_draft_at_the_prompt(seen: &str, prompts: &[String]) -> Option<String> {
+    let edge = |c: char| c.is_whitespace() || matches!(c, '│' | '┃' | '║' | '|');
+    seen.split(['\n', '\r'])
+        .filter_map(|raw| {
+            let row = raw.trim_matches(edge);
+            prompts
+                .iter()
+                .find_map(|mark| row.strip_prefix(mark.as_str()))
+        })
+        .last()
+        .map(|after| after.trim_matches(edge))
+        .filter(|typed| !typed.is_empty())
+        .map(str::to_owned)
 }
 
 /// One line of the process table: who it is, who started it, where it sits.

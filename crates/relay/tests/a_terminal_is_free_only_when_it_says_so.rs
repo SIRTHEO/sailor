@@ -464,6 +464,29 @@ fn a_selection_whose_cursor_wears_the_prompts_chevron_is_a_person_being_waited_f
 
 /// The chevron alone on its row is still the prompt.
 #[test]
+fn a_draft_typed_at_the_prompt_is_a_person_who_is_not_done() {
+    let scratch = Scratch::new("draft");
+    scratch
+        .declaring(the_shipped_chevron())
+        .painted("ttys001", "done\r\n\r\n❯ ciao, ora ti spiego".as_bytes());
+
+    not_yet(&scratch.asked("ttys001"));
+}
+
+#[test]
+fn a_message_sent_long_ago_above_a_bare_prompt_is_not_a_draft() {
+    let scratch = Scratch::new("echo");
+    scratch.declaring(the_shipped_chevron()).painted(
+        "ttys001",
+        "❯ fix the tests\r\ndone\r\n\r\n❯\u{a0}".as_bytes(),
+    );
+
+    let outcome = scratch.asked("ttys001").expect("it does not break");
+
+    assert!(matches!(outcome, ActionOutcome::Went(_)), "{outcome:?}");
+}
+
+#[test]
 fn the_chevron_alone_on_its_row_is_still_a_free_prompt() {
     let scratch = Scratch::new("chevron");
     scratch
