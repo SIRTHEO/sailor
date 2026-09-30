@@ -260,12 +260,90 @@ pub fn page_of_every_tree(memories: &[Memory]) -> String {
     render(&groups)
 }
 
+/// The longest a note is carried whole; a rule is always whole.
+const A_NOTE_IS_CARRIED_WHOLE_UP_TO: usize = 240;
+const A_SUMMARY_IS_AT_MOST: usize = 200;
+
+/// A rule is read as it is written. A `reference` or `project` note past a
+/// line's length is cut at its first sentence, or on a character boundary when
+/// it has none, and names the command that prints the rest.
+fn on_the_page(memory: &Memory) -> String {
+    let body = memory
+        .value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let indexed = matches!(memory.kind.as_str(), "reference" | "project");
+    if !indexed || body.len() <= A_NOTE_IS_CARRIED_WHOLE_UP_TO {
+        return body;
+    }
+    let mut end = A_SUMMARY_IS_AT_MOST.min(body.len());
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &body[..end];
+    let summary = match first_sentence_end(head) {
+        Some(at) => &head[..=at],
+        None => head,
+    };
+    format!(
+        "{summary} … (`sailor memory show {}`)",
+        label_key(&memory.label)
+    )
+}
+
+/// Words that end in a full stop without ending a sentence.
+const ABBREVIATIONS: &[&str] = &[
+    "e.g", "i.e", "etc", "ecc", "vs", "cf", "cfr", "approx", "dr", "dott", "dott.ssa", "mr", "mrs",
+    "ms", "prof", "ing", "avv", "sig", "sig.ra", "st", "art", "pag", "es",
+];
+
+/// The index of the full stop that closes the first sentence: one followed by a
+/// space and then a capital, a digit or a code span, past any opening quote or
+/// markup. Not
+/// after an abbreviation, an initial or a dotted acronym, and not a digit after
+/// a version number.
+fn first_sentence_end(text: &str) -> Option<usize> {
+    text.match_indices(". ").map(|(at, _)| at).find(|&at| {
+        let word = text[..at]
+            .rsplit(' ')
+            .next()
+            .unwrap_or("")
+            .trim_start_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
+        let next = &text[at + 2..];
+        let after = next.trim_start_matches(|c: char| !c.is_alphanumeric());
+        let opens_a_sentence = match after.chars().next() {
+            _ if next.starts_with('`') => true,
+            None => true,
+            Some(c) if c.is_ascii_digit() => !word.ends_with(|c: char| c.is_ascii_digit()),
+            Some(c) => c.is_uppercase(),
+        };
+        let a_dotted_acronym =
+            word.contains('.') && word.split('.').all(|part| part.chars().count() <= 1);
+        opens_a_sentence
+            && word.chars().count() > 1
+            && !a_dotted_acronym
+            && !ABBREVIATIONS.contains(&word.as_str())
+    })
+}
+
+/// Every memory valid now under this label, whole: what the page only points at.
+/// The label is matched as the key it is filed under, which the page prints.
+pub fn whole<'a>(memories: &'a [Memory], label: &str) -> Vec<&'a Memory> {
+    let key = label_key(label);
+    memories
+        .iter()
+        .filter(|memory| label_key(&memory.label) == key)
+        .collect()
+}
+
 fn render(groups: &[(Option<&str>, Vec<&Memory>)]) -> String {
     let mut lines: Vec<String> = Vec::new();
     for (tree, listed) in groups.iter().filter(|(_, listed)| !listed.is_empty()) {
         lines.push(format!("## {}", tree.unwrap_or(EVERYWHERE)));
         for memory in listed {
-            lines.push(format!("- **{}** ({}): {}", memory.label, memory.kind, memory.value.replace('\n', " ")));
+            lines.push(format!("- **{}** ({}): {}", memory.label, memory.kind, on_the_page(memory)));
         }
     }
     if lines.len() > PAGE_LINES {
