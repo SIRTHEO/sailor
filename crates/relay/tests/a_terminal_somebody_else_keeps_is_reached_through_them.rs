@@ -528,9 +528,15 @@ fn a_keeper_that_fails_late_is_not_asked_with_no_time_left() {
     let types = scratch.script("type.sh", "true");
     scratch.declaring(&reads, &types).kept("ttys013");
 
-    scratch
+    let refusal = scratch
         .asking(relay::WAIT_FREE_ACTION, "ttys013")
         .expect_err("the keeper failed");
+    assert!(!refusal.said.contains("times: first"), "{}", refusal.said);
+    assert!(
+        !refusal.said.contains("nothing was put to it"),
+        "{}",
+        refusal.said
+    );
 
     assert_eq!(
         std::fs::read_to_string(&asked)
@@ -569,5 +575,15 @@ fn a_question_with_no_time_left_is_not_put() {
     assert!(
         std::fs::read_to_string(&asked).is_err(),
         "the keeper was asked with no time left"
+    );
+    assert!(
+        refusal.said.contains("nothing was put to it"),
+        "{}",
+        refusal.said
+    );
+    assert!(
+        !refusal.said.contains("nobody can reach"),
+        "a keeper that was never asked is not one nobody can reach: {}",
+        refusal.said
     );
 }

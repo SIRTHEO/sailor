@@ -22,8 +22,8 @@ const TRIES_TO_TYPE: u32 = 1;
 
 /// The pause before a question is put again, taken out of `LONG_ENOUGH`.
 const BETWEEN_TRIES: Duration = Duration::from_millis(500);
-/// The least an asking must be left with to be worth making.
-const LEAST_TO_ASK_AGAIN: Duration = Duration::from_secs(2);
+/// The least an asking must be left with to be put at all.
+const LEAST_TO_ASK: Duration = Duration::from_secs(2);
 
 /// Why an asking got no answer, and whether asking again could change it.
 struct Unanswered {
@@ -163,17 +163,17 @@ impl Keeper {
         let mut answers: Vec<String> = Vec::new();
         for asking in 1..=tries {
             let left = LONG_ENOUGH.saturating_sub(began.elapsed());
-            if left < LEAST_TO_ASK_AGAIN {
-                answers
-                    .push("was not asked: the time for the question was already spent".to_owned());
+            if left < LEAST_TO_ASK {
+                if answers.is_empty() {
+                    return Err(self.not_asked());
+                }
                 break;
             }
             match self.ran(argv, filling, left) {
                 Ok(printed) => return Ok(printed),
                 Err(unanswered) => {
                     answers.push(unanswered.why);
-                    let time_left =
-                        began.elapsed() + BETWEEN_TRIES + LEAST_TO_ASK_AGAIN < LONG_ENOUGH;
+                    let time_left = began.elapsed() + BETWEEN_TRIES + LEAST_TO_ASK < LONG_ENOUGH;
                     if !unanswered.again || asking == tries || !time_left {
                         break;
                     }
@@ -238,6 +238,17 @@ impl Keeper {
                 again: false,
             }),
         }
+    }
+
+    fn not_asked(&self) -> ActionError {
+        ActionError::new(
+            "keeper_did_not_answer",
+            format!(
+                "«{}» keeps this terminal; nothing was put to it, because the time for the \
+                 question was spent before it could be",
+                self.id
+            ),
+        )
     }
 
     fn broke(&self, why: &str) -> ActionError {
