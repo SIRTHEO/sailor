@@ -282,18 +282,28 @@ fn on_the_page(memory: &Memory) -> String {
         Some(at) => &head[..=at],
         None => head,
     };
-    format!("{summary} … (`sailor memory show {}`)", label_key(&memory.label))
+    format!(
+        "{summary} … (`sailor memory show {}`)",
+        label_key(&memory.label)
+    )
 }
 
 /// Words that end in a full stop without ending a sentence.
-const ABBREVIATIONS: &[&str] = &["e.g", "i.e", "etc", "vs", "cf", "approx", "dr", "mr", "mrs", "ms", "prof", "st", "sig"];
+const ABBREVIATIONS: &[&str] = &[
+    "e.g", "i.e", "etc", "vs", "cf", "approx", "dr", "mr", "mrs", "ms", "prof", "st", "sig",
+];
 
 /// The index of the full stop that closes the first sentence: one followed by a
 /// space and a capital, not after an abbreviation and not after a lone letter or
 /// digit.
 fn first_sentence_end(text: &str) -> Option<usize> {
     text.match_indices(". ").map(|(at, _)| at).find(|&at| {
-        let word = text[..at].rsplit(' ').next().unwrap_or("").trim_start_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+        let word = text[..at]
+            .rsplit(' ')
+            .next()
+            .unwrap_or("")
+            .trim_start_matches(|c: char| !c.is_alphanumeric())
+            .to_lowercase();
         let capital_follows = text[at + 2..].chars().next().is_none_or(char::is_uppercase);
         capital_follows && word.chars().count() > 1 && !ABBREVIATIONS.contains(&word.as_str())
     })
@@ -303,7 +313,10 @@ fn first_sentence_end(text: &str) -> Option<usize> {
 /// The label is matched as the key it is filed under, which the page prints.
 pub fn whole<'a>(memories: &'a [Memory], label: &str) -> Vec<&'a Memory> {
     let key = label_key(label);
-    memories.iter().filter(|memory| label_key(&memory.label) == key).collect()
+    memories
+        .iter()
+        .filter(|memory| label_key(&memory.label) == key)
+        .collect()
 }
 
 fn render(groups: &[(Option<&str>, Vec<&Memory>)]) -> String {

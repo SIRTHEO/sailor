@@ -127,7 +127,14 @@ fn a_full_stop_is_a_sentence_end_only_before_a_capital() {
 
 #[test]
 fn a_sentence_that_ends_in_no_is_cut_there() {
-    let text = page(&[memory("project", "the-answer", &long_body("The answer is no. Then the rest."))], "any");
+    let text = page(
+        &[memory(
+            "project",
+            "the-answer",
+            &long_body("The answer is no. Then the rest."),
+        )],
+        "any",
+    );
     let line = line_of(&text, "the-answer");
     assert!(line.contains("The answer is no. …"), "{line}");
 }
