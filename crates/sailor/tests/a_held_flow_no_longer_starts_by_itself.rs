@@ -388,3 +388,34 @@ fn a_person_holds_a_flow_sees_it_held_and_takes_the_hold_off() {
     );
     assert!(!ok, "nothing to take off: {said}");
 }
+
+/// A resume that ran and answered «not yet» again is a wait, not a break; a
+/// resume that failed before it ran left the run as it was and is one.
+#[test]
+fn the_beat_calls_a_run_that_answered_not_yet_again_waiting_and_not_broke() {
+    let scratch = Scratch::new("waits");
+    let sources = scratch.watching("empties");
+    let ledger = scratch.ledger();
+    parked(&ledger, "empties", "ran", "ttys001");
+    parked(&ledger, "empties", "never-ran", "ttys002");
+    let mut resume = |run_id: &str| {
+        if run_id == "ran" {
+            let header = ledger.run_header("ran").expect("reads").expect("there");
+            ledger
+                .record_run(&RunRecord {
+                    ended_at: Some(150),
+                    ..header
+                })
+                .expect("the resume writes its end");
+        }
+        Err(format!("run {run_id} — not yet"))
+    };
+
+    let (said, woken, _) =
+        sailor::flow_cmd::beat::ask_the_parked_again(&sources, &ledger, 160, &mut resume);
+
+    assert_eq!(woken, 2, "{said}");
+    let line = |run: &str| said.lines().find(|l| l.contains(run)).unwrap_or("").to_owned();
+    assert!(line("run ran").contains("\twaiting\t"), "{said}");
+    assert!(line("run never-ran").contains("\tbroke\t"), "{said}");
+}

@@ -442,6 +442,7 @@ pub fn ask_the_parked_again(
             woken += 1;
             let (word, how) = match resume(&run.run_id) {
                 Ok(answer) => ("woken", answer),
+                Err(complaint) if answered_not_yet_again(ledger, &run) => ("waiting", complaint),
                 Err(complaint) => ("broke", complaint),
             };
             let _ = writeln!(
@@ -464,6 +465,19 @@ pub fn ask_the_parked_again(
     }
     woken += wake_the_lapsed_handovers(ledger, now, resume, &mut said);
     (said, woken, let_go)
+}
+
+/// Whether a resume that reported an error still ran: the run is parked as
+/// before and its end moved on, which only an answer of «not yet» does.
+fn answered_not_yet_again(ledger: &Ledger, run: &ledger::WaitingRun) -> bool {
+    ledger
+        .run_header(&run.run_id)
+        .ok()
+        .flatten()
+        .is_some_and(|header| {
+            header.status == "not_yet"
+                && header.ended_at.is_some_and(|end| end > run.waiting_since)
+        })
 }
 
 /// Resumes the runs waiting on a handover whose deadline has passed: the
