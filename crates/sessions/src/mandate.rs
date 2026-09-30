@@ -79,6 +79,7 @@ pub struct Constraint {
 /// Material a person handed to the session. The instruction is `asked`; this
 /// is the link, file or note the work rests on, and Sailor only carries it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Reference {
     /// What it is and why the work needs it.
     pub what: String,
@@ -110,6 +111,40 @@ pub struct Work {
     /// Left out when empty, so a mandate older than the field is written back as it was.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<Reference>,
+    /// Keys this binary does not know, kept so that rewriting a mandate never strips them.
+    #[serde(flatten, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+pub const MOST_REFERENCES: usize = 16;
+pub const LONGEST_REFERENCE: usize = 500;
+
+/// What a mandate holds that it cannot carry: a key nobody reads, or material
+/// that would not arrive as one bounded line. Named at deposit, where the author is alive.
+pub fn misshapen_fields(work: &Work) -> Vec<String> {
+    let mut named: Vec<String> = work
+        .extra
+        .keys()
+        .map(|key| format!("work.{key} (a key nothing reads)"))
+        .collect();
+    if work.references.len() > MOST_REFERENCES {
+        named.push(format!(
+            "work.references ({} of them, at most {MOST_REFERENCES})",
+            work.references.len()
+        ));
+    }
+    for (index, given) in work.references.iter().enumerate() {
+        for (name, value) in [("what", &given.what), ("at", &given.at)] {
+            if value.contains(['\n', '\r']) {
+                named.push(format!("work.references[{index}].{name} (more than one line)"));
+            } else if value.chars().count() > LONGEST_REFERENCE {
+                named.push(format!(
+                    "work.references[{index}].{name} (over {LONGEST_REFERENCE} characters)"
+                ));
+            }
+        }
+    }
+    named
 }
 
 /// Who took it, and when. A mandate is consumed once, by the session that

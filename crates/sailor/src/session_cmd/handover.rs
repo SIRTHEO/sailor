@@ -822,17 +822,18 @@ mod tests {
         let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 100)
             .expect("a mandate arrives");
 
-        assert!(
-            !handed.contains(&catalogue::say(
-                "cli.session.the_mandate_holds_material",
-                &[("material", "")]
-            )),
-            "{handed}"
+        let path = sessions::mandate::address_in(&directory, "ttys001");
+        let before = catalogue::say(
+            "cli.session.the_mandate_is_yours",
+            &[
+                ("goal", "carry on"),
+                ("asked", ""),
+                ("next", ""),
+                ("never", ""),
+                ("path", &path.display().to_string()),
+            ],
         );
-        assert!(
-            handed.ends_with("Read it before you touch anything."),
-            "{handed}"
-        );
+        assert_eq!(handed, before);
         let _ = std::fs::remove_dir_all(&directory);
     }
 

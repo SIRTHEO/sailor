@@ -5,7 +5,7 @@
 //! itself, and the deposit dropped any field it did not know without a word.
 
 use serde_json::{json, Value};
-use sessions::mandate::{blank_fields, deposit, pass_on, read, address_in, Mandate};
+use sessions::mandate::{address_in, blank_fields, deposit, pass_on, read, reserve, Mandate};
 use std::path::PathBuf;
 
 struct Scratch(PathBuf);
@@ -105,4 +105,41 @@ fn material_survives_a_mandate_being_passed_to_another_terminal() {
         serde_json::to_value(&arrived).expect("a value")["work"]["references"],
         material()
     );
+}
+
+/// **A KEY THIS BINARY DOES NOT KNOW SURVIVES BEING REWRITTEN.** Reserving and
+/// taking rewrite the file, and an older or newer binary in service must not
+/// strip what only the other one understands.
+#[test]
+fn a_key_this_binary_does_not_know_survives_a_rewrite() {
+    let scratch = Scratch::new("later-field");
+    let mut value = serde_json::to_value(a_mandate("ttys006", Value::Null)).expect("a value");
+    value["work"]["a_field_of_a_later_version"] = json!(["kept"]);
+    let mandate: Mandate = serde_json::from_value(value).expect("it reads");
+    deposit(&scratch.0, &mandate).expect("the deposit goes");
+
+    reserve(&address_in(&scratch.0, "ttys006"), "the-successor", 100).expect("it is held");
+
+    let read_back = read(&address_in(&scratch.0, "ttys006")).expect("it is on disk");
+    assert_eq!(
+        serde_json::to_value(&read_back).expect("a value")["work"]["a_field_of_a_later_version"],
+        json!(["kept"])
+    );
+}
+
+/// **HALF A REFERENCE STILL READS, SO IT CAN BE NAMED.**
+#[test]
+fn half_a_reference_reads_and_is_named_with_its_place() {
+    let half: Mandate = serde_json::from_value(serde_json::to_value(a_mandate(
+        "ttys007",
+        json!([{"what": "a note", "at": "x"}]),
+    ))
+    .map(|mut value| {
+        value["work"]["references"] = json!([{"what": "a note"}]);
+        value
+    })
+    .expect("a value"))
+    .expect("half a reference still reads");
+
+    assert_eq!(blank_fields(&half), vec!["work.references[0].at".to_owned()]);
 }

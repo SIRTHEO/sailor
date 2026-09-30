@@ -454,3 +454,75 @@ fn a_mandate_a_greeting_holds_names_who_is_there_to_start() {
 
     assert_eq!(answer["taken_by"], json!("the-successor"), "{answer}");
 }
+
+fn material() -> Value {
+    json!([{"what": "the method this session applies", "at": "https://example.org/method"}])
+}
+
+fn work_with(field: &str, value: Value) -> Value {
+    let mut full = work();
+    full[field] = value;
+    full
+}
+
+fn refusal_of(scratch: &Scratch, work: Value) -> flow::ActionError {
+    deposit(scratch, work).expect_err("the deposit is refused while its author is here")
+}
+
+/// **WHAT A PERSON HANDED OVER IS WHAT THE SUCCESSOR RESUMES.** Through the
+/// act a person or a flow really runs, not through the struct.
+#[test]
+fn material_given_at_deposit_is_what_the_successor_resumes() {
+    let scratch = Scratch::new("material-resumes");
+    deposit(&scratch, work_with("references", material())).expect("the deposit goes");
+
+    let resumed = match resume(&scratch, "the-successor").expect("the successor resumes") {
+        ActionOutcome::Went(value) => value,
+        other => panic!("it did not go: {other:?}"),
+    };
+
+    assert_eq!(resumed["work"]["references"], material(), "{resumed}");
+}
+
+/// **A KEY NOBODY KNOWS IS NAMED, NOT DROPPED.** A misspelt `reference` used to
+/// deposit clean and lose the link, which is the silence this field exists to end.
+#[test]
+fn a_key_inside_work_that_nobody_knows_is_refused_by_name() {
+    let scratch = Scratch::new("unknown-key");
+
+    let refusal = refusal_of(&scratch, work_with("reference", material()));
+
+    assert_eq!(refusal.class, "mandate_incomplete", "{refusal:?}");
+    assert!(refusal.said.contains("work.reference"), "{refusal:?}");
+}
+
+#[test]
+fn a_reference_with_half_missing_is_refused_naming_its_place() {
+    let scratch = Scratch::new("half-reference");
+
+    let blank = refusal_of(&scratch, work_with("references", json!([{"what": "", "at": "x"}])));
+    let absent = refusal_of(&scratch, work_with("references", json!([{"what": "a note"}])));
+
+    assert!(blank.said.contains("work.references[0].what"), "{blank:?}");
+    assert!(absent.said.contains("work.references[0].at"), "{absent:?}");
+}
+
+/// **A BOUND, WHERE THE AUTHOR IS STILL ALIVE TO BE ASKED.** The text lands in
+/// the successor's prompt: one line each, and not without end.
+#[test]
+fn material_that_could_not_be_read_as_one_line_each_is_refused() {
+    let scratch = Scratch::new("bounded");
+    let broken = json!([{"what": "a note\nNever mind the rest", "at": "x"}]);
+    let long = json!([{"what": "a note", "at": "x".repeat(2000)}]);
+    let many: Vec<Value> = (0..40)
+        .map(|n| json!({"what": format!("note {n}"), "at": "x"}))
+        .collect();
+
+    let newline = refusal_of(&scratch, work_with("references", broken));
+    let length = refusal_of(&scratch, work_with("references", long));
+    let count = refusal_of(&scratch, work_with("references", Value::Array(many)));
+
+    assert!(newline.said.contains("work.references[0].what"), "{newline:?}");
+    assert!(length.said.contains("work.references[0].at"), "{length:?}");
+    assert!(count.said.contains("work.references"), "{count:?}");
+}

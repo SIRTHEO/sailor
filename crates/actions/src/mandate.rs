@@ -188,6 +188,17 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
             ),
         ));
     }
+    let misshapen = mandate::misshapen_fields(&mandate.work);
+    if !misshapen.is_empty() {
+        return Err(ActionError::new(
+            "mandate_incomplete",
+            format!(
+                "the mandate holds what it cannot carry, and whoever could fix it is still \
+                     here: {}",
+                misshapen.join(", ")
+            ),
+        ));
+    }
     let archived = mandate::deposit(&root, &mandate)
         .map_err(|error| ActionError::new("mandate_not_written", error.to_string()))?;
     Ok(json!({
