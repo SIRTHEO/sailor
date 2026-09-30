@@ -76,6 +76,16 @@ pub struct Constraint {
     pub consequence: String,
 }
 
+/// Material a person handed to the session. The instruction is `asked`; this
+/// is the link, file or note the work rests on, and Sailor only carries it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reference {
+    /// What it is and why the work needs it.
+    pub what: String,
+    /// A URL or a path, as the person gave it.
+    pub at: String,
+}
+
 /// What only the session knows.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Work {
@@ -97,6 +107,9 @@ pub struct Work {
     pub questions: Vec<String>,
     #[serde(default)]
     pub never: Vec<String>,
+    /// Left out when empty, so a mandate older than the field is written back as it was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<Reference>,
 }
 
 /// Who took it, and when. A mandate is consumed once, by the session that
@@ -188,6 +201,13 @@ pub fn blank_fields(mandate: &Mandate) -> Vec<String> {
         ] {
             if value.trim().is_empty() {
                 missing.push(format!("work.constraints[{index}].{name}"));
+            }
+        }
+    }
+    for (index, given) in work.references.iter().enumerate() {
+        for (name, value) in [("what", &given.what), ("at", &given.at)] {
+            if value.trim().is_empty() {
+                missing.push(format!("work.references[{index}].{name}"));
             }
         }
     }

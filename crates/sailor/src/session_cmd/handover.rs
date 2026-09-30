@@ -112,7 +112,7 @@ fn the_mandate_of(
         return None;
     }
     let left = sessions::mandate::reserve(&path, session, at).ok()?;
-    Some(catalogue::say(
+    let greeting = catalogue::say(
         "cli.session.the_mandate_is_yours",
         &[
             ("goal", &left.work.goal),
@@ -121,6 +121,23 @@ fn the_mandate_of(
             ("never", &left.work.never.join(" · ")),
             ("path", &path.display().to_string()),
         ],
+    );
+    if left.work.references.is_empty() {
+        return Some(greeting);
+    }
+    let material = left
+        .work
+        .references
+        .iter()
+        .map(|given| format!("{} ({})", given.what, given.at))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    Some(format!(
+        "{greeting}\n{}",
+        catalogue::say(
+            "cli.session.the_mandate_holds_material",
+            &[("material", &material)]
+        )
     ))
 }
 
@@ -761,6 +778,60 @@ mod tests {
         assert_eq!(
             held.reserved.map(|held| held.by).as_deref(),
             Some("the-successor")
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **WHAT A PERSON HANDED OVER ARRIVES WITH THE GREETING, NOT BEHIND A PATH.**
+    /// The successor is told to read the file for the rest; the link it cannot
+    /// ask for is the one thing it must not have to go looking for.
+    #[test]
+    fn the_material_a_person_handed_over_arrives_with_the_greeting() {
+        let directory = std::env::temp_dir().join(format!("sailor-material-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.work.goal = "apply the method".to_owned();
+        mandate.work.references = vec![sessions::mandate::Reference {
+            what: "the method this session applies".to_owned(),
+            at: "https://example.org/method".to_owned(),
+        }];
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+
+        let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 100)
+            .expect("a mandate arrives");
+
+        assert!(handed.contains("the method this session applies"), "{handed}");
+        assert!(handed.contains("https://example.org/method"), "{handed}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A mandate with no material greets exactly as it always did.
+    #[test]
+    fn a_mandate_with_no_material_is_greeted_as_before() {
+        let directory =
+            std::env::temp_dir().join(format!("sailor-no-material-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.work.goal = "carry on".to_owned();
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+
+        let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 100)
+            .expect("a mandate arrives");
+
+        assert!(
+            !handed.contains(&catalogue::say(
+                "cli.session.the_mandate_holds_material",
+                &[("material", "")]
+            )),
+            "{handed}"
+        );
+        assert!(
+            handed.ends_with("Read it before you touch anything."),
+            "{handed}"
         );
         let _ = std::fs::remove_dir_all(&directory);
     }
