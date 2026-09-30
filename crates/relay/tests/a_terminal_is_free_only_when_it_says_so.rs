@@ -475,9 +475,20 @@ fn the_chevron_alone_on_its_row_is_still_a_free_prompt() {
     assert!(matches!(outcome, ActionOutcome::Went(_)), "{outcome:?}");
 }
 
-/// The bytes of that menu as the line really paints them: each cell is
-/// addressed by a column, so the cursor and the option's number have no space
-/// between them once the screen is read as a person sees it.
+#[test]
+fn a_menu_answered_and_left_above_a_bare_prompt_is_not_a_person_being_waited_for() {
+    let scratch = Scratch::new("menu-answered");
+    scratch.declaring(the_shipped_chevron()).painted(
+        "ttys001",
+        "  1. Auto\r\n❯ 2. Dark mode\r\n  3. Light\r\n\r\nset to dark\r\n\r\n❯ ".as_bytes(),
+    );
+
+    let outcome = scratch.asked("ttys001").expect("it does not break");
+
+    assert!(matches!(outcome, ActionOutcome::Went(_)), "{outcome:?}");
+}
+
+/// The menu as the line really paints it, cell by cell.
 #[test]
 fn a_selection_painted_cell_by_cell_is_a_person_being_waited_for() {
     let scratch = Scratch::new("menu-cells");

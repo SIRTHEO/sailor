@@ -385,9 +385,14 @@ fn freedom_now(
 }
 
 /// **A MENU IS NOT A PROMPT.** A selection's cursor wears the prompt's own mark
-/// before an option's number, on whichever option it stands.
+/// before an option's number; a bare prompt painted below means it was answered.
 fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
-    seen.lines().map(str::trim).find_map(|row| {
+    let rows: Vec<&str> = seen.lines().map(str::trim).collect();
+    let open_from = rows
+        .iter()
+        .rposition(|row| prompts.iter().any(|mark| row == mark))
+        .map_or(0, |bare| bare + 1);
+    rows[open_from..].iter().copied().find_map(|row| {
         prompts.iter().find_map(|mark| {
             let after = row.strip_prefix(mark.as_str())?.trim_start();
             let digits = after.chars().take_while(char::is_ascii_digit).count();
