@@ -37,6 +37,7 @@ fn step(id: &str, action: &str, max_attempts: u32) -> Step {
         action: action.to_owned(),
         max_attempts,
         ask_again_after_secs: None,
+        ask_again_for_secs: None,
         retry_after_secs: None,
         phase: None,
         stops_when: None,

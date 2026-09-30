@@ -35,6 +35,12 @@ pub struct Step {
     /// next one" — never "at once", which would spin the executor on one step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ask_again_after_secs: Option<u32>,
+    /// Seconds a step may keep answering `NotYet`, counted from the first
+    /// answer of the streak. Past it the next `NotYet` closes the step as
+    /// broken, and that break does not start a new window: the run ends failed and
+    /// visible once the attempts are spent, instead of being asked for ever. Absent means no end, which is what the engine has always done.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask_again_for_secs: Option<u32>,
     /// Seconds before a broken step is retried.
     ///
     /// Absent keeps what the engine has always done: it returns to the ready
@@ -691,6 +697,7 @@ mod tests {
             action: id.to_owned(),
             max_attempts: 1,
             ask_again_after_secs: None,
+            ask_again_for_secs: None,
             retry_after_secs: None,
             phase: None,
         stops_when: None,
