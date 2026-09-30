@@ -8,20 +8,22 @@ use flow::ActionError;
 use serde_json::Value;
 use std::path::Path;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use toolbox::descriptor::{InTheList, KeepsTerminals};
 
 /// How long a keeper has to answer a question, however often it is put.
 const LONG_ENOUGH: Duration = Duration::from_secs(10);
 
 /// How many times a question that changes nothing is put before it counts as
-/// unanswered. A line to type is put once: a failure after it arrived would
-/// type it twice.
+/// unanswered.
 const TRIES_TO_READ: u32 = 2;
+/// A line to type is put once: a failure after it arrived would type it twice.
 const TRIES_TO_TYPE: u32 = 1;
 
 /// The pause before a question is put again, taken out of `LONG_ENOUGH`.
 const BETWEEN_TRIES: Duration = Duration::from_millis(500);
+/// The least a second asking must be left with to be worth making.
+const LEAST_TO_ASK_AGAIN: Duration = Duration::from_secs(2);
 
 /// Why an asking got no answer, and whether asking again could change it.
 struct Unanswered {
@@ -73,13 +75,13 @@ impl Keeper {
     /// **MEASURED, NOT GUESSED.** Where the keeper declares a list, the name a
     /// session carries is looked up in it; where it declares none, the two are
     /// the same name and nothing is run.
-    fn handle(&self) -> Result<&str, ActionError> {
+    fn handle(&self, began: Instant) -> Result<&str, ActionError> {
         if let Some(found) = self.handle.get() {
             return Ok(found);
         }
         let found = match (&self.keeps.lists_them, &self.keeps.in_the_list) {
             (listing, Some(how)) if !listing.is_empty() => {
-                let printed = self.ran_up_to(TRIES_TO_READ, &listing.clone(), None)?;
+                let printed = self.ran_up_to(began, TRIES_TO_READ, &listing.clone(), None)?;
                 self.found_in(&printed, how)?
             }
             _ => self.named.clone(),
@@ -139,18 +141,25 @@ impl Keeper {
         line: Option<&str>,
         tries: u32,
     ) -> Result<Vec<u8>, ActionError> {
-        let handle = self.handle()?.to_owned();
-        self.ran_up_to(tries, argv, Some((&handle, line.unwrap_or_default())))
+        let began = Instant::now();
+        let handle = self.handle(began)?.to_owned();
+        self.ran_up_to(
+            began,
+            tries,
+            argv,
+            Some((&handle, line.unwrap_or_default())),
+        )
     }
 
-    /// **`LONG_ENOUGH` IS THE WHOLE QUESTION**, not each asking.
+    /// **`LONG_ENOUGH` IS THE WHOLE QUESTION**, not each asking: looking the
+    /// terminal up and putting the question share the time since `began`.
     fn ran_up_to(
         &self,
+        began: Instant,
         tries: u32,
         argv: &[String],
         filling: Option<(&str, &str)>,
     ) -> Result<Vec<u8>, ActionError> {
-        let began = std::time::Instant::now();
         let mut answers: Vec<String> = Vec::new();
         for asking in 1..=tries {
             let left = LONG_ENOUGH.saturating_sub(began.elapsed());
@@ -158,7 +167,8 @@ impl Keeper {
                 Ok(printed) => return Ok(printed),
                 Err(unanswered) => {
                     answers.push(unanswered.why);
-                    let time_left = began.elapsed() + BETWEEN_TRIES < LONG_ENOUGH;
+                    let time_left =
+                        began.elapsed() + BETWEEN_TRIES + LEAST_TO_ASK_AGAIN < LONG_ENOUGH;
                     if !unanswered.again || asking == tries || !time_left {
                         break;
                     }
@@ -170,7 +180,8 @@ impl Keeper {
             [only] => only.clone(),
             [first, rest @ ..] => {
                 format!(
-                    "asked twice and did not answer: first {first}; then {}",
+                    "asked {} times and did not answer: first {first}; then {}",
+                    answers.len(),
                     rest.join("; then ")
                 )
             }
