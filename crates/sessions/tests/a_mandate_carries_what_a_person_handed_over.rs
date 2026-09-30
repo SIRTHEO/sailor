@@ -143,3 +143,22 @@ fn half_a_reference_reads_and_is_named_with_its_place() {
 
     assert_eq!(blank_fields(&half), vec!["work.references[0].at".to_owned()]);
 }
+
+/// **THE SAME ONE LEVEL DOWN.** A claim, a decision, a constraint or a reference
+/// from another version keeps its extra key through a rewrite as well.
+#[test]
+fn a_key_one_level_down_survives_a_rewrite_too() {
+    let scratch = Scratch::new("nested-later-field");
+    let mut value = serde_json::to_value(a_mandate("ttys008", Value::Null)).expect("a value");
+    value["work"]["state"] = json!([{"said": "x", "verified": true, "a_later_key": "kept"}]);
+    let mandate: Mandate = serde_json::from_value(value).expect("it reads");
+    deposit(&scratch.0, &mandate).expect("the deposit goes");
+
+    reserve(&address_in(&scratch.0, "ttys008"), "the-successor", 100).expect("it is held");
+
+    let read_back = read(&address_in(&scratch.0, "ttys008")).expect("it is on disk");
+    assert_eq!(
+        serde_json::to_value(&read_back).expect("a value")["work"]["state"][0]["a_later_key"],
+        json!("kept")
+    );
+}

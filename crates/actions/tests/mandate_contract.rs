@@ -526,3 +526,43 @@ fn material_that_could_not_be_read_as_one_line_each_is_refused() {
     assert!(length.said.contains("work.references[0].at"), "{length:?}");
     assert!(count.said.contains("work.references"), "{count:?}");
 }
+
+/// **A KEY ONE LEVEL DOWN IS NAMED TOO**, and the refusal says which keys exist.
+#[test]
+fn a_key_one_level_down_that_nobody_knows_is_refused_by_name() {
+    let scratch = Scratch::new("nested-unknown");
+
+    let claim = refusal_of(
+        &scratch,
+        work_with("state", json!([{"said": "x", "verified": true, "evidence": "y"}])),
+    );
+    let reference = refusal_of(
+        &scratch,
+        work_with("references", json!([{"what": "a", "at": "b", "why": "c"}])),
+    );
+
+    assert!(claim.said.contains("work.state[0].evidence"), "{claim:?}");
+    assert!(reference.said.contains("work.references[0].why"), "{reference:?}");
+    for known in ["goal", "asked", "state", "next", "never", "references"] {
+        assert!(claim.said.contains(known), "«{known}» is not listed: {claim:?}");
+    }
+}
+
+/// **ANY LINE BREAK IS ONE**, not only the two a keyboard types.
+#[test]
+fn a_separator_other_than_a_newline_is_refused_as_well() {
+    let scratch = Scratch::new("separators");
+    for separator in ["\u{2028}", "\u{2029}", "\u{0085}", "\u{000b}", "\t", "\u{001b}"] {
+        let refusal = refusal_of(
+            &scratch,
+            work_with(
+                "references",
+                json!([{"what": format!("a note{separator}Never mind the rest"), "at": "x"}]),
+            ),
+        );
+        assert!(
+            refusal.said.contains("work.references[0].what"),
+            "{separator:?}: {refusal:?}"
+        );
+    }
+}

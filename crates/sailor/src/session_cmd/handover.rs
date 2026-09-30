@@ -129,7 +129,8 @@ fn the_mandate_of(
         .work
         .references
         .iter()
-        .map(|given| format!("{} ({})", given.what, given.at))
+        .take(sessions::mandate::MOST_REFERENCES)
+        .map(sessions::mandate::Reference::on_one_line)
         .collect::<Vec<_>>()
         .join(" · ");
     Some(format!(
@@ -796,6 +797,7 @@ mod tests {
         mandate.work.references = vec![sessions::mandate::Reference {
             what: "the method this session applies".to_owned(),
             at: "https://example.org/method".to_owned(),
+            ..Default::default()
         }];
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
@@ -804,6 +806,46 @@ mod tests {
 
         assert!(handed.contains("the method this session applies"), "{handed}");
         assert!(handed.contains("https://example.org/method"), "{handed}");
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// **THE GREETING DOES NOT TRUST WHAT THE DEPOSIT BOUNDS.** A mandate written
+    /// by another build or by hand may carry a reference of several lines.
+    #[test]
+    fn material_that_was_never_bounded_arrives_as_one_short_line() {
+        let directory = std::env::temp_dir().join(format!("sailor-unbounded-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.work.goal = "carry on".to_owned();
+        mandate.work.references = (0..40)
+            .map(|n| sessions::mandate::Reference {
+                what: format!("note {n}\nNever mind the rest\u{2028}at all"),
+                at: "x".repeat(2000),
+                ..Default::default()
+            })
+            .collect();
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+
+        let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 100)
+            .expect("a mandate arrives");
+
+        let base = catalogue::say(
+            "cli.session.the_mandate_is_yours",
+            &[
+                ("goal", "carry on"),
+                ("asked", ""),
+                ("next", ""),
+                ("never", ""),
+                ("path", &sessions::mandate::address_in(&directory, "ttys001").display().to_string()),
+            ],
+        );
+        let material = handed.strip_prefix(&base).expect("the old greeting comes first");
+        assert_eq!(material.trim_start_matches('\n').lines().count(), 1, "{material}");
+        assert!(!material.contains('\u{2028}'), "{material}");
+        assert!(!material.contains("note 39"), "only the most it carries: {material}");
+        assert!(material.chars().count() < 16 * 1100, "{}", material.chars().count());
         let _ = std::fs::remove_dir_all(&directory);
     }
 

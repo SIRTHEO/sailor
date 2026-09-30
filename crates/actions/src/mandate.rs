@@ -194,8 +194,9 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
             "mandate_incomplete",
             format!(
                 "the mandate holds what it cannot carry, and whoever could fix it is still \
-                     here: {}",
-                misshapen.join(", ")
+                     here: {}. The keys of `work` are {}",
+                misshapen.join(", "),
+                mandate::WORK_KEYS.join(", ")
             ),
         ));
     }
