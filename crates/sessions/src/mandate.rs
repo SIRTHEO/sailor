@@ -120,6 +120,9 @@ pub struct Reserved {
 /// that never spoke is taken for gone and the mandate is offered again.
 pub const A_RESERVATION_HOLDS_FOR: i64 = 60;
 
+/// Past this a mandate nobody took stays on disk and is handed to no one.
+pub const A_MANDATE_IS_HANDED_FOR: i64 = 7 * 24 * 3600;
+
 /// Where a mandate was sent on to, and when: the mark its original keeps aside.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Passed {

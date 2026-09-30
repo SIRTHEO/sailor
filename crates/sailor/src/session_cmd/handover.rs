@@ -92,6 +92,10 @@ fn the_mandate_of(
     if left.taken.is_some() {
         return None;
     }
+    // A mandate with no time written is the older shape, and silence is not an age.
+    if left.written.at > 0 && at - left.written.at > sessions::mandate::A_MANDATE_IS_HANDED_FOR {
+        return None;
+    }
     // **THE TTY IS THE ADDRESS, AND THE ADDRESS IS REUSED.** A different
     // session is what a mandate expects; the tree is the part that must still
     // hold. Taken once, it would be gone for the successor it was left for. A
@@ -690,6 +694,34 @@ mod tests {
         assert!(kept_from(&shipped(), &env_of(&[("PATH", "/usr/bin")]), "ttys004").is_none());
     }
 
+    /// **A WEEK-OLD MANDATE IS NOT FOR WHOEVER OPENS THE TERMINAL.** It stays on
+    /// disk, untouched, and is not handed on.
+    #[test]
+    fn a_mandate_a_week_old_is_not_handed_to_whoever_opens_the_terminal() {
+        let directory = std::env::temp_dir().join(format!("sailor-aged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.written.at = 1_000;
+        mandate.work.goal = "work nobody expects any more".to_owned();
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+        let a_day = 24 * 3600;
+
+        assert_eq!(
+            the_mandate_of(&directory, "ttys001", "a-stranger", "", 1_000 + 8 * a_day),
+            None,
+            "eight days on, nobody is handed it"
+        );
+        let kept = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys001"))
+            .expect("it is still on disk");
+        assert_eq!(kept.reserved, None, "and it is not even held for anyone");
+
+        let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 1_000 + 2 * a_day)
+            .expect("two days on, it is still the successor's");
+        assert!(handed.contains("work nobody expects any more"), "{handed}");
+    }
+
     /// **THE GREETING IS THE DELIVERY, AND IT IS HANDED ONCE.** A handover read
     /// twice sends two sessions off to do the same work, and neither of them
     /// can tell. It is held, not taken: the take waits for the session to speak.
@@ -887,6 +919,32 @@ mod tests {
     }
 
     /// **THE ASK STANDS UNTIL IT IS ANSWERED, AND THE ANSWER IS THE MANDATE.**
+    /// **A SESSION ASKED TO HAND ON MUST ALSO BE TOLD TO STOP.** Between the
+    /// deposit and the emptying the session keeps its turns; work started in
+    /// that gap is work the successor is never handed.
+    #[test]
+    fn the_ask_tells_the_session_to_start_nothing_new() {
+        let directory = std::env::temp_dir().join(format!("sailor-ask-stop-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
+        ledger
+            .put_record(&ledger::StoreRecord {
+                collection: ASKS.to_owned(),
+                key: "ttys001".to_owned(),
+                value: serde_json::json!({"state": OBLIGE, "tokens": 260_000u64}),
+                written_by: "a-run".to_owned(),
+                written_at: 100,
+            })
+            .expect("the ask is written");
+        let asked = the_ask_of(&ledger, &directory, "ttys001", "whoever-is-here", "", None)
+            .expect("unanswered, it is asked");
+        assert!(
+            asked.contains("start nothing new"),
+            "the ask must say to start no new work once the mandate is deposited: {asked}"
+        );
+    }
+
     /// A request repeated after the mandate was written is a request nobody can
     /// satisfy: whoever reads it has already done the thing.
     #[test]

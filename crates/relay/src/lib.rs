@@ -337,7 +337,13 @@ fn freedom_now(
                  holds is not knowing it holds nothing"
             )));
         };
-        let held = still_holding(&rows, tty, &line_command_of(catalog, cli)?, but);
+        let held = still_holding(
+            &rows,
+            tty,
+            &line_command_of(catalog, cli)?,
+            but,
+            &free_when.and_resident_servers,
+        );
         if !held.is_empty() {
             return Ok(Freedom::NotYet(format!(
                 "{tty}: the session still holds {}, so it is working whatever its screen shows",
@@ -431,6 +437,7 @@ pub fn still_holding(
     tty: &str,
     line_command: &str,
     but: &[String],
+    resident: &[String],
 ) -> Vec<String> {
     let here: Vec<&OnTheMachine> = rows.iter().filter(|row| row.tty.ends_with(tty)).collect();
     let mut frontier: Vec<u32> = here
@@ -438,8 +445,16 @@ pub fn still_holding(
         .filter(|row| called(&row.command) == line_command)
         .map(|row| row.pid)
         .collect();
+    // **A SERVER THE LINE STARTS FOR ITSELF IS NOT WORK, BUT ONLY THAT ONE.**
+    // Direct children of the line, spelled as declared; what runs under them
+    // is theirs. The same words under a shell are a tool somebody ran.
+    let mut seen: std::collections::BTreeSet<u32> = here
+        .iter()
+        .filter(|row| frontier.contains(&row.parent))
+        .filter(|row| resident.contains(&row.command))
+        .map(|row| row.pid)
+        .collect();
     let mut held = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
     while let Some(parent) = frontier.pop() {
         for row in here.iter().filter(|row| row.parent == parent) {
             if !seen.insert(row.pid) {
@@ -497,16 +512,22 @@ fn painted_now(
              nothing to read"
         )));
     };
-    let first = keeper.reads_the_screen()?;
-    std::thread::sleep(std::time::Duration::from_secs(still_for));
-    let again = keeper.reads_the_screen()?;
-    if first != again {
-        return Ok(Painted::NotYet(format!(
-            "{tty}: the screen changed inside {still_for}s, so this is a session at work"
-        )));
+    let mut last = keeper.reads_the_screen()?;
+    for _ in 0..QUIET_READINGS {
+        std::thread::sleep(std::time::Duration::from_secs(still_for));
+        let again = keeper.reads_the_screen()?;
+        if last == again {
+            return Ok(Painted::Bytes(again));
+        }
+        last = again;
     }
-    Ok(Painted::Bytes(again))
+    Ok(Painted::NotYet(format!(
+        "{tty}: the screen changed in each of {QUIET_READINGS} readings {still_for}s apart, so \
+         this is a session at work"
+    )))
 }
+
+const QUIET_READINGS: u32 = 3;
 
 /// What this command line says a free session of it looks like, or the refusal.
 /// Never a mark written here: one guessed would call a session free on every
