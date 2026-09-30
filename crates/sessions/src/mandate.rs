@@ -50,12 +50,18 @@ pub struct Claim {
     pub said: String,
     /// Checked in this turn against the world, not remembered from earlier.
     pub verified: bool,
+    /// Keys this binary does not know, kept so that rewriting never strips them.
+    #[serde(flatten, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
     pub decided: String,
     pub authorised_by: String,
+    /// Keys this binary does not know, kept so that rewriting never strips them.
+    #[serde(flatten, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// A rule the successor must keep, with everything it needs to keep it.
@@ -74,6 +80,23 @@ pub struct Constraint {
     pub fallback: String,
     /// What happens if it is broken.
     pub consequence: String,
+    /// Keys this binary does not know, kept so that rewriting never strips them.
+    #[serde(flatten, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Material a person handed to the session. The instruction is `asked`; this
+/// is the link, file or note the work rests on, and Sailor only carries it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Reference {
+    /// What it is and why the work needs it.
+    pub what: String,
+    /// A URL or a path, as the person gave it.
+    pub at: String,
+    /// Keys this binary does not know, kept so that rewriting never strips them.
+    #[serde(flatten, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// What only the session knows.
@@ -97,6 +120,95 @@ pub struct Work {
     pub questions: Vec<String>,
     #[serde(default)]
     pub never: Vec<String>,
+    /// Left out when empty, so a mandate older than the field is written back as it was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<Reference>,
+    /// Keys this binary does not know, kept so that rewriting a mandate never strips them.
+    #[serde(flatten, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+pub const MOST_REFERENCES: usize = 16;
+pub const LONGEST_REFERENCE: usize = 500;
+
+/// The keys a `work` is made of, for the refusal that names one nobody reads.
+pub const WORK_KEYS: &[&str] = &[
+    "goal",
+    "asked",
+    "state",
+    "decisions",
+    "constraints",
+    "failed",
+    "next",
+    "questions",
+    "never",
+    "references",
+];
+
+fn a_line_break(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
+}
+
+impl Reference {
+    /// One bounded line, for wherever the text is read by a person or a model.
+    pub fn on_one_line(&self) -> String {
+        let bounded = |value: &str| -> String {
+            let line: String = value
+                .chars()
+                .take(LONGEST_REFERENCE)
+                .map(|c| if a_line_break(c) { ' ' } else { c })
+                .collect();
+            if value.chars().count() > LONGEST_REFERENCE {
+                format!("{line}…")
+            } else {
+                line
+            }
+        };
+        format!("{} ({})", bounded(&self.what), bounded(&self.at))
+    }
+}
+
+/// What a mandate holds that it cannot carry: a key nobody reads, at any level,
+/// or material that would not arrive as one bounded line. Named at deposit,
+/// where the author is alive.
+pub fn misshapen_fields(work: &Work) -> Vec<String> {
+    let unread = |place: String, extra: &serde_json::Map<String, serde_json::Value>| {
+        extra
+            .keys()
+            .map(move |key| format!("{place}.{key} (a key nothing reads)"))
+            .collect::<Vec<_>>()
+    };
+    let mut named = unread("work".to_owned(), &work.extra);
+    for (index, claim) in work.state.iter().enumerate() {
+        named.extend(unread(format!("work.state[{index}]"), &claim.extra));
+    }
+    for (index, decision) in work.decisions.iter().enumerate() {
+        named.extend(unread(format!("work.decisions[{index}]"), &decision.extra));
+    }
+    for (index, held) in work.constraints.iter().enumerate() {
+        named.extend(unread(format!("work.constraints[{index}]"), &held.extra));
+    }
+    if work.references.len() > MOST_REFERENCES {
+        named.push(format!(
+            "work.references ({} of them, at most {MOST_REFERENCES})",
+            work.references.len()
+        ));
+    }
+    for (index, given) in work.references.iter().enumerate() {
+        named.extend(unread(format!("work.references[{index}]"), &given.extra));
+        for (name, value) in [("what", &given.what), ("at", &given.at)] {
+            if value.chars().any(a_line_break) {
+                named.push(format!(
+                    "work.references[{index}].{name} (more than one line)"
+                ));
+            } else if value.chars().count() > LONGEST_REFERENCE {
+                named.push(format!(
+                    "work.references[{index}].{name} (over {LONGEST_REFERENCE} characters)"
+                ));
+            }
+        }
+    }
+    named
 }
 
 /// Who took it, and when. A mandate is consumed once, by the session that
@@ -191,6 +303,13 @@ pub fn blank_fields(mandate: &Mandate) -> Vec<String> {
             }
         }
     }
+    for (index, given) in work.references.iter().enumerate() {
+        for (name, value) in [("what", &given.what), ("at", &given.at)] {
+            if value.trim().is_empty() {
+                missing.push(format!("work.references[{index}].{name}"));
+            }
+        }
+    }
     missing
 }
 
@@ -217,7 +336,9 @@ pub fn freshness(mandate: &Mandate, head: &str, uncommitted: &str) -> Freshness 
 
 /// Where a terminal's mandate waits.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
-    store.join(MANDATES).join(format!("{}.json", tty.replace('/', "-")))
+    store
+        .join(MANDATES)
+        .join(format!("{}.json", tty.replace('/', "-")))
 }
 
 /// Where a session leaves a mandate its own shell cannot file.
@@ -699,5 +820,4 @@ mod tests {
         let address = address_in(store, "pts/3");
         assert_eq!(address.parent(), Some(store.join(MANDATES).as_path()));
     }
-
 }
