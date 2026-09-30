@@ -474,3 +474,19 @@ fn the_chevron_alone_on_its_row_is_still_a_free_prompt() {
 
     assert!(matches!(outcome, ActionOutcome::Went(_)), "{outcome:?}");
 }
+
+/// The bytes of that menu as the line really paints them: each cell is
+/// addressed by a column, so the cursor and the option's number have no space
+/// between them once the screen is read as a person sees it.
+#[test]
+fn a_selection_painted_cell_by_cell_is_a_person_being_waited_for() {
+    let scratch = Scratch::new("menu-cells");
+    scratch.declaring(the_shipped_chevron()).painted(
+        "ttys001",
+        b"\x1b[4G1.\x1b[7GAuto\r\r\n\x1b[2G\x1b[38;2;177;185;249m\xe2\x9d\xaf\x1b[4G2.\x1b[7GDark\x1b[12Gmode\r\r\n\x1b[4G3.\x1b[7GLight\r\r\n",
+    );
+
+    let why = not_yet(&scratch.asked("ttys001"));
+
+    assert!(why.contains("selection"), "{why}");
+}
