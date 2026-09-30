@@ -317,6 +317,7 @@
         "and_none_of_these": ["Esc to cancel", "Do you want", "◯ "],
         "and_still_for_seconds": 3,
         "and_holds_no_process_but": ["caffeinate"],
+        "and_resident_servers": ["npm exec socraticode@latest"],
         "and_leaves_nothing_open_in_its_record": {
           "a_background_launch_answers": "Async agent launched",
           "the_task_is_named_after": "agentId: ",
