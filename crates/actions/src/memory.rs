@@ -278,11 +278,28 @@ fn on_the_page(memory: &Memory) -> String {
         end -= 1;
     }
     let head = &body[..end];
-    let summary = match head.find(". ") {
+    let summary = match first_sentence_end(head) {
         Some(at) => &head[..=at],
         None => head,
     };
-    format!("{summary} … (`sailor search {}`)", memory.label)
+    format!("{summary} … (`sailor memory show {}`)", memory.label)
+}
+
+/// Words that end in a full stop without ending a sentence.
+const ABBREVIATIONS: &[&str] = &["e.g", "i.e", "etc", "vs", "cf", "no", "approx"];
+
+/// The index of the full stop that closes the first sentence: one followed by a
+/// space, not after an abbreviation and not after a lone letter or digit.
+fn first_sentence_end(text: &str) -> Option<usize> {
+    text.match_indices(". ").map(|(at, _)| at).find(|&at| {
+        let word = text[..at].rsplit(' ').next().unwrap_or("").to_lowercase();
+        word.chars().count() > 1 && !ABBREVIATIONS.contains(&word.as_str())
+    })
+}
+
+/// Every memory valid now under this label, whole: what the page only points at.
+pub fn whole<'a>(memories: &'a [Memory], label: &str) -> Vec<&'a Memory> {
+    memories.iter().filter(|memory| memory.label == label).collect()
 }
 
 fn render(groups: &[(Option<&str>, Vec<&Memory>)]) -> String {

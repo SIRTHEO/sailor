@@ -14,6 +14,10 @@ pub const USAGE: &[crate::Form] = &[
         says_key: "cli.memory.page_says",
     },
     crate::Form {
+        form: "sailor memory show <label>",
+        says_key: "cli.memory.show_says",
+    },
+    crate::Form {
         form: "sailor memory where",
         says_key: "cli.memory.where_says",
     },
@@ -36,6 +40,7 @@ pub fn run(args: &[String]) -> i32 {
                 2
             }
         },
+        Some((form, [label])) if form == "show" => show_whole(label),
         Some((form, [])) if form == "where" => where_the_page_is_read(),
         Some((form, options)) if form == "link" || form == "unlink" => {
             match home_option(options, form) {
@@ -86,6 +91,39 @@ fn page_options(options: &[String]) -> Result<PageAsked, String> {
         }
     }
     Ok(asked)
+}
+
+/// What the page cuts, printed whole: every memory still valid under the label,
+/// each under the tree it holds in.
+fn show_whole(label: &str) -> i32 {
+    let ledger = match ledger::Ledger::open_for_reading(ui::gather::default_ledger_dir()) {
+        Ok(ledger) => ledger,
+        Err(error) => {
+            eprintln!("sailor memory: {error}");
+            return 1;
+        }
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or_default();
+    let memories = match actions::memory::remembered(&ledger, now) {
+        Ok(memories) => memories,
+        Err(error) => {
+            eprintln!("sailor memory: {error}");
+            return 1;
+        }
+    };
+    let found = actions::memory::whole(&memories, label);
+    if found.is_empty() {
+        eprintln!("sailor memory: {}", catalogue::say("cli.memory.none_called", &[("label", label)]));
+        return 1;
+    }
+    for memory in found {
+        let holds_in = memory.tree.as_deref().unwrap_or(actions::memory::EVERYWHERE);
+        println!("## {} ({}, {})\n{}", memory.label, memory.kind, holds_in, memory.value);
+    }
+    0
 }
 
 const K_READ_AS_OF_CHECKPOINT: &str = "cli.store.read_as_of_the_last_checkpoint";
