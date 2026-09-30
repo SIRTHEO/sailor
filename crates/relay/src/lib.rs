@@ -365,6 +365,11 @@ fn freedom_now(
             "{tty}: «{held}» is on the screen, so somebody is being waited for"
         )));
     }
+    if let Some(row) = a_selection_cursor(&seen, &free_when.the_prompt_shows) {
+        return Ok(Freedom::NotYet(format!(
+            "{tty}: a selection is open at «{row}», so somebody is being asked to choose"
+        )));
+    }
     match free_when
         .the_prompt_shows
         .iter()
@@ -377,6 +382,39 @@ fn freedom_now(
             "{tty}: the prompt is not painted, and a quiet screen is not a free one"
         ))),
     }
+}
+
+/// **A MENU IS NOT A PROMPT.** A selection's cursor wears the prompt's own mark
+/// before an option's number. Nothing painted below says it was answered, so it
+/// holds until later output, spaces and borders not counted, has buried it.
+fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
+    const BURIED_UNDER: usize = 3000;
+    let edge = |c: char| c.is_whitespace() || matches!(c, '│' | '┃' | '║' | '|');
+    let mut held = None;
+    let mut below = 0;
+    for raw in seen.split(['\n', '\r']) {
+        let row = raw.trim_matches(edge);
+        let after = prompts
+            .iter()
+            .filter_map(|mark| row.strip_prefix(mark.as_str()))
+            .map(str::trim_start)
+            .find(|after| {
+                let digits = after.chars().take_while(char::is_ascii_digit).count();
+                digits > 0 && after[digits..].starts_with(['.', ')'])
+            });
+        if after.is_some() {
+            held = Some(row.to_owned());
+            below = 0;
+        } else {
+            below += raw
+                .chars()
+                .filter(|c| {
+                    !c.is_whitespace() && !('\u{2500}'..='\u{257f}').contains(c) && *c != '|'
+                })
+                .count();
+        }
+    }
+    held.filter(|_| below <= BURIED_UNDER)
 }
 
 /// One line of the process table: who it is, who started it, where it sits.
