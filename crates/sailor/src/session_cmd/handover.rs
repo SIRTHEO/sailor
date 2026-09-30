@@ -92,6 +92,10 @@ fn the_mandate_of(
     if left.taken.is_some() {
         return None;
     }
+    // A mandate with no time written is the older shape, and silence is not an age.
+    if left.written.at > 0 && at - left.written.at > sessions::mandate::A_MANDATE_IS_HANDED_FOR {
+        return None;
+    }
     // **THE TTY IS THE ADDRESS, AND THE ADDRESS IS REUSED.** A different
     // session is what a mandate expects; the tree is the part that must still
     // hold. Taken once, it would be gone for the successor it was left for. A
@@ -688,6 +692,34 @@ mod tests {
     #[test]
     fn a_session_nobody_else_opened_has_no_keeper() {
         assert!(kept_from(&shipped(), &env_of(&[("PATH", "/usr/bin")]), "ttys004").is_none());
+    }
+
+    /// **A WEEK-OLD MANDATE IS NOT FOR WHOEVER OPENS THE TERMINAL.** It stays on
+    /// disk, untouched, and is not handed on.
+    #[test]
+    fn a_mandate_a_week_old_is_not_handed_to_whoever_opens_the_terminal() {
+        let directory = std::env::temp_dir().join(format!("sailor-aged-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory of this test's own");
+        let mut mandate = sessions::mandate::Mandate::default();
+        mandate.written.tty = "ttys001".to_owned();
+        mandate.written.at = 1_000;
+        mandate.work.goal = "work nobody expects any more".to_owned();
+        sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
+        let a_day = 24 * 3600;
+
+        assert_eq!(
+            the_mandate_of(&directory, "ttys001", "a-stranger", "", 1_000 + 8 * a_day),
+            None,
+            "eight days on, nobody is handed it"
+        );
+        let kept = sessions::mandate::read(&sessions::mandate::address_in(&directory, "ttys001"))
+            .expect("it is still on disk");
+        assert_eq!(kept.reserved, None, "and it is not even held for anyone");
+
+        let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 1_000 + 2 * a_day)
+            .expect("two days on, it is still the successor's");
+        assert!(handed.contains("work nobody expects any more"), "{handed}");
     }
 
     /// **THE GREETING IS THE DELIVERY, AND IT IS HANDED ONCE.** A handover read
