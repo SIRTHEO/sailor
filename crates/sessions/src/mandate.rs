@@ -153,11 +153,16 @@ impl Reference {
     /// One bounded line, for wherever the text is read by a person or a model.
     pub fn on_one_line(&self) -> String {
         let bounded = |value: &str| -> String {
-            value
+            let line: String = value
                 .chars()
                 .take(LONGEST_REFERENCE)
                 .map(|c| if a_line_break(c) { ' ' } else { c })
-                .collect()
+                .collect();
+            if value.chars().count() > LONGEST_REFERENCE {
+                format!("{line}…")
+            } else {
+                line
+            }
         };
         format!("{} ({})", bounded(&self.what), bounded(&self.at))
     }

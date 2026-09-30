@@ -566,3 +566,32 @@ fn a_separator_other_than_a_newline_is_refused_as_well() {
         );
     }
 }
+
+#[test]
+fn a_key_nobody_reads_is_named_in_every_nested_kind() {
+    let scratch = Scratch::new("every-nested");
+    let decision = refusal_of(
+        &scratch,
+        work_with("decisions", json!([{"decided": "x", "authorised_by": "y", "why": "z"}])),
+    );
+    let mut constraint = a_constraint();
+    constraint["why"] = json!("z");
+    let held = refusal_of(&scratch, work_with("constraints", json!([constraint])));
+
+    assert!(decision.said.contains("work.decisions[0].why"), "{decision:?}");
+    assert!(held.said.contains("work.constraints[0].why"), "{held:?}");
+}
+
+/// The list of keys answers a key nobody reads, and only that.
+#[test]
+fn the_list_of_keys_is_said_only_when_a_key_was_the_trouble() {
+    let scratch = Scratch::new("keys-when-needed");
+    let long = refusal_of(
+        &scratch,
+        work_with("references", json!([{"what": "a note", "at": "x".repeat(2000)}])),
+    );
+    let unknown = refusal_of(&scratch, work_with("reference", material()));
+
+    assert!(!long.said.contains("The keys of"), "{long:?}");
+    assert!(unknown.said.contains("The keys of"), "{unknown:?}");
+}

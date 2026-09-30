@@ -125,14 +125,21 @@ fn the_mandate_of(
     if left.work.references.is_empty() {
         return Some(greeting);
     }
-    let material = left
+    let mut shown: Vec<String> = left
         .work
         .references
         .iter()
         .take(sessions::mandate::MOST_REFERENCES)
         .map(sessions::mandate::Reference::on_one_line)
-        .collect::<Vec<_>>()
-        .join(" · ");
+        .collect();
+    let left_out = left.work.references.len().saturating_sub(shown.len());
+    if left_out > 0 {
+        shown.push(catalogue::say(
+            "cli.session.the_mandate_holds_more",
+            &[("count", &left_out.to_string())],
+        ));
+    }
+    let material = shown.join(" · ");
     Some(format!(
         "{greeting}\n{}",
         catalogue::say(
@@ -845,6 +852,14 @@ mod tests {
         assert_eq!(material.trim_start_matches('\n').lines().count(), 1, "{material}");
         assert!(!material.contains('\u{2028}'), "{material}");
         assert!(!material.contains("note 39"), "only the most it carries: {material}");
+        assert!(
+            material.contains(&catalogue::say(
+                "cli.session.the_mandate_holds_more",
+                &[("count", "24")]
+            )),
+            "what was left out is said: {material}"
+        );
+        assert!(material.contains('…'), "a cut value says it was cut: {material}");
         assert!(material.chars().count() < 16 * 1100, "{}", material.chars().count());
         let _ = std::fs::remove_dir_all(&directory);
     }

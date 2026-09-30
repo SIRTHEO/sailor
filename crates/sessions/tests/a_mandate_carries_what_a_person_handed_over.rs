@@ -162,3 +162,39 @@ fn a_key_one_level_down_survives_a_rewrite_too() {
         json!("kept")
     );
 }
+
+/// **THE LISTED KEYS ARE THE KEYS OF A WORK**, so the refusal cannot go stale.
+#[test]
+fn the_keys_a_refusal_lists_are_the_keys_a_work_has() {
+    let full = a_mandate("ttys009", material());
+    let value = serde_json::to_value(&full.work).expect("a value");
+    let mut has: Vec<&str> = value.as_object().expect("an object").keys().map(String::as_str).collect();
+    let mut listed: Vec<&str> = sessions::mandate::WORK_KEYS.to_vec();
+    has.sort_unstable();
+    listed.sort_unstable();
+    assert_eq!(has, listed);
+}
+
+/// **A LATER KEY SURVIVES IN EVERY KIND THAT CARRIES ONE.**
+#[test]
+fn a_later_key_survives_in_every_nested_kind() {
+    let scratch = Scratch::new("every-kind");
+    let mut value = serde_json::to_value(a_mandate("ttys010", material())).expect("a value");
+    value["work"]["state"] = json!([{"said": "x", "verified": true, "later": 1}]);
+    value["work"]["decisions"] = json!([{"decided": "x", "authorised_by": "y", "later": 2}]);
+    value["work"]["constraints"] = json!([{"holds": "a", "prerequisite": "b", "authority": "c",
+        "fallback": "d", "consequence": "e", "later": 3}]);
+    value["work"]["references"][0]["later"] = json!(4);
+    let mandate: Mandate = serde_json::from_value(value).expect("it reads");
+    deposit(&scratch.0, &mandate).expect("the deposit goes");
+
+    reserve(&address_in(&scratch.0, "ttys010"), "the-successor", 100).expect("it is held");
+
+    let work = serde_json::to_value(&read(&address_in(&scratch.0, "ttys010")).expect("on disk"))
+        .expect("a value")["work"]
+        .clone();
+    assert_eq!(work["state"][0]["later"], json!(1));
+    assert_eq!(work["decisions"][0]["later"], json!(2));
+    assert_eq!(work["constraints"][0]["later"], json!(3));
+    assert_eq!(work["references"][0]["later"], json!(4));
+}

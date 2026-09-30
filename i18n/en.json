@@ -6,6 +6,7 @@
   "cli.arc.no_trigger_step": "has no trigger step",
   "cli.arc.declares_the_source": "declares the source \"{source}\"",
   "cli.arc.declares_no_source": "declares no source",
+  "cli.session.the_mandate_holds_more": "and {count} more, in the file named above",
   "cli.session.the_mandate_holds_material": "What the person handed over, and where it is: {material}",
   "cli.session.the_mandate_is_yours": "The session before you left a mandate for this terminal, and you have just taken it.\nThe work: {goal}\nWhat they were asked: {asked}\nThe one next thing: {next}\nNever: {never}\nEverything else — what is done and verified, the decisions taken and who authorised them, the constraints that hold, what was tried and failed, and the questions still open — is in {path}. Read it before you touch anything.",
   "cli.session.the_mandate_is_waiting": "**A mandate is deposited for this terminal and nobody has taken it.** Whoever comes after you reads it before anything else; nothing has been reset, and nothing will be.",
