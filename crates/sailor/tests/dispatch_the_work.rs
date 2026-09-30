@@ -758,6 +758,7 @@ fn a_skipped_step_leaves_the_run_green_and_its_children_unrun() {
         action: "shell_check".to_owned(),
         max_attempts: 1,
         ask_again_after_secs: None,
+        ask_again_for_secs: None,
         retry_after_secs: None,
         phase: None,
         stops_when: None,

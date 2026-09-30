@@ -146,3 +146,14 @@ fn nothing_is_typed_to_a_successor_the_store_has_not_seen_arrive() {
         "a wake with no line typed would be a step that does nothing: {wake}"
     );
 }
+
+#[test]
+fn every_step_of_the_emptying_that_can_say_not_yet_says_for_how_long() {
+    for named in ["handed_on", "empty", "arrived", "free_again"] {
+        let window = step("empty-a-session-that-handed-on", named)["ask_again_for_secs"].as_u64();
+        assert!(
+            window.is_some_and(|secs| (1..=3_600).contains(&secs)),
+            "«{named}» is asked again with no end, or for more than an hour: {window:?}"
+        );
+    }
+}

@@ -1271,6 +1271,7 @@ impl Executor for InProcessExecutor {
                     input,
                     attempt,
                     action,
+                    asked_again_until: asked_again_until(step, &records),
                 });
             }
 
@@ -1555,6 +1556,7 @@ struct Opened<'a> {
     input: Value,
     attempt: u32,
     action: Option<&'a dyn Action>,
+    asked_again_until: Option<i64>,
 }
 
 impl Opened<'_> {
@@ -1625,7 +1627,20 @@ fn run_one(
                     // here would put an ordinary poll into every count of what
                     // went wrong.
                     ActionOutcome::NotYet(reason) => {
-                        closed(Outcome::NotYet, None, Some(reason), None, clock.now()?)
+                        let now = clock.now()?;
+                        match (work.asked_again_until, step.ask_again_for_secs) {
+                            (Some(until), Some(window)) if now >= until => broke(
+                                ActionError::new(
+                                    "never_ready",
+                                    format!(
+                                        "asked again for {window} s and never ready; \
+                                         last answer: {reason}"
+                                    ),
+                                ),
+                                now,
+                            ),
+                            _ => closed(Outcome::NotYet, None, Some(reason), None, now),
+                        }
                     }
                 };
                 // Whatever the outcome says of it, that process ran: an output
@@ -1802,6 +1817,24 @@ const NEXT_INVOCATION_AT_THE_EARLIEST: i64 = 1;
 /// the way to be wrong here is to spin, not to wait a beat too long.
 fn ready_again_at(record: &StepRecord, now: i64, wait_secs: i64) -> i64 {
     record.ended_at.unwrap_or(now).saturating_add(wait_secs)
+}
+
+/// The instant past which a step answering «not yet» is asked no more: the
+/// start of its current streak of «not yet» plus the window it declares.
+fn asked_again_until(step: &Step, records: &[StepRecord]) -> Option<i64> {
+    let window = i64::from(step.ask_again_for_secs?);
+    let mut mine: Vec<&StepRecord> = records
+        .iter()
+        .filter(|record| record.step_id == step.id)
+        .collect();
+    mine.sort_by_key(|record| (record.attempt, record.epoch));
+    let since = mine
+        .iter()
+        .rev()
+        .take_while(|record| record.outcome == Some(Outcome::NotYet))
+        .last()?
+        .started_at;
+    Some(since.saturating_add(window))
 }
 
 /// How many times this step has broken. **Not the attempt number**: a step that
@@ -2514,6 +2547,7 @@ mod tests {
             action: action.to_owned(),
             max_attempts,
             ask_again_after_secs: None,
+            ask_again_for_secs: None,
             retry_after_secs: None,
             phase: None,
         stops_when: None,

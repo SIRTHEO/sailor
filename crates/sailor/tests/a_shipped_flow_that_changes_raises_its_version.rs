@@ -53,8 +53,8 @@ const SHIPPED_VERSIONS_TODAY: &[(&str, u32, &str)] = &[
     ),
     (
         "empty-a-session-that-handed-on",
-        1,
-        "f2d17edbce09a85a0e14be7717a83ca1117f0c6735a174552e4d65b5e3e2bb4f",
+        2,
+        "a9fca61c2453eb70fd1b68c2579adb681074219abd33ae60840ffbebb5d8e6d1",
     ),
     (
         "find-the-dead-powers",

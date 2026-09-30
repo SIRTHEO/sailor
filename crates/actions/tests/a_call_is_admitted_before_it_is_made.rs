@@ -352,6 +352,7 @@ fn a_step(id: &str, deps: &[&str], with: Option<serde_json::Value>) -> Step {
         action: actions::EXTERNAL_ENGINE_ACTION.to_owned(),
         max_attempts: 1,
         ask_again_after_secs: None,
+        ask_again_for_secs: None,
         retry_after_secs: None,
         phase: None,
         stops_when: None,

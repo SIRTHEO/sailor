@@ -69,6 +69,7 @@ fn step(id: &str, action: &str, deps: &[&str], with: Option<Value>) -> Step {
         action: action.to_owned(),
         max_attempts: 1,
         ask_again_after_secs: None,
+        ask_again_for_secs: None,
         retry_after_secs: None,
         phase: None,
         stops_when: None,
