@@ -181,16 +181,17 @@ impl Keeper {
                 }
             }
         }
-        Err(self.broke(&match answers.as_slice() {
-            [only] => only.clone(),
-            [first, rest @ ..] => {
-                format!(
-                    "did not answer, asked {} times: first {first}; then {}",
-                    answers.len(),
-                    rest.join("; then ")
-                )
-            }
-            [] => "did not answer".to_owned(),
+        let Some((first, rest)) = answers.split_first() else {
+            return Err(self.not_asked());
+        };
+        Err(self.broke(&if rest.is_empty() {
+            first.clone()
+        } else {
+            format!(
+                "did not answer, asked {} times: first {first}; then {}",
+                answers.len(),
+                rest.join("; then ")
+            )
         }))
     }
 
@@ -244,8 +245,8 @@ impl Keeper {
         ActionError::new(
             "keeper_did_not_answer",
             format!(
-                "«{}» keeps this terminal; nothing was put to it, because the time for the \
-                 question was spent before it could be",
+                "«{}» keeps this terminal; the question was never put, because the time for it \
+                 was spent before it could be",
                 self.id
             ),
         )

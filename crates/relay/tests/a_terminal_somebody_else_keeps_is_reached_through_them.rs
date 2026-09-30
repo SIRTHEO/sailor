@@ -465,7 +465,7 @@ fn a_keeper_that_cannot_be_started_is_asked_once() {
     assert!(!refusal.said.contains("times: first"), "{}", refusal.said);
 }
 
-/// The list of terminals changes nothing either, so it too is asked again.
+/// **THE LIST OF TERMINALS IS ASKED AGAIN TOO**: it changes nothing either.
 #[test]
 fn a_list_that_stumbles_once_is_asked_again() {
     let scratch = Scratch::new("list-stumble");
@@ -533,7 +533,7 @@ fn a_keeper_that_fails_late_is_not_asked_with_no_time_left() {
         .expect_err("the keeper failed");
     assert!(!refusal.said.contains("times: first"), "{}", refusal.said);
     assert!(
-        !refusal.said.contains("nothing was put to it"),
+        !refusal.said.contains("the question was never put"),
         "{}",
         refusal.said
     );
@@ -577,7 +577,7 @@ fn a_question_with_no_time_left_is_not_put() {
         "the keeper was asked with no time left"
     );
     assert!(
-        refusal.said.contains("nothing was put to it"),
+        refusal.said.contains("the question was never put"),
         "{}",
         refusal.said
     );
