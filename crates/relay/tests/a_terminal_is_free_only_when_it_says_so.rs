@@ -499,6 +499,28 @@ fn a_selection_inside_a_box_is_a_person_being_waited_for() {
     not_yet(&scratch.asked("ttys001"));
 }
 
+#[test]
+fn a_menu_still_open_above_a_bare_prompt_is_a_person_being_waited_for() {
+    for (name, screen) in [
+        ("below", "❯ 1. Yes\r\n  2. No\r\n❯"),
+        (
+            "composer",
+            "❯ 1. Yes\r\n  2. No\r\n\r\n╭──╮\r\n│ ❯ │\r\n╰──╯\r\n",
+        ),
+        (
+            "described",
+            "  1. Yes\r\n❯ 2. No\r\n     never asks again\r\n\r\n❯ ",
+        ),
+    ] {
+        let scratch = Scratch::new(name);
+        scratch
+            .declaring(the_shipped_chevron())
+            .painted("ttys001", screen.as_bytes());
+
+        not_yet(&scratch.asked("ttys001"));
+    }
+}
+
 /// The menu as the line really paints it, cell by cell.
 #[test]
 fn a_selection_painted_cell_by_cell_is_a_person_being_waited_for() {

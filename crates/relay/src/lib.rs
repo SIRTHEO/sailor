@@ -385,24 +385,35 @@ fn freedom_now(
 }
 
 /// **A MENU IS NOT A PROMPT.** A selection's cursor wears the prompt's own mark
-/// before an option's number; a bare prompt painted below means it was answered.
+/// before an option's number. It is answered only when an unindented line of
+/// text follows it: a prompt painted below says nothing, the composer stays up.
 fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
-    let rows: Vec<&str> = seen
-        .lines()
-        .map(|row| row.trim_matches(|c: char| c.is_whitespace() || matches!(c, '│' | '|')))
-        .collect();
-    let open_from = rows
-        .iter()
-        .rposition(|row| prompts.iter().any(|mark| row == mark))
-        .map_or(0, |bare| bare + 1);
-    rows[open_from..].iter().copied().find_map(|row| {
-        prompts.iter().find_map(|mark| {
-            let after = row.strip_prefix(mark.as_str())?.trim_start();
-            let digits = after.chars().take_while(char::is_ascii_digit).count();
-            let numbered = digits > 0 && after[digits..].starts_with(['.', ')']);
-            numbered.then(|| row.to_owned())
-        })
-    })
+    let edge = |c: char| c.is_whitespace() || matches!(c, '│' | '┃' | '║' | '|');
+    let numbered = |row: &str| {
+        let digits = row.chars().take_while(char::is_ascii_digit).count();
+        digits > 0 && row[digits..].starts_with(['.', ')'])
+    };
+    let mut open = None;
+    for raw in seen.lines() {
+        let row = raw.trim_matches(edge);
+        let cursor = prompts
+            .iter()
+            .filter_map(|mark| row.strip_prefix(mark.as_str()))
+            .any(|after| numbered(after.trim_start()));
+        let quiet = row.is_empty()
+            || row.chars().all(|c| "─━╭╮╰╯".contains(c))
+            || numbered(row)
+            || prompts.iter().any(|mark| row.starts_with(mark.as_str()))
+            || raw
+                .trim_start_matches(['│', '┃', '║', '|'])
+                .starts_with(char::is_whitespace);
+        if cursor {
+            open = Some(row.to_owned());
+        } else if !quiet {
+            open = None;
+        }
+    }
+    open
 }
 
 /// One line of the process table: who it is, who started it, where it sits.
