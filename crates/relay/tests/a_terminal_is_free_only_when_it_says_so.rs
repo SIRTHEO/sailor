@@ -480,7 +480,11 @@ fn a_menu_answered_and_left_above_a_bare_prompt_is_not_a_person_being_waited_for
     let scratch = Scratch::new("menu-answered");
     scratch.declaring(the_shipped_chevron()).painted(
         "ttys001",
-        "  1. Auto\r\n❯ 2. Dark mode\r\n  3. Light\r\n\r\nset to dark\r\n\r\n❯ ".as_bytes(),
+        format!(
+            "  1. Auto\r\n❯ 2. Dark mode\r\n  3. Light\r\n\r\nset to dark\r\n{}\r\n❯ ",
+            "done.\r\n".repeat(400)
+        )
+        .as_bytes(),
     );
 
     let outcome = scratch.asked("ttys001").expect("it does not break");
@@ -511,6 +515,15 @@ fn a_menu_still_open_above_a_bare_prompt_is_a_person_being_waited_for() {
             "described",
             "  1. Yes\r\n❯ 2. No\r\n     never asks again\r\n\r\n❯ ",
         ),
+        (
+            "footer",
+            "❯ 1. Yes\r\n  2. No\r\n\r\nEnter to select · Esc to cancel\r\n❯ ",
+        ),
+        (
+            "welcome",
+            "❯ 1. Yes\r\n  2. No\r\n✻ Welcome to Claude Code!\r\n❯ ",
+        ),
+        ("edges", "┌──┐\r\n│ ❯ 1. Yes │\r\n│   2. No │\r\n└──┘\r\n❯ "),
     ] {
         let scratch = Scratch::new(name);
         scratch

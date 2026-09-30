@@ -385,35 +385,31 @@ fn freedom_now(
 }
 
 /// **A MENU IS NOT A PROMPT.** A selection's cursor wears the prompt's own mark
-/// before an option's number. It is answered only when an unindented line of
-/// text follows it: a prompt painted below says nothing, the composer stays up.
+/// before an option's number. Nothing painted below says it was answered, so it
+/// holds until later output has buried it.
 fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
+    const BURIED_UNDER: usize = 2000;
     let edge = |c: char| c.is_whitespace() || matches!(c, '│' | '┃' | '║' | '|');
-    let numbered = |row: &str| {
-        let digits = row.chars().take_while(char::is_ascii_digit).count();
-        digits > 0 && row[digits..].starts_with(['.', ')'])
-    };
-    let mut open = None;
+    let mut held = None;
+    let mut below = 0;
     for raw in seen.lines() {
         let row = raw.trim_matches(edge);
-        let cursor = prompts
+        let after = prompts
             .iter()
             .filter_map(|mark| row.strip_prefix(mark.as_str()))
-            .any(|after| numbered(after.trim_start()));
-        let quiet = row.is_empty()
-            || row.chars().all(|c| "─━╭╮╰╯".contains(c))
-            || numbered(row)
-            || prompts.iter().any(|mark| row.starts_with(mark.as_str()))
-            || raw
-                .trim_start_matches(['│', '┃', '║', '|'])
-                .starts_with(char::is_whitespace);
-        if cursor {
-            open = Some(row.to_owned());
-        } else if !quiet {
-            open = None;
+            .map(str::trim_start)
+            .find(|after| {
+                let digits = after.chars().take_while(char::is_ascii_digit).count();
+                digits > 0 && after[digits..].starts_with(['.', ')'])
+            });
+        if after.is_some() {
+            held = Some(row.to_owned());
+            below = 0;
+        } else {
+            below += raw.chars().count() + 1;
         }
     }
-    open
+    held.filter(|_| below <= BURIED_UNDER)
 }
 
 /// One line of the process table: who it is, who started it, where it sits.
