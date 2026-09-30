@@ -488,6 +488,17 @@ fn a_menu_answered_and_left_above_a_bare_prompt_is_not_a_person_being_waited_for
     assert!(matches!(outcome, ActionOutcome::Went(_)), "{outcome:?}");
 }
 
+#[test]
+fn a_selection_inside_a_box_is_a_person_being_waited_for() {
+    let scratch = Scratch::new("menu-boxed");
+    scratch.declaring(the_shipped_chevron()).painted(
+        "ttys001",
+        "╭────╮\r\n│ ❯ 1. Yes      │\r\n│   2. No       │\r\n╰────╯\r\n".as_bytes(),
+    );
+
+    not_yet(&scratch.asked("ttys001"));
+}
+
 /// The menu as the line really paints it, cell by cell.
 #[test]
 fn a_selection_painted_cell_by_cell_is_a_person_being_waited_for() {

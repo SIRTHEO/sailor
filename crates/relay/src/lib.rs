@@ -387,7 +387,10 @@ fn freedom_now(
 /// **A MENU IS NOT A PROMPT.** A selection's cursor wears the prompt's own mark
 /// before an option's number; a bare prompt painted below means it was answered.
 fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
-    let rows: Vec<&str> = seen.lines().map(str::trim).collect();
+    let rows: Vec<&str> = seen
+        .lines()
+        .map(|row| row.trim_matches(|c: char| c.is_whitespace() || matches!(c, '│' | '|')))
+        .collect();
     let open_from = rows
         .iter()
         .rposition(|row| prompts.iter().any(|mark| row == mark))
