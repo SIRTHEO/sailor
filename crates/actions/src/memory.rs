@@ -260,12 +260,37 @@ pub fn page_of_every_tree(memories: &[Memory]) -> String {
     render(&groups)
 }
 
+/// The longest a note is carried whole; a rule is always whole.
+const A_NOTE_IS_CARRIED_WHOLE_UP_TO: usize = 240;
+const A_SUMMARY_IS_AT_MOST: usize = 200;
+
+/// A rule is read as it is written. A `reference` or `project` note past a
+/// line's length is cut at its first sentence, or on a character boundary when
+/// it has none, and names the search that returns the rest.
+fn on_the_page(memory: &Memory) -> String {
+    let body = memory.value.replace('\n', " ");
+    let indexed = matches!(memory.kind.as_str(), "reference" | "project");
+    if !indexed || body.len() <= A_NOTE_IS_CARRIED_WHOLE_UP_TO {
+        return body;
+    }
+    let mut end = A_SUMMARY_IS_AT_MOST.min(body.len());
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &body[..end];
+    let summary = match head.find(". ") {
+        Some(at) => &head[..=at],
+        None => head,
+    };
+    format!("{summary} … (`sailor search {}`)", memory.label)
+}
+
 fn render(groups: &[(Option<&str>, Vec<&Memory>)]) -> String {
     let mut lines: Vec<String> = Vec::new();
     for (tree, listed) in groups.iter().filter(|(_, listed)| !listed.is_empty()) {
         lines.push(format!("## {}", tree.unwrap_or(EVERYWHERE)));
         for memory in listed {
-            lines.push(format!("- **{}** ({}): {}", memory.label, memory.kind, memory.value.replace('\n', " ")));
+            lines.push(format!("- **{}** ({}): {}", memory.label, memory.kind, on_the_page(memory)));
         }
     }
     if lines.len() > PAGE_LINES {
