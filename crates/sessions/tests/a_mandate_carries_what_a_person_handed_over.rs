@@ -190,7 +190,7 @@ fn a_later_key_survives_in_every_nested_kind() {
 
     reserve(&address_in(&scratch.0, "ttys010"), "the-successor", 100).expect("it is held");
 
-    let work = serde_json::to_value(&read(&address_in(&scratch.0, "ttys010")).expect("on disk"))
+    let work = serde_json::to_value(read(&address_in(&scratch.0, "ttys010")).expect("on disk"))
         .expect("a value")["work"]
         .clone();
     assert_eq!(work["state"][0]["later"], json!(1));
