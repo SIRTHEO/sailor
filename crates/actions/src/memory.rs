@@ -268,7 +268,11 @@ const A_SUMMARY_IS_AT_MOST: usize = 200;
 /// line's length is cut at its first sentence, or on a character boundary when
 /// it has none, and names the command that prints the rest.
 fn on_the_page(memory: &Memory) -> String {
-    let body = memory.value.replace("\r\n", " ").replace(['\n', '\r'], " ");
+    let body = memory
+        .value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let indexed = matches!(memory.kind.as_str(), "reference" | "project");
     if !indexed || body.len() <= A_NOTE_IS_CARRIED_WHOLE_UP_TO {
         return body;
@@ -290,12 +294,15 @@ fn on_the_page(memory: &Memory) -> String {
 
 /// Words that end in a full stop without ending a sentence.
 const ABBREVIATIONS: &[&str] = &[
-    "e.g", "i.e", "etc", "vs", "cf", "approx", "dr", "mr", "mrs", "ms", "prof", "st", "sig",
+    "e.g", "i.e", "etc", "ecc", "vs", "cf", "cfr", "approx", "dr", "dott", "dott.ssa", "mr", "mrs",
+    "ms", "prof", "ing", "avv", "sig", "sig.ra", "st", "art", "pag", "es",
 ];
 
 /// The index of the full stop that closes the first sentence: one followed by a
-/// space and a capital, not after an abbreviation and not after a lone letter or
-/// digit.
+/// space and then a capital, a digit or a code span, past any opening quote or
+/// markup. Not
+/// after an abbreviation, an initial or a dotted acronym, and not a digit after
+/// a version number.
 fn first_sentence_end(text: &str) -> Option<usize> {
     text.match_indices(". ").map(|(at, _)| at).find(|&at| {
         let word = text[..at]
@@ -304,8 +311,20 @@ fn first_sentence_end(text: &str) -> Option<usize> {
             .unwrap_or("")
             .trim_start_matches(|c: char| !c.is_alphanumeric())
             .to_lowercase();
-        let capital_follows = text[at + 2..].chars().next().is_none_or(char::is_uppercase);
-        capital_follows && word.chars().count() > 1 && !ABBREVIATIONS.contains(&word.as_str())
+        let next = &text[at + 2..];
+        let after = next.trim_start_matches(|c: char| !c.is_alphanumeric());
+        let opens_a_sentence = match after.chars().next() {
+            _ if next.starts_with('`') => true,
+            None => true,
+            Some(c) if c.is_ascii_digit() => !word.ends_with(|c: char| c.is_ascii_digit()),
+            Some(c) => c.is_uppercase(),
+        };
+        let a_dotted_acronym =
+            word.contains('.') && word.split('.').all(|part| part.chars().count() <= 1);
+        opens_a_sentence
+            && word.chars().count() > 1
+            && !a_dotted_acronym
+            && !ABBREVIATIONS.contains(&word.as_str())
     })
 }
 
