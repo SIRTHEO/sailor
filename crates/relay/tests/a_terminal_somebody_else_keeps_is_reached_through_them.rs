@@ -348,3 +348,242 @@ fn a_terminal_the_keeper_has_forgotten_refuses_by_name() {
     assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
     assert!(refusal.said.contains("pane:9"), "{}", refusal.said);
 }
+
+/// **A KEEPER THAT STUMBLES ONCE IS ASKED AGAIN.** Reading changes nothing, so a
+/// question that got no answer is put a second time before the terminal counts
+/// as unreachable.
+#[test]
+fn a_keeper_that_stumbles_once_is_asked_again() {
+    let scratch = Scratch::new("stumble");
+    let marker = scratch.at("stumbled");
+    let reads = scratch.script(
+        "read.sh",
+        &format!("[ -e {marker} ] || {{ : > {marker}; exit 1; }}; printf '%s' '│ > '"),
+    );
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys005");
+
+    let outcome = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys005")
+        .expect("the second question is answered");
+
+    match outcome {
+        ActionOutcome::Went(said) => assert_eq!(said["free"], json!(true), "{said}"),
+        other => panic!("it should have gone: {other:?}"),
+    }
+}
+
+/// **A LINE IS TYPED AT MOST ONCE.** A keeper that fails after the line arrived
+/// would type it twice if asked again, so the typing is never repeated.
+#[test]
+fn a_line_that_got_no_answer_is_not_typed_twice() {
+    let scratch = Scratch::new("once");
+    let reads = scratch.script("read.sh", "printf '%s' '│ > '");
+    let landed = scratch.at("landed");
+    let types = scratch.script("type.sh", &format!("echo \"$2\" >> {landed}; exit 1"));
+    scratch
+        .declaring(&reads, &types)
+        .kept("ttys006")
+        .handing_on("ttys006");
+
+    let refusal = scratch
+        .asking(relay::EMPTY_TERMINAL_ACTION, "ttys006")
+        .expect_err("the typing did not answer");
+
+    assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
+    assert_eq!(
+        std::fs::read_to_string(&landed)
+            .expect("the keeper was asked")
+            .lines()
+            .count(),
+        1,
+        "the line reached the keeper once"
+    );
+}
+
+/// **TEN SECONDS IS THE WHOLE QUESTION, NOT EACH ASKING.** A keeper that hangs
+/// has used the time it was promised; asking again would double what a caller
+/// waits for an answer that is not coming.
+#[test]
+fn a_keeper_that_hangs_is_not_waited_for_twice() {
+    let scratch = Scratch::new("hang");
+    let reads = scratch.script("read.sh", "sleep 60");
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys008");
+
+    let started = std::time::Instant::now();
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys008")
+        .expect_err("a keeper that hangs does not answer");
+
+    assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(14),
+        "the question took {:?}",
+        started.elapsed()
+    );
+}
+
+/// **A REFUSAL SAYS WHAT WAS ASKED AND WHAT EACH ASKING ANSWERED.** Only the
+/// last answer used to survive, and the first can be the one that says why.
+#[test]
+fn a_refusal_after_two_askings_says_both_answers() {
+    let scratch = Scratch::new("both");
+    let marker = scratch.at("asked-once");
+    let reads = scratch.script(
+        "read.sh",
+        &format!(
+            "if [ -e {marker} ]; then echo 'second answer' >&2; else : > {marker}; \
+             echo 'first answer' >&2; fi; exit 1"
+        ),
+    );
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys009");
+
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys009")
+        .expect_err("neither asking was answered");
+
+    assert!(refusal.said.contains("first answer"), "{}", refusal.said);
+    assert!(refusal.said.contains("second answer"), "{}", refusal.said);
+}
+
+/// **A KEEPER THAT CANNOT START WILL NOT START THE SECOND TIME.** Asking again
+/// what can only fail the same way says it was tried twice when it was not.
+#[test]
+fn a_keeper_that_cannot_be_started_is_asked_once() {
+    let scratch = Scratch::new("absent");
+    let types = scratch.script("type.sh", "true");
+    let nowhere = scratch.at("no-such-program");
+    scratch.declaring(&nowhere, &types).kept("ttys010");
+
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys010")
+        .expect_err("there is nothing to run");
+
+    assert!(refusal.said.contains("did not start"), "{}", refusal.said);
+    assert!(!refusal.said.contains("times: first"), "{}", refusal.said);
+}
+
+/// **THE LIST OF TERMINALS IS ASKED AGAIN TOO**: it changes nothing either.
+#[test]
+fn a_list_that_stumbles_once_is_asked_again() {
+    let scratch = Scratch::new("list-stumble");
+    let marker = scratch.at("list-stumbled");
+    let lists = scratch.script(
+        "list.sh",
+        &format!(
+            "[ -e {marker} ] || {{ : > {marker}; exit 1; }}; \
+             printf '%s' '{{\"result\":{{\"terminals\":[\
+             {{\"tabId\":\"pane\",\"leafId\":\"7\",\"handle\":\"term_yes\"}}]}}}}'"
+        ),
+    );
+    let reads = scratch.script("read.sh", "printf '%s' '│ > '");
+    let types = scratch.script("type.sh", "true");
+    scratch
+        .declaring_a_list(&reads, &types, &lists)
+        .kept_as("ttys011", "pane:7");
+
+    scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys011")
+        .expect("the second asking of the list is answered");
+}
+
+/// **LOOKING A TERMINAL UP AND READING IT ARE ONE QUESTION.** Ten seconds is
+/// what the two of them have together.
+#[test]
+fn looking_a_terminal_up_and_reading_it_share_the_ten_seconds() {
+    let scratch = Scratch::new("shared");
+    let lists = scratch.script(
+        "list.sh",
+        "sleep 6; printf '%s' '{\"result\":{\"terminals\":[\
+         {\"tabId\":\"pane\",\"leafId\":\"7\",\"handle\":\"term_yes\"}]}}'",
+    );
+    let reads = scratch.script("read.sh", "sleep 60");
+    let types = scratch.script("type.sh", "true");
+    scratch
+        .declaring_a_list(&reads, &types, &lists)
+        .kept_as("ttys012", "pane:7");
+
+    let started = std::time::Instant::now();
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys012")
+        .expect_err("the reading hangs");
+
+    assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(14),
+        "the question took {:?}",
+        started.elapsed()
+    );
+}
+
+/// **NO SECOND ASKING THAT IS BOUND TO FAIL.** An asking that fails when the
+/// time is nearly gone is not followed by one with too little left to answer.
+#[test]
+fn a_keeper_that_fails_late_is_not_asked_with_no_time_left() {
+    let scratch = Scratch::new("late");
+    let asked = scratch.at("asked");
+    let reads = scratch.script("read.sh", &format!("echo x >> {asked}; sleep 8.5; exit 1"));
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys013");
+
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys013")
+        .expect_err("the keeper failed");
+    assert!(!refusal.said.contains("times: first"), "{}", refusal.said);
+    assert!(
+        !refusal.said.contains("the question was never put"),
+        "{}",
+        refusal.said
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(&asked)
+            .expect("the keeper was asked")
+            .lines()
+            .count(),
+        1,
+        "there was no time to ask again"
+    );
+}
+
+/// **A QUESTION IS NOT PUT WITH NO TIME LEFT TO ANSWER IT.** When looking the
+/// terminal up has used the ten seconds, what follows is refused before it is
+/// run: a line typed in the last milliseconds and killed reads as unanswered
+/// and would be typed again by whoever retries.
+#[test]
+fn a_question_with_no_time_left_is_not_put() {
+    let scratch = Scratch::new("spent");
+    let lists = scratch.script(
+        "list.sh",
+        "sleep 8.5; printf '%s' '{\"result\":{\"terminals\":[\
+         {\"tabId\":\"pane\",\"leafId\":\"7\",\"handle\":\"term_yes\"}]}}'",
+    );
+    let asked = scratch.at("asked");
+    let reads = scratch.script("read.sh", &format!("echo x >> {asked}; printf '%s' '│ > '"));
+    let types = scratch.script("type.sh", "true");
+    scratch
+        .declaring_a_list(&reads, &types, &lists)
+        .kept_as("ttys014", "pane:7");
+
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys014")
+        .expect_err("the lookup used the time");
+
+    assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
+    assert!(
+        std::fs::read_to_string(&asked).is_err(),
+        "the keeper was asked with no time left"
+    );
+    assert!(
+        refusal.said.contains("the question was never put"),
+        "{}",
+        refusal.said
+    );
+    assert!(
+        !refusal.said.contains("nobody can reach"),
+        "a keeper that was never asked is not one nobody can reach: {}",
+        refusal.said
+    );
+}
