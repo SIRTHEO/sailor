@@ -22,7 +22,7 @@ const TRIES_TO_TYPE: u32 = 1;
 
 /// The pause before a question is put again, taken out of `LONG_ENOUGH`.
 const BETWEEN_TRIES: Duration = Duration::from_millis(500);
-/// The least a second asking must be left with to be worth making.
+/// The least an asking must be left with to be worth making.
 const LEAST_TO_ASK_AGAIN: Duration = Duration::from_secs(2);
 
 /// Why an asking got no answer, and whether asking again could change it.
@@ -163,6 +163,11 @@ impl Keeper {
         let mut answers: Vec<String> = Vec::new();
         for asking in 1..=tries {
             let left = LONG_ENOUGH.saturating_sub(began.elapsed());
+            if left < LEAST_TO_ASK_AGAIN {
+                answers
+                    .push("was not asked: the time for the question was already spent".to_owned());
+                break;
+            }
             match self.ran(argv, filling, left) {
                 Ok(printed) => return Ok(printed),
                 Err(unanswered) => {
@@ -180,7 +185,7 @@ impl Keeper {
             [only] => only.clone(),
             [first, rest @ ..] => {
                 format!(
-                    "asked {} times and did not answer: first {first}; then {}",
+                    "did not answer, asked {} times: first {first}; then {}",
                     answers.len(),
                     rest.join("; then ")
                 )

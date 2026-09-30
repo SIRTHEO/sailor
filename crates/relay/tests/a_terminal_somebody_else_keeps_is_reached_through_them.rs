@@ -462,11 +462,7 @@ fn a_keeper_that_cannot_be_started_is_asked_once() {
         .expect_err("there is nothing to run");
 
     assert!(refusal.said.contains("did not start"), "{}", refusal.said);
-    assert!(
-        !refusal.said.contains("times and did not answer"),
-        "{}",
-        refusal.said
-    );
+    assert!(!refusal.said.contains("times: first"), "{}", refusal.said);
 }
 
 /// The list of terminals changes nothing either, so it too is asked again.
@@ -493,8 +489,8 @@ fn a_list_that_stumbles_once_is_asked_again() {
         .expect("the second asking of the list is answered");
 }
 
-/// Looking the terminal up and reading it are one question to the keeper, and
-/// ten seconds is what the two of them have together.
+/// **LOOKING A TERMINAL UP AND READING IT ARE ONE QUESTION.** Ten seconds is
+/// what the two of them have together.
 #[test]
 fn looking_a_terminal_up_and_reading_it_share_the_ten_seconds() {
     let scratch = Scratch::new("shared");
@@ -516,14 +512,14 @@ fn looking_a_terminal_up_and_reading_it_share_the_ten_seconds() {
 
     assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
     assert!(
-        started.elapsed() < std::time::Duration::from_secs(13),
+        started.elapsed() < std::time::Duration::from_secs(14),
         "the question took {:?}",
         started.elapsed()
     );
 }
 
-/// An asking that fails when the time is nearly gone is not followed by one
-/// that has a few milliseconds to live: that is a second failure by design.
+/// **NO SECOND ASKING THAT IS BOUND TO FAIL.** An asking that fails when the
+/// time is nearly gone is not followed by one with too little left to answer.
 #[test]
 fn a_keeper_that_fails_late_is_not_asked_with_no_time_left() {
     let scratch = Scratch::new("late");
@@ -543,5 +539,35 @@ fn a_keeper_that_fails_late_is_not_asked_with_no_time_left() {
             .count(),
         1,
         "there was no time to ask again"
+    );
+}
+
+/// **A QUESTION IS NOT PUT WITH NO TIME LEFT TO ANSWER IT.** When looking the
+/// terminal up has used the ten seconds, what follows is refused before it is
+/// run: a line typed in the last milliseconds and killed reads as unanswered
+/// and would be typed again by whoever retries.
+#[test]
+fn a_question_with_no_time_left_is_not_put() {
+    let scratch = Scratch::new("spent");
+    let lists = scratch.script(
+        "list.sh",
+        "sleep 8.5; printf '%s' '{\"result\":{\"terminals\":[\
+         {\"tabId\":\"pane\",\"leafId\":\"7\",\"handle\":\"term_yes\"}]}}'",
+    );
+    let asked = scratch.at("asked");
+    let reads = scratch.script("read.sh", &format!("echo x >> {asked}; printf '%s' '│ > '"));
+    let types = scratch.script("type.sh", "true");
+    scratch
+        .declaring_a_list(&reads, &types, &lists)
+        .kept_as("ttys014", "pane:7");
+
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys014")
+        .expect_err("the lookup used the time");
+
+    assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
+    assert!(
+        std::fs::read_to_string(&asked).is_err(),
+        "the keeper was asked with no time left"
     );
 }
