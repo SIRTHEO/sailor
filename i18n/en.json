@@ -780,6 +780,7 @@
   "run.failure.answer_off_shape": "the answer is not in the declared shape",
   "run.failure.answer_too_large": "the command printed more than an answer can hold — it was refused, not cut short",
   "run.failure.process_disappeared": "the process this step had started is gone, and it left nothing of its work behind",
+  "run.failure.never_ready": "the step kept answering not yet for longer than its flow allows, so it was closed instead of being asked again",
   "run.failure.repeatable_after_unknown_effect": "the step was interrupted and what it left behind cannot be read; it declares itself repeatable, so it will be run again",
   "run.failure.scratch_unwritable": "the files a choice is handed through could not be written here",
   "run.failure.check_failed": "the check did not pass",

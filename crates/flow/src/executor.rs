@@ -1631,7 +1631,7 @@ fn run_one(
                         match (work.asked_again_until, step.ask_again_for_secs) {
                             (Some(until), Some(window)) if now >= until => broke(
                                 ActionError::new(
-                                    "never_ready",
+                                    NEVER_READY,
                                     format!(
                                         "asked again for {window} s and never ready; \
                                          last answer: {reason}"
@@ -1819,6 +1819,9 @@ fn ready_again_at(record: &StepRecord, now: i64, wait_secs: i64) -> i64 {
     record.ended_at.unwrap_or(now).saturating_add(wait_secs)
 }
 
+/// The failure class of a step closed for asking again past its window.
+const NEVER_READY: &str = "never_ready";
+
 /// The instant past which a step answering «not yet» is asked no more: the
 /// start of its current streak of «not yet» plus the window it declares.
 fn asked_again_until(step: &Step, records: &[StepRecord]) -> Option<i64> {
@@ -1831,7 +1834,10 @@ fn asked_again_until(step: &Step, records: &[StepRecord]) -> Option<i64> {
     let since = mine
         .iter()
         .rev()
-        .take_while(|record| record.outcome == Some(Outcome::NotYet))
+        .take_while(|record| {
+            record.outcome == Some(Outcome::NotYet)
+                || record.failure_class.as_deref() == Some(NEVER_READY)
+        })
         .last()?
         .started_at;
     Some(since.saturating_add(window))

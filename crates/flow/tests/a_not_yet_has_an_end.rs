@@ -20,7 +20,7 @@ impl Clock for Stopped {
     }
 }
 
-fn waiting_step(window: Option<u32>) -> Step {
+fn waiting_step(window: Option<u32>, max_attempts: u32) -> Step {
     Step {
         id: "wait".to_owned(),
         deps: Vec::new(),
@@ -29,7 +29,7 @@ fn waiting_step(window: Option<u32>) -> Step {
         with: None,
         when: None,
         action: "wait".to_owned(),
-        max_attempts: 1,
+        max_attempts,
         ask_again_after_secs: Some(60),
         ask_again_for_secs: window,
         retry_after_secs: None,
@@ -80,6 +80,10 @@ struct Setup {
 }
 
 fn setup(window: Option<u32>) -> Setup {
+    setup_with(window, 1)
+}
+
+fn setup_with(window: Option<u32>, max_attempts: u32) -> Setup {
     let unlocked = Arc::new(AtomicBool::new(false));
     let asked = Arc::new(AtomicUsize::new(0));
     let mut actions = ActionRegistry::default();
@@ -91,7 +95,7 @@ fn setup(window: Option<u32>) -> Setup {
         },
     );
     Setup {
-        graph: Graph::new(vec![waiting_step(window)]).expect("valid graph"),
+        graph: Graph::new(vec![waiting_step(window, max_attempts)]).expect("valid graph"),
         store: InMemoryRecordStore::default(),
         actions,
         unlocked,
@@ -169,4 +173,17 @@ fn an_answer_at_the_end_of_the_window_still_counts() {
     scene.unlocked.store(true, Ordering::SeqCst);
     let past = run_at(&scene, 4_600);
     assert_eq!(past.last(), Some(&Decision::Complete), "{past:?}");
+}
+
+#[test]
+fn a_break_for_the_window_does_not_start_a_new_window() {
+    let scene = setup_with(Some(3_600), 2);
+    run_at(&scene, 1_000);
+    run_at(&scene, 4_600);
+    let after = run_at(&scene, 4_700);
+    assert_eq!(
+        after.last(),
+        Some(&Decision::Failed(vec!["wait".to_owned()])),
+        "the second attempt is past the same window: {after:?}"
+    );
 }

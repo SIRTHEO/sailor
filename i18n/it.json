@@ -780,6 +780,7 @@
   "run.failure.answer_off_shape": "la risposta non ha la forma dichiarata",
   "run.failure.answer_too_large": "il comando ha stampato più di quanto una risposta possa contenere — è stata rifiutata, non troncata",
   "run.failure.process_disappeared": "il processo che questo passo aveva avviato non c'è più, e non ha lasciato nulla del suo lavoro",
+  "run.failure.never_ready": "il passo ha continuato a rispondere «non ancora» oltre quanto il suo flusso consente, quindi è stato chiuso invece di essere richiesto ancora",
   "run.failure.repeatable_after_unknown_effect": "il passo è stato interrotto e non si può leggere che cosa ha lasciato; si dichiara ripetibile, quindi verrà eseguito di nuovo",
   "run.failure.scratch_unwritable": "i file con cui si passa una scelta non si sono potuti scrivere qui",
   "run.failure.check_failed": "la verifica non è passata",
