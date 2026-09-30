@@ -482,7 +482,7 @@ fn a_menu_answered_and_left_above_a_bare_prompt_is_not_a_person_being_waited_for
         "ttys001",
         format!(
             "  1. Auto\r\n❯ 2. Dark mode\r\n  3. Light\r\n\r\nset to dark\r\n{}\r\n❯ ",
-            "done.\r\n".repeat(400)
+            "done.\r\n".repeat(800)
         )
         .as_bytes(),
     );
@@ -524,6 +524,25 @@ fn a_menu_still_open_above_a_bare_prompt_is_a_person_being_waited_for() {
             "❯ 1. Yes\r\n  2. No\r\n✻ Welcome to Claude Code!\r\n❯ ",
         ),
         ("edges", "┌──┐\r\n│ ❯ 1. Yes │\r\n│   2. No │\r\n└──┘\r\n❯ "),
+    ] {
+        let scratch = Scratch::new(name);
+        scratch
+            .declaring(the_shipped_chevron())
+            .painted("ttys001", screen.as_bytes());
+
+        not_yet(&scratch.asked("ttys001"));
+    }
+}
+
+#[test]
+fn padding_under_a_menu_does_not_bury_it_and_a_lone_return_does_not_hide_it() {
+    let padded = format!(
+        "❯ 1. Yes\r\n{}❯ ",
+        format!("│ x{}│\r\n", " ".repeat(200)).repeat(20)
+    );
+    for (name, screen) in [
+        ("padded", padded.as_str()),
+        ("return", "foo\r❯ 1. Yes\r  2. No\r❯ "),
     ] {
         let scratch = Scratch::new(name);
         scratch

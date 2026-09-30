@@ -386,13 +386,13 @@ fn freedom_now(
 
 /// **A MENU IS NOT A PROMPT.** A selection's cursor wears the prompt's own mark
 /// before an option's number. Nothing painted below says it was answered, so it
-/// holds until later output has buried it.
+/// holds until later output, spaces and borders not counted, has buried it.
 fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
-    const BURIED_UNDER: usize = 2000;
+    const BURIED_UNDER: usize = 3000;
     let edge = |c: char| c.is_whitespace() || matches!(c, '│' | '┃' | '║' | '|');
     let mut held = None;
     let mut below = 0;
-    for raw in seen.lines() {
+    for raw in seen.split(['\n', '\r']) {
         let row = raw.trim_matches(edge);
         let after = prompts
             .iter()
@@ -406,7 +406,7 @@ fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
             held = Some(row.to_owned());
             below = 0;
         } else {
-            below += raw.chars().count() + 1;
+            below += raw.chars().filter(|c| !c.is_whitespace()).count();
         }
     }
     held.filter(|_| below <= BURIED_UNDER)
