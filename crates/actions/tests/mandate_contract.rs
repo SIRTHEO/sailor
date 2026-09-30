@@ -6,7 +6,7 @@
 
 use actions::mandate::{MANDATE_DEPOSIT_ACTION, MANDATE_RESUME_ACTION, MANDATE_WAITING_ACTION};
 use flow::{ActionOutcome, SharedState};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -500,8 +500,14 @@ fn a_key_inside_work_that_nobody_knows_is_refused_by_name() {
 fn a_reference_with_half_missing_is_refused_naming_its_place() {
     let scratch = Scratch::new("half-reference");
 
-    let blank = refusal_of(&scratch, work_with("references", json!([{"what": "", "at": "x"}])));
-    let absent = refusal_of(&scratch, work_with("references", json!([{"what": "a note"}])));
+    let blank = refusal_of(
+        &scratch,
+        work_with("references", json!([{"what": "", "at": "x"}])),
+    );
+    let absent = refusal_of(
+        &scratch,
+        work_with("references", json!([{"what": "a note"}])),
+    );
 
     assert!(blank.said.contains("work.references[0].what"), "{blank:?}");
     assert!(absent.said.contains("work.references[0].at"), "{absent:?}");
@@ -522,7 +528,10 @@ fn material_that_could_not_be_read_as_one_line_each_is_refused() {
     let length = refusal_of(&scratch, work_with("references", long));
     let count = refusal_of(&scratch, work_with("references", Value::Array(many)));
 
-    assert!(newline.said.contains("work.references[0].what"), "{newline:?}");
+    assert!(
+        newline.said.contains("work.references[0].what"),
+        "{newline:?}"
+    );
     assert!(length.said.contains("work.references[0].at"), "{length:?}");
     assert!(count.said.contains("work.references"), "{count:?}");
 }
@@ -534,7 +543,10 @@ fn a_key_one_level_down_that_nobody_knows_is_refused_by_name() {
 
     let claim = refusal_of(
         &scratch,
-        work_with("state", json!([{"said": "x", "verified": true, "evidence": "y"}])),
+        work_with(
+            "state",
+            json!([{"said": "x", "verified": true, "evidence": "y"}]),
+        ),
     );
     let reference = refusal_of(
         &scratch,
@@ -542,9 +554,15 @@ fn a_key_one_level_down_that_nobody_knows_is_refused_by_name() {
     );
 
     assert!(claim.said.contains("work.state[0].evidence"), "{claim:?}");
-    assert!(reference.said.contains("work.references[0].why"), "{reference:?}");
+    assert!(
+        reference.said.contains("work.references[0].why"),
+        "{reference:?}"
+    );
     for known in ["goal", "asked", "state", "next", "never", "references"] {
-        assert!(claim.said.contains(known), "«{known}» is not listed: {claim:?}");
+        assert!(
+            claim.said.contains(known),
+            "«{known}» is not listed: {claim:?}"
+        );
     }
 }
 
@@ -552,7 +570,9 @@ fn a_key_one_level_down_that_nobody_knows_is_refused_by_name() {
 #[test]
 fn a_separator_other_than_a_newline_is_refused_as_well() {
     let scratch = Scratch::new("separators");
-    for separator in ["\u{2028}", "\u{2029}", "\u{0085}", "\u{000b}", "\t", "\u{001b}"] {
+    for separator in [
+        "\u{2028}", "\u{2029}", "\u{0085}", "\u{000b}", "\t", "\u{001b}",
+    ] {
         let refusal = refusal_of(
             &scratch,
             work_with(
@@ -572,13 +592,19 @@ fn a_key_nobody_reads_is_named_in_every_nested_kind() {
     let scratch = Scratch::new("every-nested");
     let decision = refusal_of(
         &scratch,
-        work_with("decisions", json!([{"decided": "x", "authorised_by": "y", "why": "z"}])),
+        work_with(
+            "decisions",
+            json!([{"decided": "x", "authorised_by": "y", "why": "z"}]),
+        ),
     );
     let mut constraint = a_constraint();
     constraint["why"] = json!("z");
     let held = refusal_of(&scratch, work_with("constraints", json!([constraint])));
 
-    assert!(decision.said.contains("work.decisions[0].why"), "{decision:?}");
+    assert!(
+        decision.said.contains("work.decisions[0].why"),
+        "{decision:?}"
+    );
     assert!(held.said.contains("work.constraints[0].why"), "{held:?}");
 }
 
@@ -588,7 +614,10 @@ fn the_list_of_keys_is_said_only_when_a_key_was_the_trouble() {
     let scratch = Scratch::new("keys-when-needed");
     let long = refusal_of(
         &scratch,
-        work_with("references", json!([{"what": "a note", "at": "x".repeat(2000)}])),
+        work_with(
+            "references",
+            json!([{"what": "a note", "at": "x".repeat(2000)}]),
+        ),
     );
     let unknown = refusal_of(&scratch, work_with("reference", material()));
 

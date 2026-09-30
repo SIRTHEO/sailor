@@ -4,15 +4,16 @@
 //! the goal, the last instruction and the next step, and none for the material
 //! itself, and the deposit dropped any field it did not know without a word.
 
-use serde_json::{json, Value};
-use sessions::mandate::{address_in, blank_fields, deposit, pass_on, read, reserve, Mandate};
+use serde_json::{Value, json};
+use sessions::mandate::{Mandate, address_in, blank_fields, deposit, pass_on, read, reserve};
 use std::path::PathBuf;
 
 struct Scratch(PathBuf);
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let path = std::env::temp_dir().join(format!("sailor-material-{}-{name}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("sailor-material-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).expect("a directory to write in");
         Scratch(path)
@@ -130,18 +131,20 @@ fn a_key_this_binary_does_not_know_survives_a_rewrite() {
 /// **HALF A REFERENCE STILL READS, SO IT CAN BE NAMED.**
 #[test]
 fn half_a_reference_reads_and_is_named_with_its_place() {
-    let half: Mandate = serde_json::from_value(serde_json::to_value(a_mandate(
-        "ttys007",
-        json!([{"what": "a note", "at": "x"}]),
-    ))
-    .map(|mut value| {
-        value["work"]["references"] = json!([{"what": "a note"}]);
-        value
-    })
-    .expect("a value"))
+    let half: Mandate = serde_json::from_value(
+        serde_json::to_value(a_mandate("ttys007", json!([{"what": "a note", "at": "x"}])))
+            .map(|mut value| {
+                value["work"]["references"] = json!([{"what": "a note"}]);
+                value
+            })
+            .expect("a value"),
+    )
     .expect("half a reference still reads");
 
-    assert_eq!(blank_fields(&half), vec!["work.references[0].at".to_owned()]);
+    assert_eq!(
+        blank_fields(&half),
+        vec!["work.references[0].at".to_owned()]
+    );
 }
 
 /// **THE SAME ONE LEVEL DOWN.** A claim, a decision, a constraint or a reference
@@ -168,7 +171,12 @@ fn a_key_one_level_down_survives_a_rewrite_too() {
 fn the_keys_a_refusal_lists_are_the_keys_a_work_has() {
     let full = a_mandate("ttys009", material());
     let value = serde_json::to_value(&full.work).expect("a value");
-    let mut has: Vec<&str> = value.as_object().expect("an object").keys().map(String::as_str).collect();
+    let mut has: Vec<&str> = value
+        .as_object()
+        .expect("an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
     let mut listed: Vec<&str> = sessions::mandate::WORK_KEYS.to_vec();
     has.sort_unstable();
     listed.sort_unstable();

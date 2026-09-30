@@ -198,7 +198,9 @@ pub fn misshapen_fields(work: &Work) -> Vec<String> {
         named.extend(unread(format!("work.references[{index}]"), &given.extra));
         for (name, value) in [("what", &given.what), ("at", &given.at)] {
             if value.chars().any(a_line_break) {
-                named.push(format!("work.references[{index}].{name} (more than one line)"));
+                named.push(format!(
+                    "work.references[{index}].{name} (more than one line)"
+                ));
             } else if value.chars().count() > LONGEST_REFERENCE {
                 named.push(format!(
                     "work.references[{index}].{name} (over {LONGEST_REFERENCE} characters)"
@@ -334,7 +336,9 @@ pub fn freshness(mandate: &Mandate, head: &str, uncommitted: &str) -> Freshness 
 
 /// Where a terminal's mandate waits.
 pub fn address_in(store: &Path, tty: &str) -> PathBuf {
-    store.join(MANDATES).join(format!("{}.json", tty.replace('/', "-")))
+    store
+        .join(MANDATES)
+        .join(format!("{}.json", tty.replace('/', "-")))
 }
 
 /// Where a session leaves a mandate its own shell cannot file.
@@ -816,5 +820,4 @@ mod tests {
         let address = address_in(store, "pts/3");
         assert_eq!(address.parent(), Some(store.join(MANDATES).as_path()));
     }
-
 }

@@ -299,7 +299,11 @@ fn the_drop_for(
         None => homes.first(),
     };
     found
-        .map(|(_, home)| sessions::mandate::dropped_in(home, tty).display().to_string())
+        .map(|(_, home)| {
+            sessions::mandate::dropped_in(home, tty)
+                .display()
+                .to_string()
+        })
         .unwrap_or_default()
 }
 
@@ -340,7 +344,9 @@ fn filed(
     if let Some(tokens) = known.tokens {
         object.insert("tokens".to_owned(), serde_json::Value::from(tokens));
     }
-    object.entry("tokens").or_insert_with(|| serde_json::Value::from(0));
+    object
+        .entry("tokens")
+        .or_insert_with(|| serde_json::Value::from(0));
     if known.tree.is_empty() {
         let at = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let tree = flow::workspace::find_root(&at).unwrap_or(at);
@@ -409,7 +415,11 @@ fn the_ask_of(
     // session it was written for; one naming another is not this session's to
     // answer. A row naming nobody is the older shape on disk, and silence is
     // not a different session.
-    if let Some(asked_for) = asked.value.get("session").and_then(serde_json::Value::as_str) {
+    if let Some(asked_for) = asked
+        .value
+        .get("session")
+        .and_then(serde_json::Value::as_str)
+    {
         if !asked_for.is_empty() && !session.is_empty() && asked_for != session {
             return None;
         }
@@ -485,7 +495,10 @@ mod tests {
     /// declares which line is calling, and that is the one asked.
     #[test]
     fn the_letterbox_belongs_to_the_line_the_graft_declares() {
-        let env = env_of(&[("HOME", "/home/whoever"), ("CODEX_HOME", "/elsewhere/codex")]);
+        let env = env_of(&[
+            ("HOME", "/home/whoever"),
+            ("CODEX_HOME", "/elsewhere/codex"),
+        ]);
         let homes = homes_in(&shipped(), &env);
         let (first, _) = homes.first().expect("some line declares a home");
 
@@ -516,8 +529,7 @@ mod tests {
     /// the hook files from outside that sandbox.
     #[test]
     fn a_mandate_the_shell_could_only_drop_is_filed_by_the_hook() {
-        let directory =
-            std::env::temp_dir().join(format!("sailor-dropped-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("sailor-dropped-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         let home = directory.join("home");
         let store = directory.join("store");
@@ -536,9 +548,12 @@ mod tests {
         std::fs::write(&dropped, a_whole_mandate()).expect("what the shell could write");
 
         let said = filing_from(&shipped(), &env, &store, "ttys009", &Known::default())
-        .expect("a drop waiting for this terminal is filed");
+            .expect("a drop waiting for this terminal is filed");
 
-        assert!(said.contains("ttys009"), "the filing names the terminal: {said}");
+        assert!(
+            said.contains("ttys009"),
+            "the filing names the terminal: {said}"
+        );
         assert!(
             sessions::mandate::read(&sessions::mandate::address_in(&store, "ttys009")).is_some(),
             "the mandate is in the store, where a successor is handed it"
@@ -554,8 +569,7 @@ mod tests {
     /// A session at the threshold is the worst placed to state any of them.
     #[test]
     fn the_hook_fills_in_what_the_session_never_had_to_know() {
-        let directory =
-            std::env::temp_dir().join(format!("sailor-filled-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("sailor-filled-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         let home = directory.join("home");
         let store = directory.join("store");
@@ -628,7 +642,7 @@ mod tests {
         std::fs::write(&dropped, "carry the conduit on").expect("prose where a mandate belongs");
 
         let said = filing_from(&shipped(), &env, &store, "ttys009", &Known::default())
-        .expect("a drop that cannot be filed is still answered");
+            .expect("a drop that cannot be filed is still answered");
 
         assert!(
             said.contains(&dropped.display().to_string()),
@@ -742,8 +756,14 @@ mod tests {
             .expect("it is still on disk");
         assert_eq!(kept.reserved, None, "and it is not even held for anyone");
 
-        let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 1_000 + 2 * a_day)
-            .expect("two days on, it is still the successor's");
+        let handed = the_mandate_of(
+            &directory,
+            "ttys001",
+            "the-successor",
+            "",
+            1_000 + 2 * a_day,
+        )
+        .expect("two days on, it is still the successor's");
         assert!(handed.contains("work nobody expects any more"), "{handed}");
     }
 
@@ -795,7 +815,8 @@ mod tests {
     /// ask for is the one thing it must not have to go looking for.
     #[test]
     fn the_material_a_person_handed_over_arrives_with_the_greeting() {
-        let directory = std::env::temp_dir().join(format!("sailor-material-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("sailor-material-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
         let mut mandate = sessions::mandate::Mandate::default();
@@ -811,7 +832,10 @@ mod tests {
         let handed = the_mandate_of(&directory, "ttys001", "the-successor", "", 100)
             .expect("a mandate arrives");
 
-        assert!(handed.contains("the method this session applies"), "{handed}");
+        assert!(
+            handed.contains("the method this session applies"),
+            "{handed}"
+        );
         assert!(handed.contains("https://example.org/method"), "{handed}");
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -820,7 +844,8 @@ mod tests {
     /// by another build or by hand may carry a reference of several lines.
     #[test]
     fn material_that_was_never_bounded_arrives_as_one_short_line() {
-        let directory = std::env::temp_dir().join(format!("sailor-unbounded-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("sailor-unbounded-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
         let mut mandate = sessions::mandate::Mandate::default();
@@ -845,13 +870,27 @@ mod tests {
                 ("asked", ""),
                 ("next", ""),
                 ("never", ""),
-                ("path", &sessions::mandate::address_in(&directory, "ttys001").display().to_string()),
+                (
+                    "path",
+                    &sessions::mandate::address_in(&directory, "ttys001")
+                        .display()
+                        .to_string(),
+                ),
             ],
         );
-        let material = handed.strip_prefix(&base).expect("the old greeting comes first");
-        assert_eq!(material.trim_start_matches('\n').lines().count(), 1, "{material}");
+        let material = handed
+            .strip_prefix(&base)
+            .expect("the old greeting comes first");
+        assert_eq!(
+            material.trim_start_matches('\n').lines().count(),
+            1,
+            "{material}"
+        );
         assert!(!material.contains('\u{2028}'), "{material}");
-        assert!(!material.contains("note 39"), "only the most it carries: {material}");
+        assert!(
+            !material.contains("note 39"),
+            "only the most it carries: {material}"
+        );
         assert!(
             material.contains(&catalogue::say(
                 "cli.session.the_mandate_holds_more",
@@ -859,8 +898,15 @@ mod tests {
             )),
             "what was left out is said: {material}"
         );
-        assert!(material.contains('…'), "a cut value says it was cut: {material}");
-        assert!(material.chars().count() < 16 * 1100, "{}", material.chars().count());
+        assert!(
+            material.contains('…'),
+            "a cut value says it was cut: {material}"
+        );
+        assert!(
+            material.chars().count() < 16 * 1100,
+            "{}",
+            material.chars().count()
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -985,7 +1031,13 @@ mod tests {
         sessions::mandate::deposit(&directory, &mandate).expect("the mandate is deposited");
 
         assert_eq!(
-            the_mandate_of(&directory, "ttys015", "a-stranger", "/a/different/tree", 100),
+            the_mandate_of(
+                &directory,
+                "ttys015",
+                "a-stranger",
+                "/a/different/tree",
+                100
+            ),
             None,
             "a session that took the tty number in another tree is handed nothing"
         );
@@ -998,10 +1050,18 @@ mod tests {
             "refusing to hand it on must not consume it: it is still owed to its own tree"
         );
 
-        let handed =
-            the_mandate_of(&directory, "ttys015", "the-successor", "/the/tree/it/was/written/in", 100)
-                .expect("the successor in the mandate's own tree is handed it");
-        assert!(handed.contains("swap the profile of a live session"), "{handed}");
+        let handed = the_mandate_of(
+            &directory,
+            "ttys015",
+            "the-successor",
+            "/the/tree/it/was/written/in",
+            100,
+        )
+        .expect("the successor in the mandate's own tree is handed it");
+        assert!(
+            handed.contains("swap the profile of a live session"),
+            "{handed}"
+        );
         let _ = std::fs::remove_dir_all(&directory);
     }
 
@@ -1053,7 +1113,8 @@ mod tests {
     /// that gap is work the successor is never handed.
     #[test]
     fn the_ask_tells_the_session_to_start_nothing_new() {
-        let directory = std::env::temp_dir().join(format!("sailor-ask-stop-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("sailor-ask-stop-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
         let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");
@@ -1136,8 +1197,7 @@ mod tests {
     /// session wrote before it was compacted, does not answer the ask.
     #[test]
     fn only_a_mandate_written_by_this_context_is_said_to_be_waiting() {
-        let directory =
-            std::env::temp_dir().join(format!("sailor-ask-own-{}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("sailor-ask-own-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).expect("a directory of this test's own");
         let ledger = ledger::Ledger::open(&directory).expect("a store of this test's own");

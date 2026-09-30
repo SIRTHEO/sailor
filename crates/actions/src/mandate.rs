@@ -7,7 +7,7 @@
 
 use flow::{Action, ActionError, ActionOutcome, SharedState, StepSpecies};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sessions::mandate::{self, Mandate, Taken, Work, Written};
 use std::path::{Path, PathBuf};
 
@@ -196,7 +196,10 @@ pub fn deposited(input: &Value) -> Result<Value, ActionError> {
                 "the mandate holds what it cannot carry, and whoever could fix it is still \
                      here: {}{}",
                 misshapen.join(", "),
-                if misshapen.iter().any(|named| named.contains("a key nothing reads")) {
+                if misshapen
+                    .iter()
+                    .any(|named| named.contains("a key nothing reads"))
+                {
                     format!(". The keys of `work` are {}", mandate::WORK_KEYS.join(", "))
                 } else {
                     String::new()
