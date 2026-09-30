@@ -699,6 +699,8 @@ pub struct FreeWhen {
     /// EMPTY SESSION**. Absent asks the machine nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub and_holds_no_process_but: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub and_resident_servers: Vec<String>,
     /// What the session's record says it still waits on. Absent reads nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub and_leaves_nothing_open_in_its_record: Option<OpenInRecord>,
