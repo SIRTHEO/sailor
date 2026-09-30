@@ -365,6 +365,11 @@ fn freedom_now(
             "{tty}: «{held}» is on the screen, so somebody is being waited for"
         )));
     }
+    if let Some(row) = a_selection_cursor(&seen, &free_when.the_prompt_shows) {
+        return Ok(Freedom::NotYet(format!(
+            "{tty}: a selection is open at «{row}», so somebody is being asked to choose"
+        )));
+    }
     match free_when
         .the_prompt_shows
         .iter()
@@ -377,6 +382,19 @@ fn freedom_now(
             "{tty}: the prompt is not painted, and a quiet screen is not a free one"
         ))),
     }
+}
+
+/// **A MENU IS NOT A PROMPT.** A selection's cursor wears the prompt's own mark
+/// before an option's number, on whichever option it stands.
+fn a_selection_cursor(seen: &str, prompts: &[String]) -> Option<String> {
+    seen.lines().map(str::trim).find_map(|row| {
+        prompts.iter().find_map(|mark| {
+            let after = row.strip_prefix(mark.as_str())?.trim_start();
+            let digits = after.chars().take_while(char::is_ascii_digit).count();
+            let numbered = digits > 0 && after[digits..].starts_with(['.', ')']);
+            numbered.then(|| row.to_owned())
+        })
+    })
 }
 
 /// One line of the process table: who it is, who started it, where it sits.

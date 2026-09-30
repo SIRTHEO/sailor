@@ -435,3 +435,42 @@ fn a_declared_resident_server_hides_no_work_standing_beside_it() {
 
     assert_eq!(held, vec!["sleep".to_owned()], "{held:?}");
 }
+
+fn the_shipped_chevron() -> Value {
+    json!({
+        "the_prompt_shows": ["❯"],
+        "and_none_of_these": ["Esc to cancel", "Do you want", "◯ "],
+        "and_still_for_seconds": 0,
+    })
+}
+
+/// **A MENU IS NOT A PROMPT.** Measured on a real screen of the line, its
+/// first-run theme menu with the cursor on option 2: nothing declared held it.
+#[test]
+fn a_selection_whose_cursor_wears_the_prompts_chevron_is_a_person_being_waited_for() {
+    let scratch = Scratch::new("menu");
+    scratch.declaring(the_shipped_chevron()).painted(
+        "ttys001",
+        "Choose the text style that looks best with your terminal\r\n\r\n \
+         1. Auto (match terminal)\r\n\u{1b}[36m❯ 2. Dark mode ✔\u{1b}[0m\r\n \
+         3. Light mode\r\n"
+            .as_bytes(),
+    );
+
+    let why = not_yet(&scratch.asked("ttys001"));
+
+    assert!(why.contains("selection"), "{why}");
+}
+
+/// The chevron alone on its row is still the prompt.
+#[test]
+fn the_chevron_alone_on_its_row_is_still_a_free_prompt() {
+    let scratch = Scratch::new("chevron");
+    scratch
+        .declaring(the_shipped_chevron())
+        .painted("ttys001", "done\r\n\r\n❯ ".as_bytes());
+
+    let outcome = scratch.asked("ttys001").expect("it does not break");
+
+    assert!(matches!(outcome, ActionOutcome::Went(_)), "{outcome:?}");
+}
