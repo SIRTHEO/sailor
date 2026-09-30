@@ -400,3 +400,91 @@ fn a_line_that_got_no_answer_is_not_typed_twice() {
         "the line reached the keeper once"
     );
 }
+
+/// **TEN SECONDS IS THE WHOLE QUESTION, NOT EACH ASKING.** A keeper that hangs
+/// has used the time it was promised; asking again would double what a caller
+/// waits for an answer that is not coming.
+#[test]
+fn a_keeper_that_hangs_is_not_waited_for_twice() {
+    let scratch = Scratch::new("hang");
+    let reads = scratch.script("read.sh", "sleep 60");
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys008");
+
+    let started = std::time::Instant::now();
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys008")
+        .expect_err("a keeper that hangs does not answer");
+
+    assert_eq!(refusal.class, "keeper_did_not_answer", "{refusal:?}");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(14),
+        "the question took {:?}",
+        started.elapsed()
+    );
+}
+
+/// **A REFUSAL SAYS WHAT WAS ASKED AND WHAT EACH ASKING ANSWERED.** Only the
+/// last answer used to survive, and the first can be the one that says why.
+#[test]
+fn a_refusal_after_two_askings_says_both_answers() {
+    let scratch = Scratch::new("both");
+    let marker = scratch.at("asked-once");
+    let reads = scratch.script(
+        "read.sh",
+        &format!(
+            "if [ -e {marker} ]; then echo 'second answer' >&2; else : > {marker}; \
+             echo 'first answer' >&2; fi; exit 1"
+        ),
+    );
+    let types = scratch.script("type.sh", "true");
+    scratch.declaring(&reads, &types).kept("ttys009");
+
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys009")
+        .expect_err("neither asking was answered");
+
+    assert!(refusal.said.contains("first answer"), "{}", refusal.said);
+    assert!(refusal.said.contains("second answer"), "{}", refusal.said);
+}
+
+/// **A KEEPER THAT CANNOT START WILL NOT START THE SECOND TIME.** Asking again
+/// what can only fail the same way says it was tried twice when it was not.
+#[test]
+fn a_keeper_that_cannot_be_started_is_asked_once() {
+    let scratch = Scratch::new("absent");
+    let types = scratch.script("type.sh", "true");
+    let nowhere = scratch.at("no-such-program");
+    scratch.declaring(&nowhere, &types).kept("ttys010");
+
+    let refusal = scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys010")
+        .expect_err("there is nothing to run");
+
+    assert!(refusal.said.contains("did not start"), "{}", refusal.said);
+    assert!(!refusal.said.contains("asked twice"), "{}", refusal.said);
+}
+
+/// The list of terminals changes nothing either, so it too is asked again.
+#[test]
+fn a_list_that_stumbles_once_is_asked_again() {
+    let scratch = Scratch::new("list-stumble");
+    let marker = scratch.at("list-stumbled");
+    let lists = scratch.script(
+        "list.sh",
+        &format!(
+            "[ -e {marker} ] || {{ : > {marker}; exit 1; }}; \
+             printf '%s' '{{\"result\":{{\"terminals\":[\
+             {{\"tabId\":\"pane\",\"leafId\":\"7\",\"handle\":\"term_yes\"}}]}}}}'"
+        ),
+    );
+    let reads = scratch.script("read.sh", "printf '%s' '│ > '");
+    let types = scratch.script("type.sh", "true");
+    scratch
+        .declaring_a_list(&reads, &types, &lists)
+        .kept_as("ttys011", "pane:7");
+
+    scratch
+        .asking(relay::WAIT_FREE_ACTION, "ttys011")
+        .expect("the second asking of the list is answered");
+}
